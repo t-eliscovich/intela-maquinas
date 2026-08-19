@@ -98,27 +98,6 @@ y un `launch.ps1` que loguea a `C:\maquinas_app\logs\` para que un crash no sea 
 El último paso (el bloque de Caddy) es a mano **a propósito**: un Caddyfile roto se lleva
 puesto `formulas.intela.com.ec` y Metabase junto con él.
 
-## El server — medido el 17/08/2026, no estimado
-
-| | |
-|---|---|
-| EC2 | `t3.medium` · 3,9 GB RAM · **2,0 GB libres** · 49,5 GB de disco libre |
-| Tareas programadas | `FormulasApp` · `ProgramaCoreApp` · `Metabase` (+ `MaquinasApp`) |
-| Puerto 80 / 443 | Caddy (reverse proxy, termina el HTTPS) |
-| Puerto 3000 | Metabase |
-| Puerto 5001 | formulas_app |
-| Puerto 5002 | **Programa Core** |
-| Puerto 5003 | **este programa** |
-| RDS | `intela-db` · `db.t3.micro` · 20 GB · **máx 14 conexiones** en 3 h (tope ~112) |
-| Este programa | **49 MB de RSS** en el peor caso · 4 conexiones máximo |
-
-**El `-Xmx3g` de Metabase es un techo, no una reserva** — está usando 407 MB reales. Se bajó
-a `-Xmx2g` para proteger al box (script `1-bajar-metabase-a-2gb.sh`), lo que le sigue dando
-cinco veces lo que consume.
-
-El caché de producción en el peor caso (43 máquinas × 4 años de historia = 64.887 registros)
-pesa **9,6 MB**. No hace falta paginarlo ni moverlo a disco.
-
 ## El bug del tope de filas (encontrado antes de deployar, 17/08/2026)
 
 La primera versión traía de Asinfo la producción **día por día** y la sumaba en Python.
@@ -157,16 +136,6 @@ tope explícitamente.
 - Inyección SQL: fechas e IDs se validan contra `^\d{4}-\d{2}-\d{2}$` y `int()` antes de
   interpolarse. Un `'; DROP TABLE maquina--` queda neutralizado; una fecha basura se rechaza.
 
-## Hardening pendiente
-
-`MAQUINAS_DATABASE_URL` reusa el `DATABASE_URL` maestro del box. El programa sólo escribe en
-su schema `mantenimiento`, pero la credencial puede más que eso. Lo correcto es un rol
-`maquinas_rw` con permisos únicamente sobre `mantenimiento`, siguiendo el patrón de
-`setup_formulas_reader.py`. No es urgente —el box es privado y la app no está expuesta más
-allá de Caddy— pero es la deuda consciente de esta versión.
-
----
-
 ## Decisiones tomadas y por qué
 
 - **Programa aparte, no una pestaña más.** Lo pidió así. Además el usuario es otro (el jefe
@@ -189,3 +158,9 @@ allá de Caddy— pero es la deuda consciente de esta versión.
    plan es global: un tipo de service aplica a todas. Si hacen falta planes distintos, se
    agrega una columna de grupo.
 3. **Si tiene que avisar solo** (mail con lo vencido) o alcanza con entrar a mirar.
+
+## Notas de infraestructura
+
+El detalle del server (capacidad, puertos, deuda técnica) NO vive acá a
+propósito: es documentación operativa, no del programa. Está en las notas
+internas.

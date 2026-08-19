@@ -33,7 +33,7 @@ python3 -c "import flask" 2>/dev/null \
 python3 scripts/test_maquinas.py
 echo "=== Validación OK ==="
 
-INSTANCE_ID="i-0fcca4d7029f08489"
+INSTANCE_ID="${EC2_INSTANCE_ID:-i-0fcca4d7029f08489}"
 REGION="us-east-2"
 TASK="MaquinasApp"
 PUERTO=5003
