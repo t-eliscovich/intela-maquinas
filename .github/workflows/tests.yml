@@ -1,0 +1,46 @@
+name: Tests
+
+# Corre en cada push. NO deploya: al server lo actualiza él solo tirando de
+# este repo (scripts/auto_update.ps1), así que acá no hace falta ninguna
+# credencial de AWS.
+#
+# Si estos tests fallan, el commit igual se puede publicar — pero el
+# auto-update del server hace su propio health check y vuelve atrás si la app
+# no levanta. Este workflow es la primera red; el rollback es la segunda.
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependencias
+        run: pip install --quiet -r requirements.txt
+
+      - name: Sintaxis de Python
+        run: python -m py_compile app.py store.py asinfo.py config.py
+
+      - name: Sintaxis de los templates
+        # py_compile no ve los .html: un {% endif %} de menos sólo se descubre
+        # en runtime, con la pantalla ya rota en producción.
+        run: |
+          python - <<'PY'
+          import os
+          from jinja2 import Environment, FileSystemLoader
+          env = Environment(loader=FileSystemLoader('templates'))
+          for f in sorted(os.listdir('templates')):
+              env.parse(open('templates/' + f).read())
+              print('  ok', f)
+          PY
+
+      - name: Tests
+        run: python scripts/test_maquinas.py
