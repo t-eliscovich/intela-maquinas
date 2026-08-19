@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block titulo %}Cargar service{% endblock %}
+{% block contenido %}
+<h1>Cargar un service hecho</h1>
+<p class="sub">Al guardar, los contadores de esa máquina para ese service vuelven a cero.</p>
+
+<div class="card">
+  <form method="POST" class="formulario">
+    <div>
+      <label class="campo" for="id_maquina">Máquina</label>
+      <select name="id_maquina" id="id_maquina" required>
+        <option value="">— Elegir máquina —</option>
+        {% for m in maquinas %}
+          <option value="{{ m.id }}"
+            {{ 'selected' if request.args.get('id_maquina')|int == m.id }}>{{ m.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label class="campo" for="tipo_id">Qué se le hizo</label>
+      <select name="tipo_id" id="tipo_id" required>
+        <option value="">— Elegir service —</option>
+        {% for t in tipos %}
+          <option value="{{ t.id }}"
+            {{ 'selected' if request.args.get('tipo_id')|int == t.id }}>{{ t.nombre }}</option>
+        {% endfor %}
+      </select>
+      {% if not tipos %}
+        <p class="sub" style="margin-top:8px">
+          No hay tipos cargados. <a href="{{ url_for('tipos_view') }}">Definilos acá primero.</a>
+        </p>
+      {% endif %}
+    </div>
+
+    <div class="fila-grid">
+      <div>
+        <label class="campo" for="fecha">Cuándo</label>
+        <input type="date" name="fecha" id="fecha" value="{{ hoy }}" max="{{ hoy }}" required>
+      </div>
+      <div style="grid-column:span 2">
+        <label class="campo" for="hecho_por">Quién lo hizo</label>
+        <input name="hecho_por" id="hecho_por" list="responsables" required
+               placeholder="Nombre del mecánico" autocomplete="off">
+        <datalist id="responsables">
+          {% for r in responsables %}<option value="{{ r }}">{% endfor %}
+        </datalist>
+      </div>
+    </div>
+
+    <div>
+      <label class="campo" for="nota">Nota (opcional)</label>
+      <textarea name="nota" id="nota" placeholder="Repuestos cambiados, algo raro que se vio…"></textarea>
+    </div>
+
+    <div><button class="btn" type="submit">Guardar service</button></div>
+  </form>
+</div>
+
+{% if historial %}
+<div class="card">
+  <p class="label">Últimos services cargados</p>
+  <table>
+    <thead><tr><th>Fecha</th><th>Máquina</th><th>Service</th><th>Quién</th><th>Nota</th></tr></thead>
+    <tbody>
+    {% for h in historial %}
+      <tr>
+        <td>{{ h.fecha | fecha_es }}</td>
+        <td>{{ h.maquina_nombre }}</td>
+        <td>{{ h.tipo_nombre }}</td>
+        <td>{{ h.hecho_por }}</td>
+        <td style="white-space:normal;color:var(--gris)">{{ h.nota or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

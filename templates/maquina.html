@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block titulo %}{{ maquina.nombre if maquina else 'Máquina' }}{% endblock %}
+{% block contenido %}
+<h1>{{ maquina.nombre if maquina else 'Máquina' }}</h1>
+<p class="sub">Todo lo que se le hizo, de lo más nuevo a lo más viejo.</p>
+
+<div class="card">
+  {% if not historial %}
+    <div class="vacio">Esta máquina todavía no tiene ningún service cargado.</div>
+  {% else %}
+  <table>
+    <thead><tr><th>Fecha</th><th>Service</th><th>Quién</th><th>Nota</th></tr></thead>
+    <tbody>
+    {% for h in historial %}
+      <tr>
+        <td>{{ h.fecha | fecha_es }}</td>
+        <td>{{ h.tipo_nombre }}</td>
+        <td>{{ h.hecho_por }}</td>
+        <td style="white-space:normal;color:var(--gris)">{{ h.nota or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+<a class="btn gris" href="{{ url_for('semaforo') }}">← Volver al semáforo</a>
+{% endblock %}

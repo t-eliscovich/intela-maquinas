@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block titulo %}Arranque{% endblock %}
+{% block contenido %}
+<h1>Poner a contar todas las máquinas</h1>
+<p class="sub">
+  Cada máquina necesita una fecha desde la cual empezar a contar. Acá se la ponés
+  a <b>todas juntas</b>, en vez de cargarlas una por una.
+</p>
+
+{% if not tipos %}
+  <div class="card vacio">
+    <p><b>Primero hay que definir al menos un tipo de service.</b></p>
+    <a class="btn" href="{{ url_for('tipos_view') }}">Ir a tipos de service</a>
+  </div>
+{% elif not maquinas %}
+  <div class="card vacio">No se pudo leer el listado de máquinas de Asinfo.</div>
+{% else %}
+
+<div class="card">
+  <form method="POST" class="formulario">
+    <div>
+      <label class="campo" for="tipo_id">Qué service</label>
+      <select name="tipo_id" id="tipo_id" required>
+        {% for t in tipos %}
+          <option value="{{ t.id }}" {{ 'disabled' if faltan[t.id] == 0 }}>
+            {{ t.nombre }} — {{ faltan[t.id] }} máquina{{ '' if faltan[t.id] == 1 else 's' }} sin arrancar
+            {%- if faltan[t.id] == 0 %} (ya están todas){% endif %}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label class="campo" for="fecha">Contar desde</label>
+      <input type="date" name="fecha" id="fecha" value="{{ hoy }}" max="{{ hoy }}" required>
+      <p class="sub" style="margin:8px 0 0">
+        Si no sabés cuándo fue el último service, poné <b>hoy</b>. El contador arranca
+        de cero y a partir de mañana los números ya son reales. Es preferible eso a
+        inventar una fecha vieja: una fecha inventada pinta rojos que no existen.
+      </p>
+    </div>
+
+    <div>
+      <label class="campo" for="hecho_por">Quién lo carga</label>
+      <input name="hecho_por" id="hecho_por" value="Arranque inicial" required>
+    </div>
+
+    <div>
+      <button class="btn" type="submit"
+              onsubmit="return true;">Poner a contar todas</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <p class="label">Qué va a pasar</p>
+  <ul style="margin:0;padding-left:20px;line-height:1.9">
+    <li>Se crea un registro de service para cada máquina que todavía no tenga uno
+        de ese tipo. Las que ya tienen no se tocan.</li>
+    <li>Desde esa fecha, los kilos y los rollos los cuenta Asinfo solo.</li>
+    <li>Cuando se haga un service de verdad, se carga en
+        <a href="{{ url_for('registrar') }}">Cargar service</a> y esa máquina vuelve a cero.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <p class="label">Las {{ maquinas|length }} máquinas que se van a cargar</p>
+  <p class="sub" style="margin:-4px 0 10px">Salen de Asinfo, no se cargan a mano.</p>
+  <div style="display:flex;flex-wrap:wrap;gap:6px">
+    {% for m in maquinas %}
+      <span style="background:#f1f5f9;border:1px solid var(--borde);border-radius:6px;
+                   padding:3px 8px;font-size:12px;white-space:nowrap">{{ m.nombre }}</span>
+    {% endfor %}
+  </div>
+</div>
+
+{% endif %}
+{% endblock %}
