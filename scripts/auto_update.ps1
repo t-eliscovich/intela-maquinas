@@ -8,16 +8,21 @@
 # guardadas en el repo. Como el repo es publico, el server puede TIRAR del
 # codigo sin ninguna credencial. Menos piezas, nada que rotar, nada que filtrar.
 #
+# IMPORTANTE: este script vive en C:\maquinas_update\, NO en C:\maquinas_app\.
+# La actualizacion borra y reescribe C:\maquinas_app entero; si el script
+# viviera adentro se borraria a si mismo a mitad de camino. Paso exactamente
+# eso en el primer intento (2026-08-19).
+#
 # Nada de esto toca formulas_app, Programa Core ni Metabase.
 
 $ErrorActionPreference = "Stop"
 $repo    = "t-eliscovich/intela-maquinas"
 $app     = "C:\maquinas_app"
 $prev    = "C:\maquinas_app.prev"
-$marca   = "C:\maquinas_app\.commit"
+$marca   = "C:\maquinas_update\.commit"
 $tarea   = "MaquinasApp"
 $puerto  = 5003
-$logs    = "C:\maquinas_app\logs"
+$logs    = "C:\maquinas_update\logs"
 if (-not (Test-Path $logs)) { New-Item -ItemType Directory -Path $logs -Force | Out-Null }
 $log = Join-Path $logs ("update-" + (Get-Date -Format "yyyy-MM") + ".log")
 function Escribir($m) { "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  $m" | Out-File -Append -Encoding UTF8 $log }
@@ -28,7 +33,7 @@ try {
             -Uri "https://api.github.com/repos/$repo/commits/main" `
             -Headers @{ 'User-Agent' = 'maquinas-auto-update' }).sha
 } catch {
-    Escribir "no pude consultar GitHub: $($_.Exception.Message)"
+    Escribir "no pude consultar GitHub: $($_ | Out-String)"
     exit 0    # sin internet no es un error nuestro; se reintenta en 2 min
 }
 
@@ -83,7 +88,7 @@ try {
         Escribir "vuelta atras hecha - el commit $($sha.Substring(0,8)) queda sin aplicar"
     }
 } catch {
-    Escribir "ERROR: $($_.Exception.Message)"
+    Escribir "ERROR: $($_ | Out-String)"
 } finally {
     Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }
