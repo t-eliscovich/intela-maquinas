@@ -18,7 +18,7 @@
       <p>Subí la planilla de control de ajuste en Archivos y tocá «Leer la planilla».</p>
       <a class="btn" href="{{ url_for('archivos') }}">Ir a Archivos</a></div>
   {% else %}
-  <table style="font-size:13px;line-height:1.25">
+  <table>
     <thead><tr>
       <th>Máquina</th><th class="der">rpm</th><th class="der oculta-chico">Sistemas</th>
       <th class="der">Diámetro</th><th class="der oculta-chico">Alimentadores</th>
@@ -51,7 +51,7 @@
 <div class="bloque">
   <div class="titulo"><h2>Consumo de hilo</h2>
     <p>Cuánto lleva cada tela de cada hilo</p></div>
-  <table style="font-size:13px;line-height:1.25">
+  <table>
     <thead><tr><th>Tela</th><th>Hilo</th><th class="oculta-chico">Código</th>
                <th class="der">Rendimiento</th></tr></thead>
     <tbody>
@@ -72,7 +72,7 @@
 <div class="bloque">
   <div class="titulo"><h2>Gramajes medidos</h2>
     <p>El peso que dio la tela de cada máquina</p></div>
-  <table style="font-size:13px;line-height:1.25">
+  <table>
     <thead><tr><th>Máquina</th><th>Fecha</th><th>Tela</th>
                <th class="oculta-chico">Hilos</th><th class="der">Peso</th></tr></thead>
     <tbody>

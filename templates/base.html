@@ -17,7 +17,7 @@
      nada que obligue a scrollear para ver un dato que cabía. */
   *{box-sizing:border-box}
   html{-webkit-text-size-adjust:100%}
-  body{margin:0;background:var(--fondo);color:var(--tinta);font-size:14px;line-height:1.4;
+  body{margin:0;background:var(--fondo);color:var(--tinta);font-size:15px;line-height:1.45;
        font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
        -webkit-font-smoothing:antialiased}
   a{color:var(--acento)}
@@ -29,7 +29,7 @@
   .marca span{opacity:.5;font-weight:600}
   nav{display:flex;gap:2px;flex:1;overflow-x:auto;scrollbar-width:none}
   nav::-webkit-scrollbar{display:none}
-  nav a{color:#a9bdd2;text-decoration:none;padding:13px 10px 10px;font-size:13px;font-weight:600;
+  nav a{color:#a9bdd2;text-decoration:none;padding:13px 11px 10px;font-size:14px;font-weight:600;
         white-space:nowrap;border-bottom:3px solid transparent}
   nav a:hover{color:#fff}
   nav a.activo{color:#fff;border-bottom-color:#fff}
@@ -42,17 +42,17 @@
 
   /* ---------- página ---------- */
   .hoja{max-width:1180px;margin:0 auto;padding:16px 18px 28px}
-  h1{font-size:19px;font-weight:800;letter-spacing:-.02em;margin:0 0 12px;
+  h1{font-size:21px;font-weight:800;letter-spacing:-.02em;margin:0 0 12px;
      display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
-  h1 small{font-size:13px;font-weight:500;color:var(--gris);letter-spacing:0}
+  h1 small{font-size:14px;font-weight:500;color:var(--gris);letter-spacing:0}
   .bloque{background:var(--papel);border:1px solid var(--borde);border-radius:var(--radio);
           margin-bottom:12px;overflow:hidden}
   .bloque > .titulo{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
         padding:9px 14px 8px;border-bottom:1px solid var(--borde)}
-  .bloque > .titulo h2{font-size:13px;font-weight:700;margin:0}
-  .bloque > .titulo p{margin:0;font-size:12px;color:var(--gris)}
+  .bloque > .titulo h2{font-size:14px;font-weight:700;margin:0}
+  .bloque > .titulo p{margin:0;font-size:13px;color:var(--gris)}
   .relleno{padding:14px}
-  .nota{font-size:12px;color:var(--gris);padding:8px 14px;border-top:1px solid var(--borde);
+  .nota{font-size:13px;color:var(--gris);padding:8px 14px;border-top:1px solid var(--borde);
         background:#fafbfc}
 
   /* ---------- números de arriba ---------- */
@@ -62,13 +62,13 @@
          text-decoration:none;color:inherit}
   .cifra:last-child{border-right:0}
   .cifra:hover{background:#fafbfc}
-  .cifra b{display:block;font-size:21px;font-weight:800;letter-spacing:-.02em;line-height:1.15}
-  .cifra small{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.07em;
+  .cifra b{display:block;font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1.15}
+  .cifra small{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;
                color:var(--gris);font-weight:700;margin-top:1px}
 
   /* ---------- tablas ---------- */
   table{width:100%;border-collapse:collapse}
-  th{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--gris);
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--gris);
      font-weight:700;text-align:left;padding:7px 11px;border-bottom:1px solid var(--borde);
      white-space:nowrap;background:#fafbfc}
   td{padding:7px 11px;border-bottom:1px solid #f2f5f8;vertical-align:middle}
@@ -82,14 +82,14 @@
   tr.ok       td:first-child{box-shadow:inset 3px 0 0 var(--verde)}
   tr.sin_tope td:first-child{box-shadow:inset 3px 0 0 #cbd5e1}
 
-  .mq{font-weight:800;font-size:14px}
+  .mq{font-weight:800;font-size:15px}
   .tenue{color:var(--gris)}
-  .chico{font-size:11px;color:var(--gris-claro);display:block;margin-top:0}
+  .chico{font-size:12px;color:var(--gris-claro);display:block;margin-top:0}
 
   .progreso{height:4px;border-radius:999px;background:#eef1f5;overflow:hidden;margin-top:4px}
   .progreso span{display:block;height:100%;border-radius:999px}
 
-  .marca-estado{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.06em;
+  .marca-estado{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.06em;
                 text-transform:uppercase}
   .marca-estado.vencido{color:var(--rojo)}
   .marca-estado.por_vencer{color:var(--ambar)}
@@ -102,51 +102,62 @@
   form.formulario{display:grid;grid-template-columns:repeat(auto-fill,minmax(175px,1fr));
         gap:10px 12px;align-items:end}
   form.formulario .ancho{grid-column:1/-1}
-  .campo{display:block;font-size:11px;font-weight:700;color:var(--gris);margin-bottom:3px}
-  .ayuda{font-size:11px;color:var(--gris-claro);margin:3px 0 0}
-  input,select,textarea{width:100%;height:34px;padding:0 10px;font-size:14px;color:inherit;
+  .campo{display:block;font-size:12px;font-weight:700;color:var(--gris);margin-bottom:3px}
+  .ayuda{font-size:12px;color:var(--gris-claro);margin:3px 0 0}
+  input,select,textarea{width:100%;height:36px;padding:0 10px;font-size:15px;color:inherit;
         border:1px solid #d8dee7;border-radius:8px;background:#fff;font-family:inherit}
   textarea{height:auto;padding:7px 10px;min-height:52px}
   input:focus,select:focus,textarea:focus{outline:none;border-color:var(--acento);
         box-shadow:0 0 0 3px rgba(37,99,235,.14)}
   .rejilla{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:10px 12px}
-  .btn{display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 16px;
-       border:0;border-radius:8px;background:var(--acento);color:#fff;font-size:14px;
+  .btn{display:inline-flex;align-items:center;justify-content:center;height:36px;padding:0 16px;
+       border:0;border-radius:8px;background:var(--acento);color:#fff;font-size:15px;
        font-weight:700;cursor:pointer;text-decoration:none;white-space:nowrap;font-family:inherit}
   .btn:hover{background:#1d4ed8}
   .btn:disabled{background:#c7d2e0;cursor:not-allowed}
   .btn.suave{background:#fff;color:var(--azul);border:1px solid #d8dee7}
   .btn.suave:hover{background:#f7f9fc}
-  .btn.chico{height:28px;padding:0 11px;font-size:12px}
+  .btn.chico{height:30px;padding:0 12px;font-size:13px}
 
   /* ---------- la ficha de una máquina ---------- */
   .ficha-cabecera{display:flex;align-items:center;justify-content:space-between;gap:12px;
         flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--borde)}
   .ficha-nombre{display:flex;align-items:center;gap:10px;min-width:0}
-  .ficha-nombre b{font-size:17px;font-weight:800;letter-spacing:-.01em}
-  .ficha-sigla{background:var(--azul);color:#fff;font-weight:800;font-size:13px;
+  .ficha-nombre b{font-size:19px;font-weight:800;letter-spacing:-.01em}
+  .ficha-sigla{background:var(--azul);color:#fff;font-weight:800;font-size:14px;
         letter-spacing:.04em;padding:5px 10px;border-radius:8px;white-space:nowrap}
   .ficha-buscar{display:flex;gap:6px}
-  .ficha-buscar input{width:180px;height:30px}
-  .ficha-buscar .btn{height:30px;padding:0 13px;background:var(--azul)}
+  .ficha-buscar input{width:180px;height:32px}
+  .ficha-buscar .btn{height:32px;padding:0 13px;background:var(--azul)}
   /* Tres columnas: la ficha de una máquina entra entera sin scrollear. */
   .ficha-datos{display:grid;grid-template-columns:repeat(3,1fr);gap:0 24px;padding:10px 14px}
-  .ficha-datos p{margin:0 0 4px;font-size:13px}
+  .ficha-datos p{margin:0 0 5px;font-size:14px}
   .ficha-datos span{color:var(--gris)}
 
-  .etiqueta{display:inline-block;font-size:11px;font-weight:700;padding:2px 7px;
+  .etiqueta{display:inline-block;font-size:12px;font-weight:700;padding:2px 7px;
         border-radius:999px;margin:0 3px 2px 0;white-space:nowrap}
+
+  /* Lo que no se mira todos los días va plegado. La ficha tiene que abrirse
+     mostrando la máquina y sus mantenimientos, no siete cuadros. */
+  details > summary{cursor:pointer;list-style:none;padding:8px 14px;font-size:13px;
+        font-weight:700;color:var(--azul);background:#fafbfc;
+        border-top:1px solid var(--borde)}
+  details > summary::-webkit-details-marker{display:none}
+  details > summary::before{content:"▸ ";color:var(--gris-claro)}
+  details[open] > summary::before{content:"▾ "}
+  details > summary:hover{background:#f2f5f9}
+  .bloque > details:first-child > summary{border-top:0}
   .etiqueta.limpieza{background:#e8f1fd;color:#1d4ed8}
   .etiqueta.agujas{background:#fdeee8;color:#b45309}
 
   /* ---------- mensajes ---------- */
-  .mensaje{padding:9px 13px;border-radius:9px;margin-bottom:11px;font-weight:600;font-size:13px}
+  .mensaje{padding:10px 14px;border-radius:9px;margin-bottom:11px;font-weight:600;font-size:14px}
   .mensaje.ok{background:#e8f8ee;color:#15803d}
   .mensaje.error{background:#fdeaea;color:#b91c1c}
   .aviso{background:#fef6e7;color:#92400e;padding:9px 13px;border-radius:9px;margin-bottom:11px;
-         font-size:13px}
+         font-size:14px}
   .vacio{text-align:center;color:var(--gris);padding:26px 16px}
-  .vacio h3{font-size:15px;color:var(--tinta);margin:0 0 5px}
+  .vacio h3{font-size:16px;color:var(--tinta);margin:0 0 5px}
   .vacio p{max-width:440px;margin:0 auto 12px}
 
   @media(max-width:760px){

@@ -897,6 +897,7 @@ def maquina_detalle(id_maquina):
         maquinas = []
     maquina = next((m for m in maquinas if m["id"] == id_maquina), None)
 
+    tipos = store.tipos()
     if request.method == "POST":
         try:
             datos = {c: (request.form.get(c) or "").strip() or None
@@ -905,6 +906,17 @@ def maquina_detalle(id_maquina):
                 datos[entero] = excel.a_numero(datos[entero])
             datos["diametro"] = excel.a_decimal(datos["diametro"])
             store.guardar_ficha(id_maquina, datos)
+
+            # Cada cuántos kilos va cada mantenimiento EN ESTA máquina. Se
+            # carga acá y no en una pantalla aparte: el número es de la
+            # máquina, y el mecánico lo decide mirándola a ella.
+            for tipo in tipos:
+                crudo = (request.form.get(f"tope_{tipo['id']}") or "").strip()
+                kg = excel.a_kilos(crudo) if crudo else None
+                if kg is not None and kg <= 0:
+                    raise ValueError("Los kilos tienen que ser mayores que cero.")
+                store.guardar_tope(id_maquina, tipo["id"], kg)
+
             flash("Ficha guardada.", "ok")
         except Exception as exc:  # noqa: BLE001
             flash(str(exc), "error")
@@ -927,6 +939,9 @@ def maquina_detalle(id_maquina):
         ajustes=store.ajustes(id_maquina=id_maquina, limite=30),
         aguja=store.agujas().get(id_maquina),
         eficiencia=store.eficiencias().get(id_maquina),
+        tipos=tipos,
+        topes={t["id"]: store.topes_por_maquina().get((id_maquina, t["id"]))
+               for t in tipos},
     )
 
 

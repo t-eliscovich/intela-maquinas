@@ -56,8 +56,52 @@
     <a href="{{ url_for('maquinas_lista') }}">← Todas las máquinas</a>
     <a href="{{ url_for('registrar') }}?numero={{ maquina.numero if maquina else '' }}">Cargar un mantenimiento</a>
     <a href="{{ url_for('ajustes_view', maquina=maquina.numero if maquina else '') }}">Ver los ajustes</a>
-    <a href="#editar">Editar la ficha</a>
   </div>
+
+  {# Editar va acá, pegado a la ficha, y plegado: antes estaba al final de la
+     pantalla y había que pasar por todo para corregir una galga. #}
+  <details id="editar">
+    <summary>Editar la ficha y los kilos</summary>
+    <div class="relleno" style="padding:10px 14px">
+      <form method="POST" class="formulario" style="max-width:none">
+        <div><label class="campo" for="marca">Marca</label>
+          <input name="marca" id="marca" value="{{ ficha.marca or '' }}"></div>
+        <div><label class="campo" for="modelo">Modelo</label>
+          <input name="modelo" id="modelo" value="{{ ficha.modelo or '' }}"></div>
+        <div><label class="campo" for="galga">Galga</label>
+          <input name="galga" id="galga" value="{{ ficha.galga or '' }}"></div>
+        <div><label class="campo" for="diametro">Diámetro</label>
+          <input name="diametro" id="diametro" value="{{ ficha.diametro | num(0) if ficha.diametro else '' }}"></div>
+        <div><label class="campo" for="alimentadores">Alimentadores</label>
+          <input name="alimentadores" id="alimentadores" value="{{ ficha.alimentadores or '' }}"></div>
+        <div><label class="campo" for="agujas">Agujas</label>
+          <input name="agujas" id="agujas" value="{{ ficha.agujas or '' }}"></div>
+        <div><label class="campo" for="anio">Año</label>
+          <input name="anio" id="anio" value="{{ ficha.anio or '' }}"></div>
+        <div><label class="campo" for="serie">N° de serie</label>
+          <input name="serie" id="serie" value="{{ ficha.serie or '' }}"></div>
+        <div><label class="campo" for="tipo_agujas">Tipo de agujas</label>
+          <input name="tipo_agujas" id="tipo_agujas" value="{{ ficha.tipo_agujas or '' }}"></div>
+
+        {# El tope de kilos es de ESTA máquina: la más cargada teje veinte veces
+           más que la más chica, así que un número único no sirve. #}
+        {% for t in tipos %}
+        <div><label class="campo" for="tope_{{ t.id }}">{{ t.nombre }}, cada … kg</label>
+          <input name="tope_{{ t.id }}" id="tope_{{ t.id }}" inputmode="numeric"
+                 placeholder="sin tope"
+                 value="{{ topes[t.id] | num(0) if topes[t.id] else '' }}"></div>
+        {% endfor %}
+
+        <div class="ancho" style="display:flex;gap:12px;align-items:flex-end">
+          <div style="flex:1;min-width:0">
+            <label class="campo" for="nota">Nota</label>
+            <input name="nota" id="nota" value="{{ ficha.nota or '' }}">
+          </div>
+          <button class="btn" type="submit">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </details>
 </div>
 
 {# ---------- los mantenimientos ---------- #}
@@ -68,7 +112,7 @@
     <div class="vacio"><h3>Todavía no tiene nada anotado</h3>
       <p>Se cargan de a uno, o subiendo la planilla de planta en Archivos.</p></div>
   {% else %}
-  <table style="font-size:13px;line-height:1.25">
+  <table>
     <thead><tr>
       <th>Fecha</th><th class="der">Kilos</th><th>Qué se hizo</th>
       <th class="oculta-chico">Repuestos</th>
@@ -98,29 +142,34 @@
   {% endif %}
 </div>
 
-{% if eficiencia %}
+{# Lo de abajo se mira de vez en cuando, no todos los días: va plegado, para
+   que la ficha se abra mostrando la máquina y sus mantenimientos y nada más. #}
 <div class="bloque">
-  <div class="titulo"><h2>Cuánto debería dar</h2>
-    <p>Es el cálculo de la planilla, no lo que tejió</p></div>
-  <div class="relleno" style="padding:8px 14px"><div class="rejilla" style="gap:6px 12px">
-    <div><span class="campo">Velocidad</span>{{ eficiencia.rpm | num(1) }} rpm</div>
-    <div><span class="campo">Sistemas</span>{{ eficiencia.sistemas or '—' }}</div>
-    <div><span class="campo">Tamaño de rollo</span>{{ eficiencia.tamano_rollo | num(0) }}</div>
-    <div><span class="campo">Minutos por rollo</span>{{ eficiencia.minutos_rollo | num(1) }}</div>
-    <div><span class="campo">En 12 horas</span>
-      <b>{{ eficiencia.kg_dia | num(0) }} kg</b> · {{ eficiencia.rollos_dia | num(0) }} rollos</div>
-    <div><span class="campo">En 24 horas</span>
-      {% if eficiencia.kg_dia_24 %}<b>{{ eficiencia.kg_dia_24 | num(0) }} kg</b>
-        · {{ eficiencia.rollos_dia_24 | num(0) }} rollos{% else %}—{% endif %}</div>
-  </div></div>
-</div>
+
+{% if eficiencia %}
+<details>
+  <summary>Cuánto debería dar</summary>
+  <div class="relleno" style="padding:10px 14px">
+    <p class="ayuda" style="margin:0 0 8px">Es el cálculo de la planilla, no lo que tejió.</p>
+    <div class="rejilla">
+      <div><span class="campo">Velocidad</span>{{ eficiencia.rpm | num(1) }} rpm</div>
+      <div><span class="campo">Sistemas</span>{{ eficiencia.sistemas or '—' }}</div>
+      <div><span class="campo">Tamaño de rollo</span>{{ eficiencia.tamano_rollo | num(0) }}</div>
+      <div><span class="campo">Minutos por rollo</span>{{ eficiencia.minutos_rollo | num(1) }}</div>
+      <div><span class="campo">En 12 horas</span>
+        <b>{{ eficiencia.kg_dia | num(0) }} kg</b> · {{ eficiencia.rollos_dia | num(0) }} rollos</div>
+      <div><span class="campo">En 24 horas</span>
+        {% if eficiencia.kg_dia_24 %}<b>{{ eficiencia.kg_dia_24 | num(0) }} kg</b>
+          · {{ eficiencia.rollos_dia_24 | num(0) }} rollos{% else %}—{% endif %}</div>
+    </div>
+  </div>
+</details>
 {% endif %}
 
 {% if ajustes %}
-<div class="bloque">
-  <div class="titulo"><h2>Cómo se puso para cada tela</h2>
-    <p>Los últimos {{ ajustes | length }}</p></div>
-  <table style="font-size:13px;line-height:1.25">
+<details>
+  <summary>Cómo se puso para cada tela · los últimos {{ ajustes | length }}</summary>
+  <table>
     <thead><tr><th>Fecha</th><th>Tela</th><th>Hilos</th>
                <th class="oculta-chico">Cilindro y poleas</th>
                <th class="oculta-chico">Estiraje</th>
@@ -145,17 +194,14 @@
     <a href="{{ url_for('ajustes_view', maquina=maquina.numero if maquina else '') }}">
       Ver todos los ajustes de esta máquina →</a>
   </p>
-</div>
+</details>
 {% endif %}
 
 {% if mensual %}
 {% set techo = mensual | map(attribute='kg') | max %}
-<div class="bloque">
-  <div class="titulo">
-    <h2>Cuánto teje por mes</h2>
-    <p>Dice si los kilos están bien puestos</p>
-  </div>
-  <table style="font-size:13px;line-height:1.25">
+<details>
+  <summary>Cuánto teje por mes</summary>
+  <table>
     <thead><tr><th>Mes</th><th class="der">Kilos</th><th class="der oculta-chico">Rollos</th>
                <th style="width:45%"></th></tr></thead>
     <tbody>
@@ -170,13 +216,14 @@
     {% endfor %}
     </tbody>
   </table>
-</div>
+  <p class="nota">Sirve para ver si el tope de kilos está bien puesto.</p>
+</details>
 {% endif %}
 
 {% if archivos %}
-<div class="bloque">
-  <div class="titulo"><h2>Archivos de esta máquina</h2></div>
-  <table style="font-size:13px;line-height:1.25">
+<details>
+  <summary>Archivos · {{ archivos | length }}</summary>
+  <table>
     <thead><tr><th>Archivo</th><th class="oculta-chico">Qué es</th><th class="der">Tamaño</th></tr></thead>
     <tbody>
     {% for a in archivos %}
@@ -189,38 +236,8 @@
     {% endfor %}
     </tbody>
   </table>
-</div>
+</details>
 {% endif %}
 
-{# ---------- editar ---------- #}
-<div class="bloque" id="editar">
-  <div class="titulo"><h2>Editar la ficha</h2><p>Lo que no sepas, dejalo vacío</p></div>
-  <div class="relleno" style="padding:9px 14px">
-    <form method="POST" class="formulario" style="max-width:none;gap:7px 12px">
-      <div class="rejilla" style="gap:7px 12px">
-        <div><label class="campo" for="marca">Marca</label>
-          <input name="marca" id="marca" value="{{ ficha.marca or '' }}"></div>
-        <div><label class="campo" for="modelo">Modelo</label>
-          <input name="modelo" id="modelo" value="{{ ficha.modelo or '' }}"></div>
-        <div><label class="campo" for="galga">Galga</label>
-          <input name="galga" id="galga" value="{{ ficha.galga or '' }}"></div>
-        <div><label class="campo" for="diametro">Diámetro</label>
-          <input name="diametro" id="diametro" value="{{ ficha.diametro | num(0) if ficha.diametro else '' }}"></div>
-        <div><label class="campo" for="alimentadores">Alimentadores</label>
-          <input name="alimentadores" id="alimentadores" value="{{ ficha.alimentadores or '' }}"></div>
-        <div><label class="campo" for="agujas">Agujas</label>
-          <input name="agujas" id="agujas" value="{{ ficha.agujas or '' }}"></div>
-        <div><label class="campo" for="anio">Año</label>
-          <input name="anio" id="anio" value="{{ ficha.anio or '' }}"></div>
-        <div><label class="campo" for="serie">N° de serie</label>
-          <input name="serie" id="serie" value="{{ ficha.serie or '' }}"></div>
-        <div style="grid-column:span 2"><label class="campo" for="tipo_agujas">Tipo de agujas</label>
-          <input name="tipo_agujas" id="tipo_agujas" value="{{ ficha.tipo_agujas or '' }}"></div>
-      </div>
-      <div class="ancho"><label class="campo" for="nota">Nota</label>
-        <textarea name="nota" id="nota" style="min-height:38px">{{ ficha.nota or '' }}</textarea></div>
-      <div><button class="btn" type="submit">Guardar</button></div>
-    </form>
-  </div>
 </div>
 {% endblock %}

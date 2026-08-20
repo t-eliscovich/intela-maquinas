@@ -11,7 +11,7 @@
       <p>Subí la planilla de control de ajuste en Archivos y tocá «Leer la planilla».</p>
       <a class="btn" href="{{ url_for('archivos') }}">Ir a Archivos</a></div>
   {% else %}
-  <table style="font-size:13px;line-height:1.25">
+  <table>
     <thead><tr><th>Máquina</th><th>Modelo</th><th>Cilindro</th>
                <th class="oculta-chico">Plato</th><th class="oculta-chico">Platinas</th></tr></thead>
     <tbody>
@@ -34,7 +34,7 @@
 <div class="bloque">
   <div class="titulo"><h2>Agujas por modelo</h2>
     <p>Lo mismo agrupado, con la marca</p></div>
-  <table style="font-size:13px;line-height:1.25">
+  <table>
     <thead><tr><th>Modelo</th><th>Marca</th><th>Códigos</th>
                <th class="oculta-chico">Dónde va</th>
                <th class="oculta-chico">Platinas</th></tr></thead>
@@ -60,7 +60,7 @@
 <div class="bloque">
   <div class="titulo"><h2>Levas</h2>
     <p>La misma leva sirve para varias máquinas del mismo modelo</p></div>
-  <table style="font-size:13px;line-height:1.25">
+  <table>
     <thead><tr><th>Máquinas</th><th>Código</th><th class="der">Cantidad</th>
                <th class="oculta-chico">Dónde va</th>
                <th class="oculta-chico">Para qué</th></tr></thead>
@@ -82,7 +82,7 @@
 {% if bandas %}
 <div class="bloque">
   <div class="titulo"><h2>Bandas</h2><p>Las Memminger, por modelo y diámetro</p></div>
-  <table style="font-size:13px;line-height:1.25">
+  <table>
     <thead><tr><th>Máquinas</th><th class="der">Cuántas</th><th class="der">Diámetro</th>
                <th class="der">1/2</th><th class="der">3/4</th><th class="der">Lycra</th></tr></thead>
     <tbody>
@@ -105,7 +105,7 @@
 {% if bandas_motor %}
 <div class="bloque">
   <div class="titulo"><h2>Bandas de motor</h2><p>Por modelo y diámetro</p></div>
-  <table style="font-size:13px;line-height:1.25">
+  <table>
     <thead><tr><th>Máquinas</th><th class="der">Cuántas</th><th class="der">Diámetro</th>
                <th>Banda</th><th class="oculta-chico">Cobrador</th>
                <th class="oculta-chico">Nota</th></tr></thead>
@@ -130,7 +130,7 @@
   <div class="titulo"><h2>Bandas en stock</h2>
     <p>{{ stock | map(attribute='cantidad') | select | sum | num(0) }} en total ·
        la medida en rojo quedó en cero</p></div>
-  <table style="font-size:13px;line-height:1.25">
+  <table>
     <thead><tr><th>Medida</th><th class="der">Cantidad</th></tr></thead>
     <tbody>
     {% for s in stock %}
