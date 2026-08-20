@@ -105,6 +105,36 @@
 </div>
 
 {# ---------- los mantenimientos ---------- #}
+{# Una máquina puede tener treinta paradas anotadas y la pregunta de todos los
+   días es la última. Se muestran los cinco más nuevos y el resto queda atrás
+   de la flecha. #}
+{% macro parada(d) -%}
+  <tr>
+    <td><b>{{ d.fecha | fecha_es }}</b></td>
+    <td class="der">
+      {% if d.kg is none %}<span class="tenue">—</span>
+      {% else %}{{ d.kg | num(0) }}
+        {% if d.hasta_hoy %}<span class="tenue" style="font-size:11px">hasta hoy</span>{% endif %}
+      {% endif %}
+    </td>
+    <td>
+      {% for t in d.tipos %}
+        <span class="etiqueta {{ 'agujas' if 'aguja' in t | lower else 'limpieza' }}">{{ t }}</span>
+      {% endfor %}
+    </td>
+    <td class="tenue oculta-chico">{{ d.repuestos | join(' · ') or '—' }}</td>
+    <td class="tenue oculta-chico">{{ d.notas | join(' · ') or '—' }}</td>
+  </tr>
+{%- endmacro %}
+
+{% macro encabezado() -%}
+  <thead><tr>
+    <th>Fecha</th><th class="der">Kilos</th><th>Qué se hizo</th>
+    <th class="oculta-chico">Repuestos</th>
+    <th class="oculta-chico">Anotado</th>
+  </tr></thead>
+{%- endmacro %}
+
 <div class="bloque">
   <div class="titulo"><h2>{{ dias | length | num(0) }} mantenimientos</h2>
     <p>Los kilos son lo que tejió desde la parada anterior</p></div>
@@ -113,32 +143,22 @@
       <p>Se cargan de a uno, o subiendo la planilla de planta en Archivos.</p></div>
   {% else %}
   <table>
-    <thead><tr>
-      <th>Fecha</th><th class="der">Kilos</th><th>Qué se hizo</th>
-      <th class="oculta-chico">Repuestos</th>
-      <th class="oculta-chico">Anotado</th>
-    </tr></thead>
+    {{ encabezado() }}
     <tbody>
-    {% for d in dias %}
-      <tr>
-        <td><b>{{ d.fecha | fecha_es }}</b></td>
-        <td class="der">
-          {% if d.kg is none %}<span class="tenue">—</span>
-          {% else %}{{ d.kg | num(0) }}
-            {% if d.hasta_hoy %}<span class="tenue" style="font-size:11px">hasta hoy</span>{% endif %}
-          {% endif %}
-        </td>
-        <td>
-          {% for t in d.tipos %}
-            <span class="etiqueta {{ 'agujas' if 'aguja' in t | lower else 'limpieza' }}">{{ t }}</span>
-          {% endfor %}
-        </td>
-        <td class="tenue oculta-chico">{{ d.repuestos | join(' · ') or '—' }}</td>
-        <td class="tenue oculta-chico">{{ d.notas | join(' · ') or '—' }}</td>
-      </tr>
-    {% endfor %}
+    {% for d in dias[:5] %}{{ parada(d) }}{% endfor %}
     </tbody>
   </table>
+  {% if dias | length > 5 %}
+  <details>
+    <summary>Ver los {{ dias | length - 5 }} anteriores</summary>
+    <table>
+      {{ encabezado() }}
+      <tbody>
+      {% for d in dias[5:] %}{{ parada(d) }}{% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
   {% endif %}
 </div>
 
@@ -146,25 +166,126 @@
    que la ficha se abra mostrando la máquina y sus mantenimientos y nada más. #}
 <div class="bloque">
 
-{% if eficiencia %}
-<details>
+{# Cuánto debería dar. Se edita acá mismo: el número sale de una planilla que
+   se corrige seguido, y mandarla a otra pantalla para cambiar una velocidad
+   es garantía de que no se corrija nunca. #}
+<details id="deberia" {{ 'open' if abrir == 'deberia' }}>
   <summary>Cuánto debería dar</summary>
   <div class="relleno" style="padding:10px 14px">
     <p class="ayuda" style="margin:0 0 8px">Es el cálculo de la planilla, no lo que tejió.</p>
-    <div class="rejilla">
-      <div><span class="campo">Velocidad</span>{{ eficiencia.rpm | num(1) }} rpm</div>
-      <div><span class="campo">Sistemas</span>{{ eficiencia.sistemas or '—' }}</div>
-      <div><span class="campo">Tamaño de rollo</span>{{ eficiencia.tamano_rollo | num(0) }}</div>
-      <div><span class="campo">Minutos por rollo</span>{{ eficiencia.minutos_rollo | num(1) }}</div>
-      <div><span class="campo">En 12 horas</span>
-        <b>{{ eficiencia.kg_dia | num(0) }} kg</b> · {{ eficiencia.rollos_dia | num(0) }} rollos</div>
-      <div><span class="campo">En 24 horas</span>
-        {% if eficiencia.kg_dia_24 %}<b>{{ eficiencia.kg_dia_24 | num(0) }} kg</b>
-          · {{ eficiencia.rollos_dia_24 | num(0) }} rollos{% else %}—{% endif %}</div>
-    </div>
+    <form method="POST" id="eficiencia" class="formulario" style="max-width:none">
+      <input type="hidden" name="que" value="eficiencia">
+      <div><label class="campo" for="rpm">Velocidad (rpm)</label>
+        <input name="rpm" id="rpm" inputmode="decimal"
+               value="{{ eficiencia.rpm | editable if eficiencia else '' }}"></div>
+      <div><label class="campo" for="sistemas">Sistemas</label>
+        <input name="sistemas" id="sistemas"
+               value="{{ eficiencia.sistemas or '' if eficiencia else '' }}"></div>
+      <div><label class="campo" for="tamano_rollo">Tamaño de rollo (vueltas)</label>
+        <input name="tamano_rollo" id="tamano_rollo" inputmode="numeric"
+               value="{{ eficiencia.tamano_rollo | editable if eficiencia else '' }}"></div>
+      <div><label class="campo" for="minutos_rollo">Minutos por rollo</label>
+        <input name="minutos_rollo" id="minutos_rollo" inputmode="decimal"
+               value="{{ eficiencia.minutos_rollo | editable if eficiencia else '' }}"></div>
+      <div><label class="campo" for="rollos_dia">Rollos en 12 horas</label>
+        <input name="rollos_dia" id="rollos_dia" inputmode="numeric"
+               value="{{ eficiencia.rollos_dia | editable if eficiencia else '' }}"></div>
+      <div><label class="campo" for="kg_dia">Kilos en 12 horas</label>
+        <input name="kg_dia" id="kg_dia" inputmode="numeric"
+               value="{{ eficiencia.kg_dia | editable if eficiencia else '' }}"></div>
+      <div><label class="campo" for="rollos_dia_24">Rollos en 24 horas</label>
+        <input name="rollos_dia_24" id="rollos_dia_24" inputmode="numeric"
+               value="{{ eficiencia.rollos_dia_24 | editable if eficiencia else '' }}"></div>
+      <div><label class="campo" for="kg_dia_24">Kilos en 24 horas</label>
+        <input name="kg_dia_24" id="kg_dia_24" inputmode="numeric"
+               value="{{ eficiencia.kg_dia_24 | editable if eficiencia else '' }}"></div>
+      <div><label class="campo" for="diametro_ef">Diámetro</label>
+        <input name="diametro_ef" id="diametro_ef" inputmode="decimal"
+               value="{{ eficiencia.diametro | editable if eficiencia else '' }}"></div>
+      <div><label class="campo" for="alimentadores_ef">Alimentadores</label>
+        <input name="alimentadores_ef" id="alimentadores_ef" inputmode="numeric"
+               value="{{ eficiencia.alimentadores | editable if eficiencia else '' }}"></div>
+
+      <div class="ancho" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <button class="btn" type="submit">Guardar</button>
+        <span class="ayuda" id="la-cuenta" style="margin:0"></span>
+      </div>
+    </form>
   </div>
 </details>
-{% endif %}
+
+{# La cuenta de la planilla: las vueltas del rollo dividido las vueltas por
+   minuto dan los minutos que tarda un rollo, y de ahí cuántos entran en el
+   turno. Lo que se escribe a mano NO se pisa: si el mecánico corrige un
+   número es porque la cuenta no aplica a esa máquina. #}
+<script>
+(function () {
+  var f = document.getElementById("eficiencia");
+  if (!f) { return; }
+  var salida = document.getElementById("la-cuenta");
+  var fuentes = ["rpm", "tamano_rollo"];
+  var calculados = ["minutos_rollo", "rollos_dia", "kg_dia", "rollos_dia_24", "kg_dia_24"];
+
+  function leer(id) {
+    var c = f.elements[id];
+    if (!c) { return null; }
+    var v = (c.value || "").replace(/\./g, "").replace(",", ".");
+    var x = parseFloat(v);
+    return isFinite(x) ? x : null;
+  }
+  function escribir(id, valor, decimales) {
+    var c = f.elements[id];
+    if (!c || c.dataset.mano === "1" || valor === null) { return; }
+    // Cuidado con los ceros del final: 270 no es 27. Sólo se recortan los
+    // ceros que están DESPUÉS de la coma.
+    var t = valor.toFixed(decimales);
+    if (t.indexOf(".") >= 0) { t = t.replace(/0+$/, "").replace(/\.$/, ""); }
+    c.value = t.replace(".", ",");
+  }
+
+  // Los kilos por rollo salen de lo que ya estaba cargado. Si no hay nada
+  // cargado no se inventa un peso: los kilos quedan como están.
+  var kgRollo = null;
+  var kg0 = leer("kg_dia"), r0 = leer("rollos_dia");
+  if (kg0 && r0) { kgRollo = kg0 / r0; }
+
+  // Al abrir la pantalla la cuenta sólo se MUESTRA. Pisar los kilos que hay
+  // cargados sin que nadie toque nada sería cambiarle el número al mecánico
+  // por atrás.
+  function cuenta(escribiendo) {
+    var rpm = leer("rpm"), vueltas = leer("tamano_rollo");
+    if (!rpm || !vueltas) { salida.textContent = ""; return; }
+    var minutos = vueltas / rpm;
+    var r12 = Math.floor(720 / minutos), r24 = Math.floor(1440 / minutos);
+    if (escribiendo) {
+      escribir("minutos_rollo", minutos, 1);
+      escribir("rollos_dia", r12, 0);
+      escribir("rollos_dia_24", r24, 0);
+    }
+    var texto = vueltas.toLocaleString("es") + " vueltas ÷ " + rpm + " rpm = " +
+                minutos.toFixed(1).replace(".", ",") + " minutos por rollo · " +
+                r12 + " rollos en 12 horas · " + r24 + " en 24";
+    if (kgRollo) {
+      if (escribiendo) {
+        escribir("kg_dia", r12 * kgRollo, 0);
+        escribir("kg_dia_24", r24 * kgRollo, 0);
+      }
+      texto += " · cada rollo pesa " + kgRollo.toFixed(1).replace(".", ",") + " kg";
+    }
+    salida.textContent = texto;
+  }
+
+  calculados.forEach(function (id) {
+    var c = f.elements[id];
+    if (c) { c.addEventListener("input", function () { c.dataset.mano = "1"; }); }
+  });
+  fuentes.forEach(function (id) {
+    var c = f.elements[id];
+    if (c) { c.addEventListener("input", function () { cuenta(true); }); }
+  });
+  cuenta(false);
+})();
+</script>
 
 {% if ajustes %}
 <details>

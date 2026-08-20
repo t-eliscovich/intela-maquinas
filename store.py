@@ -44,9 +44,16 @@ def _todos(sql: str, args: tuple = ()) -> list[dict]:
 
 
 def _ejecutar(sql: str, args: tuple = ()) -> None:
+    # El rollback no es de adorno: al editar a mano se viola un índice único
+    # cada tanto, y una conexión que vuelve al pool con la transacción abierta
+    # hace fallar la consulta siguiente, que no tiene nada que ver.
     with _conn() as con, con.cursor() as cur:
-        cur.execute(sql, args)
-        con.commit()
+        try:
+            cur.execute(sql, args)
+            con.commit()
+        except Exception:
+            con.rollback()
+            raise
 
 
 # --------------------------------------------------------------------------
@@ -861,6 +868,107 @@ CAMPOS_EFICIENCIA = ("id_maquina", "rpm", "sistemas", "diametro", "alimentadores
                      "rollos_dia_24", "kg_dia_24")
 CAMPOS_CONSUMO = ("tela", "hilo", "codigo_hilo", "rendimiento")
 CAMPOS_GRAMAJE = ("id_maquina", "fecha", "tela", "hilos", "peso", "orden")
+
+
+# --- Editar los repuestos a mano -------------------------------------------
+# Los seis cuadros de la pantalla de Repuestos, uno al lado del otro: dónde
+# vive cada uno, con qué se reconoce una fila y qué columnas se guardan. La
+# pantalla se arma con esto, así los seis se editan igual y no hay seis
+# códigos parecidos que arreglar de a uno.
+#
+# `fijos` son las columnas que las decide la pestaña, no quien carga: las dos
+# clases de banda viven en la misma tabla y sin esto una taparía a la otra.
+CUADROS: dict[str, dict] = {
+    "agujas": {"tabla": "mantenimiento.aguja_maquina", "clave": "id_maquina",
+               "campos": CAMPOS_AGUJA, "fijos": {}, "orden": "id_maquina"},
+    "modelos": {"tabla": "mantenimiento.aguja_modelo", "clave": "id",
+                "campos": CAMPOS_AGUJA_MODELO, "fijos": {}, "orden": "modelo"},
+    "levas": {"tabla": "mantenimiento.leva", "clave": "id",
+              "campos": CAMPOS_LEVA, "fijos": {},
+              "orden": "maquinas, accionamiento, codigo"},
+    "bandas": {"tabla": "mantenimiento.banda", "clave": "id",
+               "campos": tuple(c for c in CAMPOS_BANDA if c != "clase"),
+               "fijos": {"clase": "memminger"}, "orden": "maquinas, diametro"},
+    "motor": {"tabla": "mantenimiento.banda", "clave": "id",
+              "campos": tuple(c for c in CAMPOS_BANDA if c != "clase"),
+              "fijos": {"clase": "motor"}, "orden": "maquinas, diametro"},
+    "stock": {"tabla": "mantenimiento.banda_stock", "clave": "medida",
+              "campos": ("medida", "cantidad"), "fijos": {}, "orden": "medida"},
+}
+
+
+def filas_de(cuadro: str) -> list[dict]:
+    """Las filas de un cuadro de Repuestos, como se muestran."""
+    c = CUADROS[cuadro]
+    donde = ""
+    if c["fijos"]:
+        donde = "WHERE " + " AND ".join(f"{k} = %s" for k in c["fijos"])
+    return _todos(f"SELECT * FROM {c['tabla']} {donde} ORDER BY {c['orden']}",
+                  tuple(c["fijos"].values()))
+
+
+def guardar_repuesto(cuadro: str, clave, datos: dict) -> None:
+    """Guarda UNA fila. Si no viene la clave, la agrega.
+
+    La clave de una fila que ya existe no se pisa: cambiarla no es corregir un
+    dato, es otra fila. Para eso está agregar.
+    """
+    c = CUADROS[cuadro]
+    valores = {k: (v if v not in ("",) else None)
+               for k, v in datos.items() if k in c["campos"]}
+    valores.update(c["fijos"])
+    natural = c["clave"] in c["campos"]
+
+    if clave in (None, ""):
+        if not any(v is not None for k, v in valores.items() if k not in c["fijos"]):
+            raise ValueError("La fila está vacía: no hay nada para agregar.")
+        if natural and valores.get(c["clave"]) is None:
+            raise ValueError("Falta la primera columna, que es la que identifica la fila.")
+        columnas = list(valores)
+        marcas = ", ".join(["%s"] * len(columnas))
+        conflicto = ""
+        if natural:
+            # Cargar dos veces la misma máquina no es un error de quien carga:
+            # es corregir lo que había.
+            updates = ", ".join(f"{k}=EXCLUDED.{k}" for k in columnas if k != c["clave"])
+            conflicto = f"ON CONFLICT ({c['clave']}) DO UPDATE SET {updates}"
+        _ejecutar(
+            f"""INSERT INTO {c['tabla']} ({', '.join(columnas)})
+                VALUES ({marcas}) {conflicto}""",
+            tuple(valores[k] for k in columnas),
+        )
+        return
+
+    cambios = {k: v for k, v in valores.items() if k != c["clave"]}
+    if not cambios:
+        return
+    sets = ", ".join(f"{k} = %s" for k in cambios)
+    _ejecutar(f"UPDATE {c['tabla']} SET {sets} WHERE {c['clave']} = %s",
+              (*cambios.values(), clave))
+
+
+def borrar_repuesto(cuadro: str, clave) -> None:
+    c = CUADROS[cuadro]
+    _ejecutar(f"DELETE FROM {c['tabla']} WHERE {c['clave']} = %s", (clave,))
+
+
+CAMPOS_EFICIENCIA_EDIT = tuple(c for c in CAMPOS_EFICIENCIA if c != "id_maquina")
+
+
+def guardar_eficiencia(id_maquina: int, datos: dict) -> None:
+    """Cuánto debería dar esa máquina. Es el cálculo de la planilla, no lo que
+    tejió: lo que tejió lo mide Asinfo y no se toca desde acá."""
+    valores = [datos.get(c) for c in CAMPOS_EFICIENCIA_EDIT]
+    columnas = ", ".join(CAMPOS_EFICIENCIA_EDIT)
+    marcas = ", ".join(["%s"] * len(CAMPOS_EFICIENCIA_EDIT))
+    updates = ", ".join(f"{c}=EXCLUDED.{c}" for c in CAMPOS_EFICIENCIA_EDIT)
+    _ejecutar(
+        f"""INSERT INTO mantenimiento.eficiencia (id_maquina, {columnas})
+            VALUES (%s, {marcas})
+            ON CONFLICT (id_maquina) DO UPDATE
+               SET {updates}, editado_en = now()""",
+        (id_maquina, *valores),
+    )
 
 
 def guardar_planilla_ajuste(datos: dict) -> dict:

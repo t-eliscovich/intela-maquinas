@@ -20,6 +20,7 @@ import secrets
 import tempfile
 import time
 from datetime import date, datetime
+from decimal import Decimal
 from functools import wraps
 
 from flask import (Flask, Response, flash, g, redirect, render_template,
@@ -902,6 +903,28 @@ def maquina_detalle(id_maquina):
     maquina = next((m for m in maquinas if m["id"] == id_maquina), None)
 
     tipos = store.tipos()
+    if request.method == "POST" and request.form.get("que") == "eficiencia":
+        # Cuánto DEBERÍA dar. Es el cálculo de la planilla y se corrige a mano;
+        # lo que la máquina tejió de verdad lo mide Asinfo y no se toca de acá.
+        try:
+            store.guardar_eficiencia(id_maquina, {
+                "rpm": excel.a_decimal(request.form.get("rpm")),
+                "sistemas": (request.form.get("sistemas") or "").strip() or None,
+                "diametro": excel.a_decimal(request.form.get("diametro_ef")),
+                "alimentadores": excel.a_numero(request.form.get("alimentadores_ef")),
+                "tamano_rollo": excel.a_kilos(request.form.get("tamano_rollo")),
+                "minutos_rollo": excel.a_decimal(request.form.get("minutos_rollo")),
+                "rollos_dia": excel.a_numero(request.form.get("rollos_dia")),
+                "kg_dia": excel.a_kilos(request.form.get("kg_dia")),
+                "rollos_dia_24": excel.a_numero(request.form.get("rollos_dia_24")),
+                "kg_dia_24": excel.a_kilos(request.form.get("kg_dia_24")),
+            })
+            flash("Guardado cuánto debería dar.", "ok")
+        except Exception as exc:  # noqa: BLE001
+            flash(str(exc), "error")
+        return redirect(url_for("maquina_detalle", id_maquina=id_maquina,
+                                abrir="deberia") + "#deberia")
+
     if request.method == "POST":
         try:
             datos = {c: (request.form.get(c) or "").strip() or None
@@ -953,6 +976,7 @@ def maquina_detalle(id_maquina):
         tipos=tipos,
         topes={t["id"]: store.topes_por_maquina().get((id_maquina, t["id"]))
                for t in tipos},
+        abrir=request.args.get("abrir"),
     )
 
 
@@ -1061,27 +1085,139 @@ def ajustes_view():
 # --------------------------------------------------------------------------
 # Repuestos: agujas, levas y bandas
 # --------------------------------------------------------------------------
-@app.route("/repuestos")
+# Los seis cuadros, como se ven en pantalla. Las columnas de la base están en
+# `store.CUADROS`; acá va sólo cómo se llaman y cómo se escriben. Un test
+# chequea que las dos listas hablen de las mismas columnas.
+CUADROS_REPUESTOS = [
+    {"clave": "agujas", "titulo": "Agujas",
+     "bajada": "Qué aguja lleva cada máquina",
+     "columnas": [
+         {"campo": "id_maquina", "titulo": "Máquina", "tipo": "maquina"},
+         {"campo": "descripcion", "titulo": "Modelo", "tipo": "texto"},
+         {"campo": "cilindro", "titulo": "Cilindro", "tipo": "texto"},
+         {"campo": "plato", "titulo": "Plato", "tipo": "texto"},
+         {"campo": "platinas", "titulo": "Platinas", "tipo": "texto"},
+         {"campo": "nota", "titulo": "Nota", "tipo": "texto"},
+     ]},
+    {"clave": "modelos", "titulo": "Agujas por modelo",
+     "bajada": "Lo mismo agrupado, con la marca",
+     "columnas": [
+         {"campo": "modelo", "titulo": "Modelo", "tipo": "texto"},
+         {"campo": "marca_aguja", "titulo": "Marca", "tipo": "texto"},
+         {"campo": "codigos", "titulo": "Códigos", "tipo": "texto"},
+         {"campo": "donde", "titulo": "Dónde va", "tipo": "texto"},
+         {"campo": "platinas", "titulo": "Platinas", "tipo": "texto"},
+         {"campo": "marca_platina", "titulo": "Marca de la platina", "tipo": "texto"},
+         {"campo": "nota", "titulo": "Nota", "tipo": "texto"},
+     ]},
+    {"clave": "levas", "titulo": "Levas",
+     "bajada": "La misma leva sirve para varias máquinas del mismo modelo",
+     "columnas": [
+         {"campo": "maquinas", "titulo": "Máquinas", "tipo": "texto"},
+         {"campo": "codigo", "titulo": "Código", "tipo": "texto"},
+         {"campo": "cantidad", "titulo": "Cantidad", "tipo": "entero"},
+         {"campo": "ubicacion", "titulo": "Dónde va", "tipo": "texto"},
+         {"campo": "accionamiento", "titulo": "Para qué", "tipo": "texto"},
+     ]},
+    {"clave": "bandas", "titulo": "Bandas",
+     "bajada": "Las Memminger, por modelo y diámetro",
+     "columnas": [
+         {"campo": "maquinas", "titulo": "Máquinas", "tipo": "texto"},
+         {"campo": "cantidad_maquinas", "titulo": "Cuántas", "tipo": "entero"},
+         {"campo": "diametro", "titulo": "Diámetro", "tipo": "decimal", "sufijo": '"'},
+         {"campo": "media", "titulo": "1/2", "tipo": "texto"},
+         {"campo": "tres_cuartos", "titulo": "3/4", "tipo": "texto"},
+         {"campo": "lycra", "titulo": "Lycra", "tipo": "texto"},
+     ]},
+    {"clave": "motor", "titulo": "Bandas de motor",
+     "bajada": "Por modelo y diámetro",
+     "columnas": [
+         {"campo": "maquinas", "titulo": "Máquinas", "tipo": "texto"},
+         {"campo": "cantidad_maquinas", "titulo": "Cuántas", "tipo": "entero"},
+         {"campo": "diametro", "titulo": "Diámetro", "tipo": "decimal", "sufijo": '"'},
+         {"campo": "banda", "titulo": "Banda", "tipo": "texto"},
+         {"campo": "cobrador", "titulo": "Cobrador", "tipo": "texto"},
+         {"campo": "nota", "titulo": "Nota", "tipo": "texto"},
+     ]},
+    {"clave": "stock", "titulo": "Bandas en stock",
+     "bajada": "Cuántas hay de cada medida",
+     "columnas": [
+         {"campo": "medida", "titulo": "Medida", "tipo": "decimal", "decimales": 1},
+         {"campo": "cantidad", "titulo": "Cantidad", "tipo": "entero"},
+     ]},
+]
+
+
+def _valor_de_columna(columna, crudo, maquinas):
+    """Lo que se escribió en una celda, convertido a lo que guarda la base."""
+    crudo = (crudo or "").strip()
+    if not crudo:
+        return None
+    if columna["tipo"] == "maquina":
+        return _buscar_maquina(crudo, maquinas)
+    if columna["tipo"] == "entero":
+        return excel.a_numero(crudo)
+    if columna["tipo"] == "decimal":
+        return excel.a_decimal(crudo)
+    return crudo
+
+
+def _en_criollo(exc):
+    """El error de Postgres no lo lee nadie. Se dice qué pasó."""
+    nombre = type(exc).__name__
+    if nombre == "UniqueViolation":
+        return "Ya hay una fila cargada con esos mismos datos."
+    if nombre == "NotNullViolation":
+        return "Falta llenar una columna que no puede quedar vacía."
+    return str(exc)
+
+
+@app.route("/repuestos", methods=["GET", "POST"])
 @requiere_login
 def repuestos():
     """Qué repuesto lleva cada máquina y cuánto hay.
 
-    Las agujas cuelgan de una máquina; las levas y las bandas, de un modelo:
-    la misma leva sirve para varias. Se muestran como están anotadas.
+    Un cuadro por pestaña: antes venían los seis uno abajo del otro y para
+    mirar las bandas había que pasar por todas las agujas. Cada fila se edita
+    con el lapicito, y abajo de la tabla hay una fila en blanco para agregar.
     """
+    ver = request.values.get("ver") or "agujas"
+    cuadro = next((c for c in CUADROS_REPUESTOS if c["clave"] == ver), None)
+    if cuadro is None:
+        cuadro, ver = CUADROS_REPUESTOS[0], CUADROS_REPUESTOS[0]["clave"]
     try:
         maquinas, _, _ = asinfo.maquinas()
     except asinfo.AsinfoNoDisponible:
         maquinas = []
-    agujas = store.agujas()
-    filas = [{"maquina": m, "aguja": agujas.get(m["id"])} for m in maquinas
-             if agujas.get(m["id"])]
-    filas.sort(key=lambda f: (f["maquina"]["numero"] is None, f["maquina"]["numero"] or 0))
-    return render_template("repuestos.html", filas=filas, levas=store.levas(),
-                           modelos=store.agujas_por_modelo(),
-                           bandas=store.bandas("memminger"),
-                           bandas_motor=store.bandas("motor"),
-                           stock=store.banda_stock())
+
+    if request.method == "POST":
+        clave = (request.form.get("clave") or "").strip() or None
+        try:
+            if request.form.get("accion") == "borrar":
+                if not clave:
+                    raise ValueError("No se sabe qué fila borrar.")
+                store.borrar_repuesto(ver, clave)
+                flash("Fila borrada.", "ok")
+            else:
+                datos = {c["campo"]: _valor_de_columna(c, request.form.get(c["campo"]),
+                                                       maquinas)
+                         for c in cuadro["columnas"]}
+                store.guardar_repuesto(ver, clave, datos)
+                flash("Guardado." if clave else "Fila agregada.", "ok")
+        except Exception as exc:  # noqa: BLE001
+            flash(_en_criollo(exc), "error")
+        return redirect(url_for("repuestos", ver=ver))
+
+    por_id = {m["id"]: m for m in maquinas}
+    filas = store.filas_de(ver)
+    if ver == "agujas":
+        filas.sort(key=lambda f: (por_id.get(f["id_maquina"], {}).get("numero") is None,
+                                  por_id.get(f["id_maquina"], {}).get("numero") or 0))
+    return render_template("repuestos.html", cuadros=CUADROS_REPUESTOS,
+                           cuadro=cuadro, ver=ver, filas=filas,
+                           clave=store.CUADROS[ver]["clave"],
+                           maquinas_por_id=por_id,
+                           editar=(request.args.get("editar") or "").strip())
 
 
 @app.route("/healthz")
@@ -1140,6 +1276,21 @@ def _pct(valor):
 @app.template_filter("fecha_es")
 def _fecha_es(valor):
     return valor.strftime("%d/%m/%Y") if valor else "—"
+
+
+@app.template_filter("editable")
+def _editable(valor):
+    """El valor como se escribe a mano: con coma y sin punto de miles.
+
+    El filtro `num` es para leer (1.410); acá hace falta lo que después se
+    vuelve a guardar, y un punto de miles adentro de un campo se lee mal.
+    """
+    if valor is None:
+        return ""
+    if isinstance(valor, bool) or not isinstance(valor, (int, float, Decimal)):
+        return str(valor)
+    s = f"{float(valor):.4f}".rstrip("0").rstrip(".")
+    return s.replace(".", ",")
 
 
 @app.template_filter("mq")

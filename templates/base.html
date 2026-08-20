@@ -150,6 +150,24 @@
   .etiqueta.limpieza{background:#e8f1fd;color:#1d4ed8}
   .etiqueta.agujas{background:#fdeee8;color:#b45309}
 
+  /* ---------- pestañas ---------- */
+  /* Seis cuadros uno abajo del otro obligaban a pasar por las agujas para
+     mirar las bandas. Cada cuadro es una pestaña y se abre el que se pide. */
+  .pestanas{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+  .pestanas a{padding:6px 13px;border-radius:999px;background:var(--papel);
+        border:1px solid var(--borde);text-decoration:none;color:var(--azul);
+        font-weight:700;font-size:13px;white-space:nowrap}
+  .pestanas a:hover{background:#f2f5f9}
+  .pestanas a.activa{background:var(--azul);color:#fff;border-color:var(--azul)}
+
+  /* ---------- editar una fila en su lugar ---------- */
+  td input{height:30px;font-size:14px;padding:0 7px}
+  tr.editando td, tr.nueva td{background:#f7faff}
+  tr.nueva td{border-top:1px solid var(--borde)}
+  .acciones{display:flex;gap:6px;justify-content:flex-end;white-space:nowrap}
+  .lapiz{text-decoration:none;font-size:15px;opacity:.55}
+  .lapiz:hover{opacity:1}
+
   /* ---------- mensajes ---------- */
   .mensaje{padding:10px 14px;border-radius:9px;margin-bottom:11px;font-weight:600;font-size:14px}
   .mensaje.ok{background:#e8f8ee;color:#15803d}

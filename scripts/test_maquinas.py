@@ -883,6 +883,25 @@ store.bandas = lambda clase="memminger": [
      "diametro": 30, "media": "6.6", "tres_cuartos": "8.2", "lycra": None,
      "banda": "M-45", "cobrador": "SI", "nota": None}]
 store.banda_stock = lambda: [{"medida": 6.6, "cantidad": 10}]
+# Repuestos se muestra de a un cuadro por pestaña, y los seis salen del mismo
+# lugar. Cada cuadro devuelve su fila de mentira.
+FILAS_CUADRO = {
+    "agujas": [{"id_maquina": 10, "descripcion": "MAYER", "cilindro": "VO LS-140,50",
+                "plato": None, "platinas": "206085101G00", "nota": None}],
+    "modelos": [{"id": 1, "modelo": "MAYER)1-2-3", "marca_aguja": "GROZ",
+                 "codigos": "LS-140.50", "donde": "cilindro",
+                 "platinas": "206085101G00", "marca_platina": "GROZ", "nota": None}],
+    "levas": [{"id": 1, "maquinas": "MAYER (1 )", "codigo": "30-32", "cantidad": 208,
+               "ubicacion": "cilindro", "accionamiento": "TRABAJO"}],
+    "bandas": [{"id": 1, "maquinas": "MAYER JERSEY", "cantidad_maquinas": 2,
+                "diametro": 30, "media": "6.6", "tres_cuartos": "8.2", "lycra": None,
+                "banda": None, "cobrador": None, "nota": None}],
+    "motor": [{"id": 2, "maquinas": "MAYER JERSEY", "cantidad_maquinas": 2,
+               "diametro": 30, "media": None, "tres_cuartos": None, "lycra": None,
+               "banda": "M-45", "cobrador": "SI", "nota": None}],
+    "stock": [{"medida": 6.6, "cantidad": 10}],
+}
+store.filas_de = lambda cuadro: list(FILAS_CUADRO[cuadro])
 # La 11 está anotada en la planilla pero sin números: pasa de verdad, y sumar
 # un vacío rompía la pantalla.
 store.eficiencias = lambda: {10: {"id_maquina": 10, "rpm": 25, "sistemas": "102",
@@ -903,7 +922,9 @@ store.fichas = lambda: {10: {"marca": "Mayer", "modelo": "Relanit", "galga": 24,
                             "anio": 2017, "serie": "7", "tipo_agujas": None, "nota": None}}
 for ruta in ("/", "/registrar", "/tipos", "/arranque", "/carga", "/maquina/10",
              "/maquinas", "/archivos", "/ajustes", "/ajustes?tela=FALSO",
-             "/ajustes?maquina=1", "/repuestos"):
+             "/ajustes?maquina=1", "/repuestos", "/repuestos?ver=levas",
+             "/repuestos?ver=motor", "/repuestos?ver=stock",
+             "/repuestos?ver=levas&editar=1"):
     r = c.get(ruta)
     check(f"{ruta} abre", r.status_code == 200)
 r = c.get("/?solo=vencidas")
@@ -922,6 +943,88 @@ check("un numero que no existe vuelve al listado y lo dice",
 cuerpo = c.get("/maquina/10").get_data(as_text=True)
 check("la ficha muestra los dias, no los registros sueltos",
       "Limpieza" in cuerpo and "Cambio de agujas" in cuerpo)
+
+
+# --- 10. editar los repuestos a mano ---------------------------------------
+print("Repuestos a mano:")
+check("las columnas de la pantalla existen en la base",
+      all(col["campo"] in store.CUADROS[cu["clave"]]["campos"]
+          for cu in A.CUADROS_REPUESTOS for col in cu["columnas"]))
+
+corridas = []
+store._ejecutar = lambda sql, args=(): corridas.append((" ".join(sql.split()), args))
+
+store.guardar_repuesto("levas", None, {"maquinas": "MAYER (5)", "codigo": "30-32",
+                                       "cantidad": 12, "ubicacion": None,
+                                       "accionamiento": None})
+check("agregar una leva es un INSERT", corridas[-1][0].startswith("INSERT INTO mantenimiento.leva"))
+
+store.guardar_repuesto("motor", None, {"maquinas": "MAYER", "diametro": 30})
+check("la banda nueva se guarda en la clase de la pestaña",
+      "clase" in corridas[-1][0] and "motor" in corridas[-1][1])
+
+store.guardar_repuesto("levas", "7", {"maquinas": "MAYER (5)", "codigo": "30-33"})
+check("editar una leva es un UPDATE por su id",
+      corridas[-1][0].startswith("UPDATE mantenimiento.leva") and corridas[-1][1][-1] == "7")
+
+# La clave es lo que identifica la fila: cambiarla no es corregir un dato.
+store.guardar_repuesto("stock", 6.6, {"medida": 9.9, "cantidad": 4})
+check("editando no se pisa la clave de la fila",
+      corridas[-1][0] ==
+      "UPDATE mantenimiento.banda_stock SET cantidad = %s WHERE medida = %s"
+      and corridas[-1][1] == (4, 6.6))
+
+# Cargar dos veces la misma máquina es corregir lo que había, no un error.
+store.guardar_repuesto("agujas", None, {"id_maquina": 10, "descripcion": "MAYER"})
+check("la aguja de una maquina que ya estaba se corrige, no se duplica",
+      "ON CONFLICT (id_maquina) DO UPDATE" in corridas[-1][0])
+
+try:
+    store.guardar_repuesto("levas", None, {"maquinas": None, "codigo": None})
+    vacia = "no avisó"
+except ValueError as exc:
+    vacia = str(exc)
+check("la fila vacia no se agrega y lo dice", "vacía" in vacia)
+
+store.borrar_repuesto("levas", "7")
+check("borrar es un DELETE por su id",
+      corridas[-1][0] == "DELETE FROM mantenimiento.leva WHERE id = %s")
+
+cuerpo = c.get("/repuestos?ver=levas&editar=1").get_data(as_text=True)
+check("el lapicito abre la fila como campos",
+      'name="codigo"' in cuerpo and 'form="editar-fila"' in cuerpo)
+check("siempre hay una fila en blanco para agregar", 'form="fila-nueva"' in cuerpo)
+check("las pestañas llevan a los seis cuadros",
+      all(f"ver={cu['clave']}" in cuerpo for cu in A.CUADROS_REPUESTOS))
+
+# --- 11. la ficha: los ultimos 5 y cuanto deberia dar ----------------------
+print("Ficha:")
+store.historial = lambda id_maquina=None, limite=200: [
+    {"fecha": date(2026, 8, 20) - timedelta(days=30 * i), "tipo_nombre": "Limpieza",
+     "hecho_por": "Roberto", "nota": f"parada {i}", "repuestos": None, "horas": 1,
+     "maquina_nombre": "TEJEDURIA-MQ 001"} for i in range(9)]
+cuerpo = c.get("/maquina/10").get_data(as_text=True)
+check("se muestran los 5 mas nuevos y el resto atras de la flecha",
+      "parada 4" in cuerpo and "Ver los 4 anteriores" in cuerpo)
+
+guardado = {}
+store.guardar_eficiencia = lambda id_maquina, datos: guardado.update(
+    {"id": id_maquina, **datos})
+r = c.post("/maquina/10", data={"que": "eficiencia", "rpm": "25,0",
+                                "sistemas": "102", "tamano_rollo": "1.410",
+                                "minutos_rollo": "56,4", "rollos_dia": "12",
+                                "kg_dia": "270", "rollos_dia_24": "25",
+                                "kg_dia_24": "612"})
+check("se puede editar cuanto deberia dar",
+      r.status_code == 302 and guardado["rpm"] == 25 and guardado["tamano_rollo"] == 1410
+      and guardado["kg_dia_24"] == 612)
+check("el tamaño de rollo con punto son mil cuatrocientas diez vueltas",
+      guardado["tamano_rollo"] == 1410)
+
+# 270 no es 27: los ceros del final no se recortan.
+check("el valor para escribir a mano no pierde los ceros",
+      A._editable(270) == "270" and A._editable(22.5) == "22,5"
+      and A._editable(None) == "")
 
 print()
 if fallos:

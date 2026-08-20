@@ -4,143 +4,111 @@
 
 <h1>Repuestos <small>Agujas, levas y bandas</small></h1>
 
-<div class="bloque">
-  <div class="titulo"><h2>Agujas</h2><p>{{ filas | length }} máquinas</p></div>
-  {% if not filas %}
-    <div class="vacio"><h3>Todavía no hay agujas cargadas</h3>
-      <p>Se cargan desde la planilla de control de ajuste de planta.</p></div>
+<div class="pestanas">
+  {% for c in cuadros %}
+    <a href="{{ url_for('repuestos', ver=c.clave) }}"
+       class="{{ 'activa' if c.clave == ver }}">{{ c.titulo }}</a>
+  {% endfor %}
+</div>
+
+{# Un valor como se ve, y el mismo valor como se escribe a mano. Están acá y
+   no repetidos en cada columna: los seis cuadros se muestran igual. #}
+{% macro celda(f, c) -%}
+  {% if c.tipo == 'maquina' %}
+    {% set m = maquinas_por_id.get(f[c.campo]) %}
+    <a href="{{ url_for('maquina_detalle', id_maquina=f[c.campo]) }}"
+       class="mq" style="text-decoration:none">{{ m | mq }}</a>
+  {% elif c.tipo in ('entero', 'decimal') %}
+    {{ f[c.campo] | num(c.decimales or 0) }}{{ c.sufijo if f[c.campo] is not none }}
   {% else %}
+    {{ f[c.campo] or '—' }}
+  {% endif %}
+{%- endmacro %}
+
+{% macro campo(f, c, formulario) -%}
+  {% if c.tipo == 'maquina' %}
+    {% set m = maquinas_por_id.get(f[c.campo]) if f else None %}
+    <input form="{{ formulario }}" name="{{ c.campo }}" inputmode="numeric"
+           placeholder="ej. 21" value="{{ m.numero if m else '' }}">
+  {% else %}
+    <input form="{{ formulario }}" name="{{ c.campo }}"
+           {{ 'inputmode=numeric' if c.tipo in ('entero', 'decimal') }}
+           value="{{ f[c.campo] | editable if f else '' }}">
+  {% endif %}
+{%- endmacro %}
+
+<div class="bloque">
+  <div class="titulo"><h2>{{ cuadro.titulo }}</h2>
+    <p>{{ cuadro.bajada }} · {{ filas | length }}
+       {{ 'fila' if filas | length == 1 else 'filas' }}</p></div>
+
+  {# Los campos viven adentro de la tabla y se enganchan con `form=`: un
+     formulario no puede envolver una fila sin romper la tabla. #}
+  <form id="editar-fila" method="POST" action="{{ url_for('repuestos') }}">
+    <input type="hidden" name="ver" value="{{ ver }}">
+    <input type="hidden" name="clave" value="{{ editar }}">
+  </form>
+  <form id="fila-nueva" method="POST" action="{{ url_for('repuestos') }}">
+    <input type="hidden" name="ver" value="{{ ver }}">
+  </form>
+
   <table>
-    <thead><tr><th>Máquina</th><th>Modelo</th><th>Cilindro</th>
-               <th class="oculta-chico">Plato</th><th class="oculta-chico">Platinas</th></tr></thead>
+    <thead><tr>
+      {% for c in cuadro.columnas %}
+        <th class="{{ 'der' if c.tipo in ('entero','decimal') }}
+                   {{ 'oculta-chico' if loop.index > 3 }}">{{ c.titulo }}</th>
+      {% endfor %}
+      <th></th>
+    </tr></thead>
     <tbody>
     {% for f in filas %}
-      <tr>
-        <td><a href="{{ url_for('maquina_detalle', id_maquina=f.maquina.id) }}"
-               class="mq" style="text-decoration:none">{{ f.maquina | mq }}</a></td>
-        <td>{{ f.aguja.descripcion or '—' }}</td>
-        <td class="tenue">{{ f.aguja.cilindro or '—' }}</td>
-        <td class="tenue oculta-chico">{{ f.aguja.plato or '—' }}</td>
-        <td class="tenue oculta-chico">{{ f.aguja.platinas or '—' }}</td>
-      </tr>
+      {% if editar and f[clave] | string == editar %}
+        <tr class="editando">
+          {% for c in cuadro.columnas %}
+            <td class="{{ 'oculta-chico' if loop.index > 3 }}">{{ campo(f, c, 'editar-fila') }}</td>
+          {% endfor %}
+          <td>
+            <div class="acciones">
+              <button class="btn chico" form="editar-fila" type="submit">Guardar</button>
+              <a class="btn chico suave" href="{{ url_for('repuestos', ver=ver) }}">Dejar</a>
+              <button class="btn chico suave" form="editar-fila" type="submit"
+                      name="accion" value="borrar"
+                      onclick="return confirm('¿Borrar esta fila?')">Borrar</button>
+            </div>
+          </td>
+        </tr>
+      {% else %}
+        <tr>
+          {% for c in cuadro.columnas %}
+            <td class="{{ 'der' if c.tipo in ('entero','decimal') }}
+                       {{ 'tenue' if loop.index > 1 and c.tipo == 'texto' }}
+                       {{ 'oculta-chico' if loop.index > 3 }}">{{ celda(f, c) }}</td>
+          {% endfor %}
+          <td class="der">
+            <a class="lapiz" title="Editar esta fila"
+               href="{{ url_for('repuestos', ver=ver, editar=f[clave]) }}">✏️</a>
+          </td>
+        </tr>
+      {% endif %}
     {% endfor %}
+
+    {# La fila en blanco de abajo es para agregar. Está siempre: cargar algo
+       nuevo no tiene que empezar por buscar un botón. #}
+      <tr class="nueva">
+        {% for c in cuadro.columnas %}
+          <td class="{{ 'oculta-chico' if loop.index > 3 }}">{{ campo(None, c, 'fila-nueva') }}</td>
+        {% endfor %}
+        <td><div class="acciones">
+          <button class="btn chico" form="fila-nueva" type="submit">Agregar</button>
+        </div></td>
+      </tr>
     </tbody>
   </table>
+
+  {% if not filas %}
+    <p class="nota">Todavía no hay nada cargado en este cuadro. Se llena acá, o
+      subiendo la planilla de control de ajuste en Archivos.</p>
   {% endif %}
 </div>
-
-{% if modelos %}
-<div class="bloque">
-  <div class="titulo"><h2>Agujas por modelo</h2>
-    <p>Lo mismo agrupado, con la marca</p></div>
-  <table>
-    <thead><tr><th>Modelo</th><th>Marca</th><th>Códigos</th>
-               <th class="oculta-chico">Dónde va</th>
-               <th class="oculta-chico">Platinas</th></tr></thead>
-    <tbody>
-    {% for m in modelos %}
-      <tr>
-        <td>{{ m.modelo }}</td>
-        <td class="tenue">{{ m.marca_aguja or '—' }}</td>
-        <td class="tenue">{{ m.codigos or '—' }}</td>
-        <td class="tenue oculta-chico">{{ m.donde or '—' }}</td>
-        <td class="tenue oculta-chico">
-          {{ m.platinas or '—' }}
-          {% if m.marca_platina %}<span style="font-size:11px">· {{ m.marca_platina }}</span>{% endif %}
-        </td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
-
-{% if levas %}
-<div class="bloque">
-  <div class="titulo"><h2>Levas</h2>
-    <p>La misma leva sirve para varias máquinas del mismo modelo</p></div>
-  <table>
-    <thead><tr><th>Máquinas</th><th>Código</th><th class="der">Cantidad</th>
-               <th class="oculta-chico">Dónde va</th>
-               <th class="oculta-chico">Para qué</th></tr></thead>
-    <tbody>
-    {% for l in levas %}
-      <tr>
-        <td>{{ l.maquinas }}</td>
-        <td class="tenue">{{ l.codigo }}</td>
-        <td class="der">{{ l.cantidad | num(0) }}</td>
-        <td class="tenue oculta-chico">{{ l.ubicacion or '—' }}</td>
-        <td class="oculta-chico">{{ l.accionamiento or '—' }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
-
-{% if bandas %}
-<div class="bloque">
-  <div class="titulo"><h2>Bandas</h2><p>Las Memminger, por modelo y diámetro</p></div>
-  <table>
-    <thead><tr><th>Máquinas</th><th class="der">Cuántas</th><th class="der">Diámetro</th>
-               <th class="der">1/2</th><th class="der">3/4</th><th class="der">Lycra</th></tr></thead>
-    <tbody>
-    {% for b in bandas %}
-      <tr>
-        <td>{{ b.maquinas }}</td>
-        <td class="der">{{ b.cantidad_maquinas | num(0) }}</td>
-        <td class="der">{{ b.diametro | num(0) }}"</td>
-        <td class="der">{{ b.media or '—' }}</td>
-        <td class="der">{{ b.tres_cuartos or '—' }}</td>
-        <td class="der">{{ b.lycra or '—' }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  <p class="nota">Las de motor van en el cuadro de abajo.</p>
-</div>
-{% endif %}
-
-{% if bandas_motor %}
-<div class="bloque">
-  <div class="titulo"><h2>Bandas de motor</h2><p>Por modelo y diámetro</p></div>
-  <table>
-    <thead><tr><th>Máquinas</th><th class="der">Cuántas</th><th class="der">Diámetro</th>
-               <th>Banda</th><th class="oculta-chico">Cobrador</th>
-               <th class="oculta-chico">Nota</th></tr></thead>
-    <tbody>
-    {% for b in bandas_motor %}
-      <tr>
-        <td>{{ b.maquinas }}</td>
-        <td class="der">{{ b.cantidad_maquinas | num(0) }}</td>
-        <td class="der">{{ (b.diametro | num(0)) ~ '"' if b.diametro else '—' }}</td>
-        <td>{{ b.banda or '—' }}</td>
-        <td class="tenue oculta-chico">{{ b.cobrador or '—' }}</td>
-        <td class="tenue oculta-chico">{{ b.nota or '—' }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
-
-{% if stock %}
-<div class="bloque">
-  <div class="titulo"><h2>Bandas en stock</h2>
-    <p>{{ stock | map(attribute='cantidad') | select | sum | num(0) }} en total ·
-       la medida en rojo quedó en cero</p></div>
-  <table>
-    <thead><tr><th>Medida</th><th class="der">Cantidad</th></tr></thead>
-    <tbody>
-    {% for s in stock %}
-      <tr {{ 'class=vencido' if not s.cantidad }}>
-        <td>{{ s.medida | num(1) }}</td>
-        <td class="der">{{ s.cantidad | num(0) }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
 
 {% endblock %}

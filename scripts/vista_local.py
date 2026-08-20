@@ -71,6 +71,12 @@ store.historial = lambda id_maquina=None, limite=200: [
     {"fecha": hoy - timedelta(days=520), "tipo_nombre": "Limpieza",
      "hecho_por": "Humberto", "nota": "limpiesa de memminger", "repuestos": None,
      "horas": None, "maquina_nombre": "TEJEDURIA-MQ 001"},
+] + [
+    # Una máquina vieja tiene decenas de paradas anotadas: así se ve que en la
+    # ficha entran los cinco últimos y el resto queda atrás de la flecha.
+    {"fecha": hoy - timedelta(days=560 + i * 45), "tipo_nombre": "Limpieza",
+     "hecho_por": "Roberto", "nota": "limpieza general", "repuestos": None,
+     "horas": 2, "maquina_nombre": "TEJEDURIA-MQ 001"} for i in range(8)
 ]
 store.ultimos_por_maquina_y_tipo = lambda: {
     (m["id"], t["id"]): {"fecha": hoy - timedelta(days=30 + (m["id"] % 90)),
@@ -119,6 +125,15 @@ store.bandas = lambda clase="memminger": (
     [{"id": 3, "clase": "motor", "maquinas": "MAYER", "cantidad_maquinas": 2,
       "diametro": 30, "media": None, "tres_cuartos": None, "lycra": None,
       "banda": "1040 M8 /50", "cobrador": "14/5/1015LI", "nota": None}])
+# Repuestos va de a un cuadro por pestaña: todos salen de `filas_de`.
+store.filas_de = lambda cuadro: {
+    "agujas": [dict(AGUJA_FALSA, id_maquina=m["id"]) for m in MAQS[:6]],
+    "modelos": store.agujas_por_modelo(),
+    "levas": store.levas(),
+    "bandas": store.bandas("memminger"),
+    "motor": store.bandas("motor"),
+    "stock": store.banda_stock(),
+}[cuadro]
 store.banda_stock = lambda: [{"medida": 6.6, "cantidad": 10},
                              {"medida": 7.2, "cantidad": 20},
                              {"medida": 7.8, "cantidad": 0}]
@@ -167,7 +182,9 @@ for nombre, ruta in [("semaforo", "/"), ("semaforo-vencidas", "/?solo=vencidas")
                      ("arranque", "/arranque"), ("subir-excel", "/carga"),
                      ("maquinas", "/maquinas"), ("ficha-maquina", "/maquina/101"),
                      ("ajustes", "/ajustes"), ("ajustes-por-tela", "/ajustes?tela=PIQUE"),
-                     ("repuestos", "/repuestos")]:
+                     ("repuestos", "/repuestos"),
+                     ("repuestos-levas", "/repuestos?ver=levas"),
+                     ("repuestos-editando", "/repuestos?ver=levas&editar=1")]:
     guardar(nombre, c.get(ruta))
 
 # La pantalla de revisión necesita un Excel: armamos uno parecido al de planta.
