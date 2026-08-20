@@ -40,11 +40,13 @@ app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024  # un Excel de planta es chic
 # Cuánto antes del tope se pone amarillo.
 AVISO = 0.80
 
+CARPETA = os.path.dirname(os.path.abspath(__file__))
+
+
 # Qué commit está corriendo. Lo escribe el auto-updater al reemplazar la
 # carpeta; si el archivo no está, decimos que no se sabe en vez de inventar.
 def _version():
-    for ruta in (os.path.join(os.path.dirname(os.path.abspath(__file__)), ".version"),
-                 r"C:\maquinas_update\.commit"):
+    for ruta in (os.path.join(CARPETA, ".version"), r"C:\maquinas_update\.commit"):
         try:
             with open(ruta) as f:
                 return f.read().strip()[:7] or "?"
@@ -53,7 +55,29 @@ def _version():
     return "?"
 
 
+def _desplegado():
+    """Cuándo se instaló el código que está corriendo AHORA.
+
+    No sale de ningún archivo que alguien tenga que acordarse de escribir: es
+    la fecha del código mismo. Existe porque el commit de arriba se quedó
+    pegado en un deploy viejo y no había forma de darse cuenta — se pusheaba,
+    la pantalla cambiaba, y `version` seguía mostrando lo de la mañana. Media
+    hora perdida mirando el número equivocado.
+    """
+    ultimo = 0.0
+    try:
+        for nombre in os.listdir(CARPETA):
+            if nombre.endswith(".py"):
+                ultimo = max(ultimo, os.path.getmtime(os.path.join(CARPETA, nombre)))
+    except OSError:
+        return None
+    if not ultimo:
+        return None
+    return datetime.fromtimestamp(ultimo).isoformat(timespec="seconds")
+
+
 VERSION = _version()
+DESPLEGADO = _desplegado()
 
 # Dónde se guarda el Excel mientras se revisa antes de confirmar.
 CARPETA_CARGA = os.path.join(tempfile.gettempdir(), "maquinas_carga")
@@ -1072,6 +1096,10 @@ def healthz():
         # si el server se actualizó: se pushea, pasa el CI, y uno se queda
         # mirando la pantalla vieja sin entender por qué.
         "version": VERSION,
+        # Y cuándo se instaló. `version` sale de un archivo que escribe el
+        # updater y ya se quedó pegado una vez; esto sale del código mismo, así
+        # que no puede mentir.
+        "desplegado": DESPLEGADO,
     }
     if ERROR_ARRANQUE:
         estado["error_arranque"] = ERROR_ARRANQUE

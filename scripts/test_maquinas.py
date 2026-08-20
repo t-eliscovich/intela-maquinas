@@ -53,6 +53,11 @@ print("Base caída:")
 check("importa sin reventar (asi la importa waitress)", A.ERROR_ARRANQUE is not None)
 r = c.get("/healthz")
 check("healthz devuelve 503 y explica", r.status_code == 503 and "error_arranque" in r.get_json())
+# `version` sale de un archivo que escribe el updater y ya se quedó pegado en un
+# deploy viejo una vez. `desplegado` sale del código mismo: dice cuándo se
+# instaló lo que está corriendo, y no depende de que nadie lo escriba.
+check("healthz dice cuando se desplego el codigo que corre",
+      r.get_json().get("desplegado") is not None)
 r = c.get("/")
 check("pantalla explica en vez de 500", r.status_code == 503 and "No hay conexión" in r.get_data(as_text=True))
 
