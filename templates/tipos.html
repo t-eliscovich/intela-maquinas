@@ -1,91 +1,57 @@
 {% extends "base.html" %}
-{% block titulo %}Tipos de service{% endblock %}
+{% block titulo %}Tipos{% endblock %}
 {% block contenido %}
-<h1>Tipos de service</h1>
-<p class="sub">
-  Cada tipo puede tener uno, dos o los tres umbrales. <b>El que se cumpla primero manda.</b>
-  Lo que dejes vacío no se controla.
-</p>
+<h1>Tipos de mantenimiento
+  <small>Poné cada cuántos kilos toca. Vacío = no se controla.</small></h1>
 
 {% if not tipos %}
-<div class="card" style="border-color:#bfdbfe;background:#eff6ff">
-  <p class="label" style="border-left-color:#2563eb">Empezá por acá</p>
-  <p style="margin:0 0 14px;line-height:1.7;max-width:620px">
-    Cargá la lista sugerida para una tejedora circular y después corregí los números
-    con el mecánico. <b>Los umbrales de abajo son de ejemplo</b> — lo importante es
-    tener de dónde partir, no que estén bien de entrada.
-  </p>
-  <table style="margin-bottom:14px;max-width:620px">
-    <thead><tr><th>Service</th><th class="der">Cada … kg</th><th class="der">Cada … rollos</th><th class="der">Cada … días</th></tr></thead>
-    <tbody>
-      <tr><td>Limpieza general</td><td class="der">50.000</td><td class="der">2.500</td><td class="der">30</td></tr>
-      <tr><td>Engrase / lubricación</td><td class="der">80.000</td><td class="der">4.000</td><td class="der">60</td></tr>
-      <tr><td>Cambio de agujas</td><td class="der">250.000</td><td class="der">12.000</td><td class="der">365</td></tr>
-      <tr><td>Cambio de platinas</td><td class="der">400.000</td><td class="der">20.000</td><td class="der">730</td></tr>
-    </tbody>
-  </table>
+<div class="bloque"><div class="vacio">
+  <h3>Todavía no hay ninguno</h3>
+  <p>Cargá la lista sugerida y después corregí los números con el mecánico.
+     Son de ejemplo: lo importante es tener de dónde partir.</p>
   <form method="POST" action="{{ url_for('tipos_sugeridos') }}">
-    <button class="btn" type="submit">Cargar estos cuatro y después los edito</button>
+    <button class="btn" type="submit">Cargar la lista sugerida</button>
   </form>
-</div>
-{% endif %}
+</div></div>
+{% else %}
 
-<div class="card">
-  <p class="label">Nuevo tipo de service</p>
-  <form method="POST" class="formulario" style="max-width:none">
-    <div style="max-width:420px">
-      <label class="campo" for="nombre">Nombre</label>
-      <input name="nombre" id="nombre" required placeholder="Ej: Cambio de agujas">
-    </div>
-    <div class="fila-grid" style="max-width:640px">
-      <div>
-        <label class="campo" for="cada_kg">Cada … kg</label>
-        <input name="cada_kg" id="cada_kg" type="number" step="1" min="1" placeholder="50000">
-      </div>
-      <div>
-        <label class="campo" for="cada_rollos">Cada … rollos</label>
-        <input name="cada_rollos" id="cada_rollos" type="number" step="1" min="1" placeholder="2500">
-      </div>
-      <div>
-        <label class="campo" for="cada_dias">Cada … días</label>
-        <input name="cada_dias" id="cada_dias" type="number" step="1" min="1" placeholder="90">
-      </div>
-    </div>
-    <div><button class="btn" type="submit">Crear</button></div>
-  </form>
-</div>
-
-<div class="card">
-  <p class="label">Tipos definidos</p>
-  {% if not tipos %}
-    <div class="vacio">Todavía no hay ninguno.</div>
-  {% else %}
+<div class="bloque">
+  <div class="titulo"><h2>Los que hay</h2>
+    <p>El número vale para todas. El de una máquina se pone en su ficha.</p></div>
   <table>
-    <thead>
-      <tr><th>Nombre</th><th class="der">Cada … kg</th><th class="der">Cada … rollos</th>
-          <th class="der">Cada … días</th><th>Estado</th><th></th></tr>
-    </thead>
+    <thead><tr><th>Nombre</th><th class="der">Cada … kg</th><th>Activo</th><th></th></tr></thead>
     <tbody>
     {% for t in tipos %}
       <tr>
         <form method="POST" id="f{{ t.id }}"></form>
-        <td><input form="f{{ t.id }}" name="nombre" value="{{ t.nombre }}" style="height:34px">
+        <td><input form="f{{ t.id }}" name="nombre" value="{{ t.nombre }}" style="height:36px">
             <input form="f{{ t.id }}" type="hidden" name="tipo_id" value="{{ t.id }}"></td>
-        <td class="der"><input form="f{{ t.id }}" name="cada_kg" type="number" step="1"
-              value="{{ t.cada_kg | int if t.cada_kg else '' }}" style="height:34px;text-align:right"></td>
-        <td class="der"><input form="f{{ t.id }}" name="cada_rollos" type="number" step="1"
-              value="{{ t.cada_rollos or '' }}" style="height:34px;text-align:right"></td>
-        <td class="der"><input form="f{{ t.id }}" name="cada_dias" type="number" step="1"
-              value="{{ t.cada_dias or '' }}" style="height:34px;text-align:right"></td>
-        <td><label style="font-size:13px;display:inline-flex;align-items:center;gap:6px">
-              <input form="f{{ t.id }}" type="checkbox" name="activo" {{ 'checked' if t.activo }}
-                     style="width:auto;height:auto"> activo</label></td>
-        <td><button form="f{{ t.id }}" class="btn gris"
-                    style="height:34px;padding:0 14px;font-size:13px">Guardar</button></td>
+        <td class="der" style="width:160px"><input form="f{{ t.id }}" name="cada_kg"
+              value="{{ t.cada_kg | int if t.cada_kg else '' }}" style="height:36px;text-align:right"></td>
+        <td><input form="f{{ t.id }}" type="checkbox" name="activo" {{ 'checked' if t.activo }}
+                   style="width:auto;height:auto"></td>
+        <td class="der"><button form="f{{ t.id }}" class="btn suave chico">Guardar</button></td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
-  {% endif %}
+</div>
+{% endif %}
+
+<div class="bloque">
+  <div class="titulo"><h2>Nuevo</h2></div>
+  <div class="relleno">
+    <form method="POST" class="formulario">
+      <div>
+        <label class="campo" for="nombre">Nombre</label>
+        <input name="nombre" id="nombre" required placeholder="Cambio de agujas">
+      </div>
+      <div style="max-width:220px">
+        <label class="campo" for="cada_kg">Cada … kg</label>
+        <input name="cada_kg" id="cada_kg" placeholder="250000">
+      </div>
+      <div><button class="btn" type="submit">Crear</button></div>
+    </form>
+  </div>
 </div>
 {% endblock %}

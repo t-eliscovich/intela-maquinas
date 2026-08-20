@@ -1,34 +1,47 @@
 """Mantenimiento de máquinas — Intela tejeduría.
 
-Tres pantallas y nada más:
+Las pantallas:
 
-    /            semáforo: qué máquina necesita service
-    /registrar   cargar un service hecho
-    /tipos       definir los tipos de service y cada cuánto van
+    /            semáforo: qué máquina necesita mantenimiento
+    /registrar   cargar un mantenimiento hecho
+    /carga       subir el Excel de planta (fechas, kilos y ficha, de una vez)
+    /tipos       los tipos de mantenimiento y cada cuántos kilos van
+    /maquina/N   la ficha de una máquina
 
-Los kilos y los rollos NO se cargan a mano: salen de Asinfo, que ya registra
-cada rollo de tela cruda con la máquina que lo tejió.
+Los kilos NO se cargan a mano: salen de Asinfo, que ya registra cada rollo de
+tela cruda con la máquina que lo tejió.
 """
 from __future__ import annotations
 
 import logging
+import os
+import re
+import secrets
+import tempfile
+import time
 from datetime import date, datetime
 from functools import wraps
 
-from flask import (Flask, flash, redirect, render_template, request, session,
-                   url_for)
+from flask import (Flask, flash, g, redirect, render_template, request,
+                   session, url_for)
 
 import asinfo
 import config
+import excel
 import store
 
 logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
+app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024  # un Excel de planta es chico
 
-# Cuánto antes del umbral se pone amarillo.
-UMBRAL_AVISO = 0.80
+# Cuánto antes del tope se pone amarillo.
+AVISO = 0.80
+
+# Dónde se guarda el Excel mientras se revisa antes de confirmar.
+CARPETA_CARGA = os.path.join(tempfile.gettempdir(), "maquinas_carga")
+_TOKEN = re.compile(r"^[0-9a-f]{16}$")
 
 # ---------------------------------------------------------------------------
 # Arranque del pool de la base — A NIVEL DE MÓDULO, a propósito.
@@ -39,9 +52,6 @@ UMBRAL_AVISO = 0.80
 # puerto, la tarea diría "Running"... y CADA pantalla devolvería 500 con un
 # `AssertionError: init_pool() no fue llamado`. Pasó exactamente eso el
 # 18/08/2026 en el primer deploy.
-#
-# Si la base no está, no reventamos al importar: guardamos el error y lo
-# mostramos en pantalla. Un 500 pelado no le dice nada a nadie.
 # ---------------------------------------------------------------------------
 ERROR_ARRANQUE: str | None = None
 try:
@@ -59,7 +69,7 @@ def _frenar_si_no_hay_base():
 
 
 # --------------------------------------------------------------------------
-# Login (una sola contraseña compartida — "muy muy fácil")
+# Login (una sola contraseña compartida)
 # --------------------------------------------------------------------------
 def requiere_login(f):
     @wraps(f)
@@ -88,32 +98,35 @@ def salir():
 
 
 # --------------------------------------------------------------------------
-# El cálculo: cuánto lleva cada máquina desde su último service
+# El cálculo: cuántos kilos lleva cada máquina desde su último mantenimiento
 # --------------------------------------------------------------------------
-def _porcentaje(consumido, umbral):
-    """Qué fracción del umbral se consumió. None si el umbral no aplica."""
-    if not umbral:
-        return None
-    return float(consumido) / float(umbral)
+def tope_de(topes, id_maquina, tipo):
+    """Cada cuántos kilos va ese mantenimiento EN ESA máquina.
+
+    Si la máquina tiene su número propio, manda ése. Si no, el del tipo. El
+    fallback existe para no tener que cargar 43 × 2 filas antes de que el
+    semáforo sirva para algo.
+    """
+    propio = topes.get((id_maquina, tipo["id"]))
+    if propio:
+        return float(propio), True
+    return (float(tipo["cada_kg"]), False) if tipo["cada_kg"] else (None, False)
 
 
 def armar_semaforo():
-    """Una fila por (máquina, tipo de service) que ya tenga un primer service.
+    """Una fila por (máquina, tipo) que ya tenga un primer mantenimiento.
 
-    Las máquinas sin ningún service todavía no tienen punto cero, así que no
-    entran al semáforo — se listan aparte como pendientes de arrancar.
+    Las máquinas sin ninguno todavía no tienen desde cuándo contar, así que no
+    entran al semáforo: se listan aparte como pendientes de arrancar.
     """
     tipos = store.tipos()
     maquinas, _, _ = asinfo.maquinas()
     ultimos = store.ultimos_por_maquina_y_tipo()
+    topes = store.topes_por_maquina()
 
     hoy = date.today()
-    filas, pendientes = [], []
+    filas, pendientes, pares = [], [], []
 
-    # Primero armamos la lista de pares que SÍ tienen punto cero, y le pedimos
-    # a Asinfo los acumulados de todos juntos: una consulta agregada, no una
-    # descarga de la producción día por día (ver asinfo.acumulados).
-    pares = []
     for maquina in maquinas:
         for tipo in tipos:
             ultimo = ultimos.get((maquina["id"], tipo["id"]))
@@ -132,48 +145,64 @@ def armar_semaforo():
 
             desde = ultimo["fecha"]
             kg, rollos = acum.get((maquina["id"], tipo["id"]), (0.0, 0))
-            dias = (hoy - desde).days
+            tope, propio = tope_de(topes, maquina["id"], tipo)
 
-            pcts = [
-                p
-                for p in (
-                    _porcentaje(kg, tipo["cada_kg"]),
-                    _porcentaje(rollos, tipo["cada_rollos"]),
-                    _porcentaje(dias, tipo["cada_dias"]),
-                )
-                if p is not None
-            ]
-            peor = max(pcts) if pcts else 0.0
-
-            if not pcts:
-                estado = "sin_umbral"
-            elif peor >= 1.0:
+            # El semáforo va por KILOS. Los días se muestran como dato, no
+            # prenden nada: el desgaste es lo que la máquina tejió.
+            pct = (float(kg) / tope) if tope else None
+            if pct is None:
+                estado = "sin_tope"
+            elif pct >= 1.0:
                 estado = "vencido"
-            elif peor >= UMBRAL_AVISO:
+            elif pct >= AVISO:
                 estado = "por_vencer"
             else:
                 estado = "ok"
 
-            filas.append(
-                {
-                    "maquina": maquina,
-                    "tipo": tipo,
-                    "desde": desde,
-                    "hecho_por": ultimo["hecho_por"],
-                    "kg": kg,
-                    "rollos": rollos,
-                    "dias": dias,
-                    "pct_kg": _porcentaje(kg, tipo["cada_kg"]),
-                    "pct_rollos": _porcentaje(rollos, tipo["cada_rollos"]),
-                    "pct_dias": _porcentaje(dias, tipo["cada_dias"]),
-                    "peor": peor,
-                    "estado": estado,
-                }
-            )
+            filas.append({
+                "maquina": maquina,
+                "tipo": tipo,
+                "desde": desde,
+                "hecho_por": ultimo["hecho_por"],
+                "kg": kg,
+                "rollos": rollos,
+                "dias": (hoy - desde).days,
+                "tope": tope,
+                "tope_propio": propio,
+                "falta": (tope - float(kg)) if tope else None,
+                "pct": pct,
+                "estado": estado,
+            })
 
-    # Lo más urgente arriba.
-    filas.sort(key=lambda f: f["peor"], reverse=True)
+    filas.sort(key=lambda f: (f["pct"] is None, -(f["pct"] or 0)))
     return filas, pendientes, leido_en, fresco
+
+
+def _semaforo_cacheado():
+    """El semáforo una sola vez por request: lo usan la pantalla y la campanita."""
+    if not hasattr(g, "_semaforo"):
+        g._semaforo = armar_semaforo()
+    return g._semaforo
+
+
+@app.context_processor
+def _campanita():
+    """Cuántas máquinas están vencidas, para la campanita de la barra.
+
+    Si Asinfo no contesta devuelve None, NO cero. Un cero acá diría "está todo
+    bien" por un problema de red, que es justo el error que este programa
+    existe para evitar.
+    """
+    def contar():
+        if ERROR_ARRANQUE:
+            return None
+        try:
+            filas, _, _, _ = _semaforo_cacheado()
+        except Exception:  # noqa: BLE001
+            return None
+        return sum(1 for f in filas if f["estado"] == "vencido")
+
+    return {"vencidas": contar()}
 
 
 # --------------------------------------------------------------------------
@@ -183,20 +212,29 @@ def armar_semaforo():
 @requiere_login
 def semaforo():
     try:
-        filas, pendientes, leido_en, fresco = armar_semaforo()
+        filas, pendientes, leido_en, fresco = _semaforo_cacheado()
         error = None
     except asinfo.AsinfoNoDisponible as exc:
         filas, pendientes, leido_en, fresco = [], [], None, False
         error = str(exc)
 
+    # La campanita lleva acá: ?solo=vencidas muestra sólo lo vencido.
+    solo = request.args.get("solo")
+    if solo == "vencidas":
+        filas_ver = [f for f in filas if f["estado"] == "vencido"]
+    else:
+        filas_ver = filas
+
     resumen = {
         "vencido": sum(1 for f in filas if f["estado"] == "vencido"),
         "por_vencer": sum(1 for f in filas if f["estado"] == "por_vencer"),
         "ok": sum(1 for f in filas if f["estado"] == "ok"),
+        "sin_tope": sum(1 for f in filas if f["estado"] == "sin_tope"),
     }
     return render_template(
         "semaforo.html",
-        filas=filas,
+        filas=filas_ver,
+        solo=solo,
         pendientes=pendientes,
         resumen=resumen,
         leido_en=leido_en,
@@ -204,6 +242,23 @@ def semaforo():
         error=error,
         hay_tipos=bool(store.tipos()),
     )
+
+
+def _buscar_maquina(escrito, maquinas):
+    """Acepta el número con el que la llaman en planta: 1, 01, MQ 1, MQ 001.
+
+    En planta nadie dice "TEJEDURIA-MQ 001": dicen "la uno". Si el número no
+    existe, se avisa con el número puesto — no se elige una parecida.
+    """
+    import re as _re
+    encontrados = _re.findall(r"\d+", str(escrito or ""))
+    if not encontrados:
+        raise ValueError("Poné el número de la máquina. Por ejemplo: 1")
+    numero = int(encontrados[-1])
+    for m in maquinas:
+        if m.get("numero") == numero:
+            return m["id"]
+    raise ValueError(f"No hay ninguna máquina {numero}.")
 
 
 @app.route("/registrar", methods=["GET", "POST"])
@@ -217,7 +272,7 @@ def registrar():
 
     if request.method == "POST":
         try:
-            id_maquina = int(request.form["id_maquina"])
+            id_maquina = _buscar_maquina(request.form.get("maquina"), maquinas)
             tipo_id = int(request.form["tipo_id"])
             fecha = request.form.get("fecha") or date.today().isoformat()
             hecho_por = request.form.get("hecho_por", "").strip()
@@ -232,7 +287,7 @@ def registrar():
             store.registrar_service(
                 id_maquina, nombre, tipo_id, fecha, hecho_por, request.form.get("nota")
             )
-            flash(f"Service cargado en {nombre}. El contador arranca de cero.", "ok")
+            flash(f"Cargado en {nombre}. Los kilos vuelven a cero.", "ok")
             return redirect(url_for("semaforo"))
         except Exception as exc:  # noqa: BLE001
             flash(str(exc), "error")
@@ -252,33 +307,21 @@ def registrar():
 def tipos_view():
     if request.method == "POST":
         try:
-            def num(campo, entero=False):
-                v = (request.form.get(campo) or "").strip()
-                if not v:
-                    return None
-                return int(v) if entero else float(v)
-
             nombre = request.form.get("nombre", "").strip()
             if not nombre:
-                raise ValueError("El tipo de service necesita un nombre.")
-
-            cada_kg = num("cada_kg")
-            cada_rollos = num("cada_rollos", entero=True)
-            cada_dias = num("cada_dias", entero=True)
-            if not any([cada_kg, cada_rollos, cada_dias]):
-                raise ValueError(
-                    "Poné al menos un umbral: cada cuántos kg, cuántos rollos o cuántos días."
-                )
+                raise ValueError("Ponele un nombre.")
+            crudo = (request.form.get("cada_kg") or "").strip()
+            cada_kg = float(crudo.replace(".", "").replace(",", ".")) if crudo else None
 
             tipo_id = request.form.get("tipo_id")
             if tipo_id:
                 store.editar_tipo(
-                    int(tipo_id), nombre, cada_kg, cada_rollos, cada_dias,
+                    int(tipo_id), nombre, cada_kg, None, None,
                     request.form.get("activo") == "on",
                 )
-                flash(f"«{nombre}» actualizado.", "ok")
+                flash(f"«{nombre}» guardado.", "ok")
             else:
-                store.crear_tipo(nombre, cada_kg, cada_rollos, cada_dias)
+                store.crear_tipo(nombre, cada_kg, None, None)
                 flash(f"«{nombre}» creado.", "ok")
             return redirect(url_for("tipos_view"))
         except Exception as exc:  # noqa: BLE001
@@ -290,12 +333,10 @@ def tipos_view():
 @app.route("/arranque", methods=["GET", "POST"])
 @requiere_login
 def arranque():
-    """Poner el punto cero de TODAS las máquinas de una vez.
+    """Poner a contar TODAS las máquinas de una vez, desde una misma fecha.
 
-    Sin esto el programa es inusable: cada par (máquina, tipo) necesita un
-    primer service para empezar a contar, y cargar 43 máquinas a mano antes de
-    ver la primera pantalla no lo hace nadie. Acá se elige el tipo y la fecha
-    desde la que se empieza a contar, y se crean todos juntos.
+    Es el atajo cuando no hay Excel: sin esto hay que cargar 43 formularios a
+    mano antes de ver la primera pantalla.
     """
     try:
         maquinas, _, _ = asinfo.maquinas()
@@ -317,7 +358,7 @@ def arranque():
 
             pendientes = faltantes(tipo_id)
             if not pendientes:
-                raise ValueError("Todas las máquinas ya tienen punto de partida para ese service.")
+                raise ValueError("Todas las máquinas ya están contando ese mantenimiento.")
 
             n = store.registrar_muchos([
                 (m["id"], m["nombre"], tipo_id, fecha, hecho_por,
@@ -343,14 +384,160 @@ def arranque():
 def tipos_sugeridos():
     try:
         n = store.crear_tipos_sugeridos()
-        flash(f"Se cargaron {n} tipos sugeridos. Corregí los números con el mecánico."
-              if n else "Ya estaban todos cargados.", "ok")
+        flash("Se cargaron los tipos sugeridos. Corregí los números con el mecánico."
+              if n else "Ya estaban todos.", "ok")
     except Exception as exc:  # noqa: BLE001
         flash(str(exc), "error")
     return redirect(url_for("tipos_view"))
 
 
-@app.route("/maquina/<int:id_maquina>")
+# --------------------------------------------------------------------------
+# Subir el Excel de planta
+# --------------------------------------------------------------------------
+def _guardar_temporal(archivo) -> str:
+    """Deja el Excel en disco mientras se revisa, y limpia los viejos.
+
+    Se guarda en vez de mantenerlo en memoria porque la pantalla de revisión
+    se puede recargar varias veces cambiando qué columna es cada cosa.
+    """
+    os.makedirs(CARPETA_CARGA, exist_ok=True)
+    limite = time.time() - 2 * 3600
+    for viejo in os.listdir(CARPETA_CARGA):
+        ruta = os.path.join(CARPETA_CARGA, viejo)
+        try:
+            if os.path.getmtime(ruta) < limite:
+                os.remove(ruta)
+        except OSError:
+            pass
+    token = secrets.token_hex(8)
+    archivo.save(os.path.join(CARPETA_CARGA, token + ".xlsx"))
+    return token
+
+
+def _ruta_de(token: str) -> str:
+    if not _TOKEN.match(token or ""):
+        raise ValueError("El archivo ya no está. Subilo de nuevo.")
+    ruta = os.path.join(CARPETA_CARGA, token + ".xlsx")
+    if not os.path.exists(ruta):
+        raise ValueError("El archivo ya no está. Subilo de nuevo.")
+    return ruta
+
+
+def _mapa_del_form(form, titulos, tipos, detectado):
+    """El mapa que eligió la persona, o el detectado si todavía no eligió."""
+    if not any(k.startswith("col_") for k in form):
+        return detectado
+    mapa = {}
+    for clave, valor in form.items():
+        if not clave.startswith("col_") or valor in ("", "-1"):
+            continue
+        try:
+            i = int(valor)
+        except ValueError:
+            continue
+        if 0 <= i < len(titulos):
+            mapa[clave[4:]] = i
+    return mapa
+
+
+@app.route("/carga", methods=["GET", "POST"])
+@requiere_login
+def carga():
+    """Subir el Excel que ya usan, revisarlo y recién ahí guardar."""
+    tipos = store.tipos()
+    if request.method == "GET":
+        return render_template("carga.html", paso="subir", tipos=tipos)
+
+    archivo = request.files.get("archivo")
+    if not archivo or not archivo.filename.lower().endswith((".xlsx", ".xlsm")):
+        flash("Subí un archivo .xlsx", "error")
+        return render_template("carga.html", paso="subir", tipos=tipos)
+    token = _guardar_temporal(archivo)
+    return redirect(url_for("carga_revisar", token=token))
+
+
+@app.route("/carga/<token>", methods=["GET", "POST"])
+@requiere_login
+def carga_revisar(token):
+    """Mostrar qué entendió del Excel, dejar corregirlo, y guardar."""
+    tipos = store.tipos()
+    if not tipos:
+        flash("Primero definí los tipos de mantenimiento.", "error")
+        return redirect(url_for("tipos_view"))
+
+    try:
+        ruta = _ruta_de(token)
+        maquinas, _, _ = asinfo.maquinas()
+    except (ValueError, asinfo.AsinfoNoDisponible) as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("carga"))
+
+    nombres_hojas = excel.hojas(ruta)
+    hoja = request.form.get("hoja") or nombres_hojas[0]
+    titulos, filas = excel.leer(ruta, hoja)
+    detectado = excel.detectar(titulos, tipos)
+    mapa = _mapa_del_form(request.form, titulos, tipos, detectado)
+    listas, descartes = excel.armar(titulos, filas, mapa, maquinas, tipos)
+
+    if request.method == "POST" and request.form.get("boton") == "confirmar":
+        try:
+            if not listas:
+                raise ValueError("No hay ninguna fila para guardar.")
+            quien = request.form.get("hecho_por", "").strip() or "Carga del Excel"
+            servicios, topes, fichas = [], [], []
+            for item in listas:
+                m = item["maquina"]
+                for mant in item["mantenimientos"]:
+                    if mant["fecha"]:
+                        servicios.append((m["id"], m["nombre"], mant["tipo"]["id"],
+                                          mant["fecha"], quien, "Cargado desde el Excel"))
+                    if mant["cada_kg"]:
+                        topes.append((m["id"], mant["tipo"]["id"], mant["cada_kg"]))
+                if any(v is not None for v in item["ficha"].values()):
+                    fichas.append((m["id"], *[item["ficha"][c] for c in store.CAMPOS_FICHA]))
+
+            hecho = store.cargar_lote(servicios, topes, fichas)
+            os.remove(ruta)
+            flash(
+                f"Listo. {hecho['servicios']} mantenimientos, "
+                f"{hecho['topes']} topes de kilos y {hecho['fichas']} fichas.", "ok")
+            return redirect(url_for("semaforo"))
+        except Exception as exc:  # noqa: BLE001
+            flash(str(exc), "error")
+
+    return render_template(
+        "carga.html",
+        paso="revisar",
+        token=token,
+        tipos=tipos,
+        hojas=nombres_hojas,
+        hoja=hoja,
+        titulos=titulos,
+        mapa=mapa,
+        listas=listas,
+        descartes=descartes,
+        campos=CAMPOS_MAPA(tipos),
+    )
+
+
+def CAMPOS_MAPA(tipos):
+    """Qué se puede mapear, en el orden en que se muestra."""
+    campos = [("numero", "Número de máquina")]
+    for t in tipos:
+        campos.append((f"fecha_{t['id']}", f"{t['nombre']} · último"))
+        campos.append((f"kg_{t['id']}", f"{t['nombre']} · cada … kg"))
+    campos += [
+        ("marca", "Marca"), ("modelo", "Modelo"), ("galga", "Galga"),
+        ("diametro", "Diámetro"), ("alimentadores", "Alimentadores"),
+        ("agujas", "Agujas"), ("anio", "Año"), ("nota", "Nota"),
+    ]
+    return campos
+
+
+# --------------------------------------------------------------------------
+# Ficha de una máquina
+# --------------------------------------------------------------------------
+@app.route("/maquina/<int:id_maquina>", methods=["GET", "POST"])
 @requiere_login
 def maquina_detalle(id_maquina):
     try:
@@ -358,8 +545,31 @@ def maquina_detalle(id_maquina):
     except asinfo.AsinfoNoDisponible:
         maquinas = []
     maquina = next((m for m in maquinas if m["id"] == id_maquina), None)
+
+    if request.method == "POST":
+        try:
+            datos = {c: (request.form.get(c) or "").strip() or None
+                     for c in store.CAMPOS_FICHA}
+            for entero in ("galga", "alimentadores", "agujas", "anio"):
+                datos[entero] = excel.a_numero(datos[entero])
+            datos["diametro"] = excel.a_decimal(datos["diametro"])
+            store.guardar_ficha(id_maquina, datos)
+            flash("Ficha guardada.", "ok")
+        except Exception as exc:  # noqa: BLE001
+            flash(str(exc), "error")
+        return redirect(url_for("maquina_detalle", id_maquina=id_maquina))
+
+    try:
+        mensual, _, _ = asinfo.produccion_mensual(id_maquina)
+    except Exception:  # noqa: BLE001
+        mensual = []
+
     return render_template(
-        "maquina.html", maquina=maquina, historial=store.historial(id_maquina)
+        "maquina.html",
+        maquina=maquina,
+        ficha=store.ficha(id_maquina),
+        historial=store.historial(id_maquina),
+        mensual=mensual,
     )
 
 
@@ -386,7 +596,7 @@ def healthz():
 
 
 # --------------------------------------------------------------------------
-# Filtros de formato (español: punto para miles, coma para decimales)
+# Formato (español: punto para miles, coma para decimales)
 # --------------------------------------------------------------------------
 @app.template_filter("num")
 def _num(valor, decimales=0):
@@ -406,6 +616,15 @@ def _pct(valor):
 @app.template_filter("fecha_es")
 def _fecha_es(valor):
     return valor.strftime("%d/%m/%Y") if valor else "—"
+
+
+@app.template_filter("mq")
+def _mq(maquina):
+    """Como la llaman en planta: MQ 3, y al lado el nombre de Asinfo."""
+    if not maquina:
+        return "—"
+    numero = maquina.get("numero")
+    return f"MQ {numero}" if numero is not None else maquina.get("nombre", "—")
 
 
 if __name__ == "__main__":

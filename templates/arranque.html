@@ -1,25 +1,22 @@
 {% extends "base.html" %}
 {% block titulo %}Arranque{% endblock %}
 {% block contenido %}
-<h1>Poner a contar todas las máquinas</h1>
-<p class="sub">
-  Cada máquina necesita una fecha desde la cual empezar a contar. Acá se la ponés
-  a <b>todas juntas</b>, en vez de cargarlas una por una.
-</p>
+<h1>Poner a contar todas las máquinas
+  <small>De una vez, en vez de una por una.</small></h1>
 
 {% if not tipos %}
-  <div class="card vacio">
-    <p><b>Primero hay que definir al menos un tipo de service.</b></p>
-    <a class="btn" href="{{ url_for('tipos_view') }}">Ir a tipos de service</a>
-  </div>
+  <div class="bloque"><div class="vacio">
+    <h3>Primero definí al menos un tipo</h3>
+    <a class="btn" href="{{ url_for('tipos_view') }}">Ir a tipos</a>
+  </div></div>
 {% elif not maquinas %}
-  <div class="card vacio">No se pudo leer el listado de máquinas de Asinfo.</div>
+  <div class="bloque"><div class="vacio"><h3>No se pudo leer las máquinas de Asinfo</h3></div></div>
 {% else %}
 
-<div class="card">
+<div class="bloque"><div class="relleno">
   <form method="POST" class="formulario">
     <div>
-      <label class="campo" for="tipo_id">Qué service</label>
+      <label class="campo" for="tipo_id">Qué mantenimiento</label>
       <select name="tipo_id" id="tipo_id" required>
         {% for t in tipos %}
           <option value="{{ t.id }}" {{ 'disabled' if faltan[t.id] == 0 }}>
@@ -33,8 +30,8 @@
     <div>
       <label class="campo" for="fecha">Contar desde</label>
       <input type="date" name="fecha" id="fecha" value="{{ hoy }}" max="{{ hoy }}" required>
-      <p class="sub" style="margin:8px 0 0">
-        Si no sabés cuándo fue el último service, poné <b>hoy</b>. El contador arranca
+      <p class="tenue" style="font-size:14px" style="margin:8px 0 0">
+        Si no sabés cuándo fue el último mantenimiento, poné <b>hoy</b>. El contador arranca
         de cero y a partir de mañana los números ya son reales. Es preferible eso a
         inventar una fecha vieja: una fecha inventada pinta rojos que no existen.
       </p>
@@ -45,31 +42,27 @@
       <input name="hecho_por" id="hecho_por" value="Arranque inicial" required>
     </div>
 
-    <div>
-      <button class="btn" type="submit"
-              onsubmit="return true;">Poner a contar todas</button>
-    </div>
+    <div><button class="btn" type="submit">Poner a contar todas</button></div>
   </form>
-</div>
+</div></div>
 
-<div class="card">
-  <p class="label">Qué va a pasar</p>
-  <ul style="margin:0;padding-left:20px;line-height:1.9">
-    <li>Se crea un registro de service para cada máquina que todavía no tenga uno
+<div class="bloque">
+  <div class="titulo"><h2>Qué va a pasar</h2></div>
+  <div class="relleno"><ul style="margin:0;padding-left:20px;line-height:1.9">
+    <li>Se crea un registro de mantenimiento para cada máquina que todavía no tenga uno
         de ese tipo. Las que ya tienen no se tocan.</li>
     <li>Desde esa fecha, los kilos y los rollos los cuenta Asinfo solo.</li>
-    <li>Cuando se haga un service de verdad, se carga en
-        <a href="{{ url_for('registrar') }}">Cargar service</a> y esa máquina vuelve a cero.</li>
-  </ul>
+    <li>Cuando se haga un mantenimiento de verdad, se carga en
+        <a href="{{ url_for('registrar') }}">Cargar uno</a> y esa máquina vuelve a cero.</li>
+  </ul></div>
 </div>
 
-<div class="card">
-  <p class="label">Las {{ maquinas|length }} máquinas que se van a cargar</p>
-  <p class="sub" style="margin:-4px 0 10px">Salen de Asinfo, no se cargan a mano.</p>
-  <div style="display:flex;flex-wrap:wrap;gap:6px">
+<div class="bloque">
+  <div class="titulo"><h2>Las {{ maquinas|length }} máquinas</h2><p>Salen de Asinfo</p></div>
+  <div class="relleno" style="display:flex;flex-wrap:wrap;gap:6px">
     {% for m in maquinas %}
       <span style="background:#f1f5f9;border:1px solid var(--borde);border-radius:6px;
-                   padding:3px 8px;font-size:12px;white-space:nowrap">{{ m.nombre }}</span>
+                   padding:3px 9px;font-size:12px;white-space:nowrap">{{ m | mq }}</span>
     {% endfor %}
   </div>
 </div>

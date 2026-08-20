@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block titulo %}Subir el Excel{% endblock %}
+{% block contenido %}
+
+{% if paso == 'subir' %}
+<h1>Subir el Excel de planta
+  <small>El de siempre, como esté. Pantalla interna: la usamos nosotros.</small></h1>
+
+<div class="bloque"><div class="relleno">
+  <form method="POST" enctype="multipart/form-data" class="formulario">
+    <div>
+      <label class="campo" for="archivo">Archivo</label>
+      <input type="file" name="archivo" id="archivo" accept=".xlsx,.xlsm" required
+             style="padding:10px;height:auto">
+    </div>
+    <div><button class="btn" type="submit">Subir y revisar</button></div>
+  </form>
+  <p class="tenue" style="font-size:13px;margin:16px 0 0">
+    Nada se guarda hasta que lo mires.
+  </p>
+</div></div>
+
+{% else %}
+<h1>Revisá antes de guardar
+  <small>Todavía no se guardó nada. Si una columna quedó mal, cambiala y volvé a leer.</small></h1>
+
+<form method="POST" action="{{ url_for('carga_revisar', token=token) }}">
+
+<div class="bloque">
+  <div class="titulo"><h2>Qué columna es cada cosa</h2></div>
+  <div class="relleno">
+  {% if hojas | length > 1 %}
+  <div style="margin-bottom:16px;max-width:320px">
+    <label class="campo" for="hoja">Hoja</label>
+    <select name="hoja" id="hoja">
+      {% for h in hojas %}<option value="{{ h }}" {{ 'selected' if h == hoja }}>{{ h }}</option>{% endfor %}
+    </select>
+  </div>
+  {% else %}<input type="hidden" name="hoja" value="{{ hoja }}">{% endif %}
+
+  <div class="rejilla" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr))">
+    {% for campo, etiqueta in campos %}
+    <div>
+      <label class="campo" for="col_{{ campo }}">{{ etiqueta }}</label>
+      <select name="col_{{ campo }}" id="col_{{ campo }}" style="height:38px">
+        <option value="-1">— no está —</option>
+        {% for t in titulos %}
+          <option value="{{ loop.index0 }}" {{ 'selected' if mapa.get(campo) == loop.index0 }}>
+            {{ t or 'columna ' ~ loop.index }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endfor %}
+  </div>
+  <div style="margin-top:16px">
+    <button class="btn suave" type="submit" name="boton" value="releer">Volver a leer</button>
+  </div>
+  </div>
+</div>
+
+<div class="bloque">
+  <div class="titulo"><h2>Va a entrar</h2><p>{{ listas | length }} máquinas</p></div>
+  {% if not listas %}
+    <div class="vacio"><h3>Ninguna fila se pudo leer</h3>
+      <p>Revisá cuál es la columna del número de máquina.</p></div>
+  {% else %}
+  <table>
+    <thead>
+      <tr>
+        <th>Máquina</th>
+        {% for t in tipos %}<th>{{ t.nombre }}</th>{% endfor %}
+        <th>Ficha</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for item in listas %}
+      <tr>
+        <td><span class="mq">{{ item.maquina | mq }}</span>
+            <span class="chico">{{ item.maquina.nombre }}</span></td>
+        {% for t in tipos %}
+          {% set m = (item.mantenimientos | selectattr('tipo.id','equalto',t.id) | list | first) %}
+          <td>
+            {% if m %}
+              {{ m.fecha | fecha_es }}
+              {% if m.cada_kg %}<span class="chico">cada {{ m.cada_kg | num(0) }} kg</span>{% endif %}
+            {% else %}<span class="tenue">—</span>{% endif %}
+          </td>
+        {% endfor %}
+        <td class="tenue">
+          {% set f = item.ficha %}
+          {{ [f.marca, f.modelo, f.galga and ('galga ' ~ f.galga), f.diametro and (f.diametro | num(0) ~ '"'), f.anio] | select | join(' · ') or '—' }}
+        </td>
+        <td>
+          {% for a in item.avisos %}
+            <span class="marca-estado por_vencer" style="display:block">{{ a }}</span>
+          {% endfor %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+{% if descartes %}
+<div class="bloque">
+  <div class="titulo"><h2>No entra</h2><p>{{ descartes | length }} filas · el programa no adivina</p></div>
+  <table>
+    <thead><tr><th>Fila</th><th>Qué decía</th><th>Por qué no entra</th></tr></thead>
+    <tbody>
+    {% for d in descartes %}
+      <tr><td>{{ d.fila }}</td>
+          <td class="tenue">{{ d.texto }}</td>
+          <td>{{ d.motivo }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="bloque"><div class="relleno">
+  <div style="max-width:320px;margin-bottom:16px">
+    <label class="campo" for="hecho_por">Quién lo hizo</label>
+    <input name="hecho_por" id="hecho_por" placeholder="Carga del Excel">
+  </div>
+  <button class="btn" type="submit" name="boton" value="confirmar"
+          {{ 'disabled' if not listas }}>Guardar estas {{ listas | length }} máquinas</button>
+  <a class="btn suave" href="{{ url_for('carga') }}">Subir otro archivo</a>
+</div></div>
+
+</form>
+{% endif %}
+{% endblock %}

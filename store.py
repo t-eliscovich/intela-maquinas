@@ -80,6 +80,35 @@ def bootstrap() -> None:
 
             CREATE INDEX IF NOT EXISTS service_maquina_tipo_idx
                 ON mantenimiento.service (id_maquina, tipo_id, fecha DESC);
+
+            -- Cada cuántos kilos va un mantenimiento EN ESA MÁQUINA.
+            -- Existe porque el número no es el mismo para todas: la más
+            -- cargada teje ~139.000 kg/año y la menos ~7.400. Un número
+            -- único deja media planta en verde para siempre.
+            -- Si una máquina no tiene fila acá, manda el del tipo.
+            CREATE TABLE IF NOT EXISTS mantenimiento.plan_maquina (
+                id_maquina  integer NOT NULL,
+                tipo_id     integer NOT NULL
+                            REFERENCES mantenimiento.tipo_service(id),
+                cada_kg     numeric(12,2),
+                creado_en   timestamptz NOT NULL DEFAULT now(),
+                PRIMARY KEY (id_maquina, tipo_id)
+            );
+
+            -- La ficha de la máquina. Sólo lo que Asinfo NO sabe: el nombre y
+            -- el estado siguen saliendo de allá, no se copian acá.
+            CREATE TABLE IF NOT EXISTS mantenimiento.maquina_ficha (
+                id_maquina     integer PRIMARY KEY,
+                marca          text,
+                modelo         text,
+                galga          integer,
+                diametro       numeric(6,2),
+                alimentadores  integer,
+                agujas         integer,
+                anio           integer,
+                nota           text,
+                editado_en     timestamptz NOT NULL DEFAULT now()
+            );
             """
         )
         con.commit()
@@ -210,3 +239,108 @@ def fecha_service_mas_vieja() -> str | None:
     filas = _todos("SELECT MIN(fecha) AS f FROM mantenimiento.service")
     f = filas[0]["f"] if filas else None
     return f.isoformat() if f else None
+
+
+# --- Cada cuántos kg, por máquina ------------------------------------------
+def topes_por_maquina() -> dict[tuple[int, int], float]:
+    """{(id_maquina, tipo_id): cada_kg}. Sólo las máquinas con número propio."""
+    filas = _todos(
+        "SELECT id_maquina, tipo_id, cada_kg FROM mantenimiento.plan_maquina"
+    )
+    return {
+        (f["id_maquina"], f["tipo_id"]): float(f["cada_kg"])
+        for f in filas
+        if f["cada_kg"] is not None
+    }
+
+
+def guardar_tope(id_maquina: int, tipo_id: int, cada_kg) -> None:
+    """Pone (o borra, si viene vacío) el número de esa máquina."""
+    if cada_kg in (None, ""):
+        _ejecutar(
+            "DELETE FROM mantenimiento.plan_maquina WHERE id_maquina=%s AND tipo_id=%s",
+            (id_maquina, tipo_id),
+        )
+        return
+    _ejecutar(
+        """INSERT INTO mantenimiento.plan_maquina (id_maquina, tipo_id, cada_kg)
+           VALUES (%s, %s, %s)
+           ON CONFLICT (id_maquina, tipo_id)
+           DO UPDATE SET cada_kg = EXCLUDED.cada_kg""",
+        (id_maquina, tipo_id, cada_kg),
+    )
+
+
+# --- Ficha de la máquina ---------------------------------------------------
+CAMPOS_FICHA = ("marca", "modelo", "galga", "diametro", "alimentadores",
+                "agujas", "anio", "nota")
+
+
+def fichas() -> dict[int, dict]:
+    return {f["id_maquina"]: f for f in _todos("SELECT * FROM mantenimiento.maquina_ficha")}
+
+
+def ficha(id_maquina: int) -> dict:
+    filas = _todos(
+        "SELECT * FROM mantenimiento.maquina_ficha WHERE id_maquina=%s", (id_maquina,)
+    )
+    return filas[0] if filas else {}
+
+
+def guardar_ficha(id_maquina: int, datos: dict) -> None:
+    """Guarda sólo los campos conocidos. Lo que viene vacío queda en NULL:
+    una ficha a medias es correcta, una ficha inventada no."""
+    valores = [datos.get(c) if datos.get(c) not in ("",) else None for c in CAMPOS_FICHA]
+    columnas = ", ".join(CAMPOS_FICHA)
+    marcas = ", ".join(["%s"] * len(CAMPOS_FICHA))
+    updates = ", ".join(f"{c}=EXCLUDED.{c}" for c in CAMPOS_FICHA)
+    _ejecutar(
+        f"""INSERT INTO mantenimiento.maquina_ficha (id_maquina, {columnas})
+            VALUES (%s, {marcas})
+            ON CONFLICT (id_maquina) DO UPDATE
+               SET {updates}, editado_en = now()""",
+        (id_maquina, *valores),
+    )
+
+
+# --- Carga en lote desde el Excel ------------------------------------------
+def cargar_lote(servicios: list[tuple], topes: list[tuple], fichas_: list[tuple]) -> dict:
+    """Guarda todo lo que trajo el Excel en UNA transacción.
+
+    O entra todo o no entra nada: una carga a medias dejaría el semáforo
+    mintiendo sobre la mitad de las máquinas, que es peor que no cargar.
+
+    servicios = [(id_maquina, maquina_nombre, tipo_id, fecha, hecho_por, nota), ...]
+    topes     = [(id_maquina, tipo_id, cada_kg), ...]
+    fichas_   = [(id_maquina, marca, modelo, galga, diametro, alimentadores,
+                  agujas, anio, nota), ...]
+    """
+    columnas = ", ".join(CAMPOS_FICHA)
+    marcas = ", ".join(["%s"] * len(CAMPOS_FICHA))
+    updates = ", ".join(f"{c}=EXCLUDED.{c}" for c in CAMPOS_FICHA)
+    with _conn() as con, con.cursor() as cur:
+        if servicios:
+            cur.executemany(
+                """INSERT INTO mantenimiento.service
+                       (id_maquina, maquina_nombre, tipo_id, fecha, hecho_por, nota)
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
+                servicios,
+            )
+        if topes:
+            cur.executemany(
+                """INSERT INTO mantenimiento.plan_maquina (id_maquina, tipo_id, cada_kg)
+                   VALUES (%s, %s, %s)
+                   ON CONFLICT (id_maquina, tipo_id)
+                   DO UPDATE SET cada_kg = EXCLUDED.cada_kg""",
+                topes,
+            )
+        if fichas_:
+            cur.executemany(
+                f"""INSERT INTO mantenimiento.maquina_ficha (id_maquina, {columnas})
+                    VALUES (%s, {marcas})
+                    ON CONFLICT (id_maquina) DO UPDATE
+                       SET {updates}, editado_en = now()""",
+                fichas_,
+            )
+        con.commit()
+    return {"servicios": len(servicios), "topes": len(topes), "fichas": len(fichas_)}

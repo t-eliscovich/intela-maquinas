@@ -154,7 +154,15 @@ def maquinas() -> tuple[list[dict], datetime, bool]:
              ORDER BY nombre
             """
         )
-        return [{"id": f[0], "codigo": f[1], "nombre": f[2]} for f in filas]
+        return [
+            {
+                "id": f[0],
+                "codigo": f[1],
+                "nombre": f[2],
+                "numero": _numero(f[2], f[1]),
+            }
+            for f in filas
+        ]
 
     return _cacheado("maquinas", cargar)
 
@@ -222,3 +230,50 @@ def acumulados(pares: list[tuple[int, int, str]]) -> tuple[dict, datetime, bool]
 
     clave = "acum:" + str(hash(tuple(limpios)))
     return _cacheado(clave, cargar)
+
+
+def _numero(nombre: str, codigo: str | None = None) -> int | None:
+    """El número con el que la llaman en planta.
+
+    'TEJEDURIA-MQ 003' es la MQ 3. La gente escribe 3, no el nombre entero, así
+    que el número es la llave para buscar, cargar y leer el Excel.
+    """
+    for texto in (nombre or "", codigo or ""):
+        encontrados = re.findall(r"\d+", texto)
+        if encontrados:
+            return int(encontrados[-1])
+    return None
+
+
+def produccion_mensual(id_maquina: int, meses: int = 12) -> tuple[list[dict], datetime, bool]:
+    """Kilos por mes de UNA máquina. Sirve para ver si el tope está bien puesto:
+    si tarda tres años en llegar, el número está mal.
+
+    Agregado por SQL Server (una fila por mes), como todo lo demás.
+    """
+    id_maquina = int(id_maquina)
+    meses = max(1, min(int(meses), 60))
+
+    def cargar():
+        filas = _consultar(
+            f"""
+            SELECT TOP {meses}
+                   YEAR(mi.fecha) AS anio, MONTH(mi.fecha) AS mes,
+                   SUM(d.cantidad) AS kg, COUNT(*) AS rollos
+              FROM detalle_movimiento_inventario d
+              JOIN movimiento_inventario mi
+                ON mi.id_movimiento_inventario = d.id_movimiento_inventario
+             WHERE d.id_maquina = {id_maquina}
+               AND d.id_bodega_destino = {config.BODEGA_TELA_CRUDA}
+               AND mi.fecha >= CONVERT(date, '{config.FECHA_PISO}')
+             GROUP BY YEAR(mi.fecha), MONTH(mi.fecha)
+             ORDER BY anio DESC, mes DESC
+            """
+        )
+        return [
+            {"anio": int(f[0]), "mes": int(f[1]),
+             "kg": round(float(f[2] or 0), 2), "rollos": int(f[3] or 0)}
+            for f in filas
+        ]
+
+    return _cacheado(f"mensual:{id_maquina}:{meses}", cargar)

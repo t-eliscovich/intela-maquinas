@@ -1,122 +1,130 @@
 {% extends "base.html" %}
 {% block titulo %}Semáforo{% endblock %}
 
-{% macro barra(pct) %}
-  {% if pct is not none %}
-    {% set ancho = (pct * 100) if pct < 1 else 100 %}
-    {% set color = '#dc2626' if pct >= 1 else ('#d97706' if pct >= 0.8 else '#16a34a') %}
-    <div class="barra"><span style="width:{{ ancho }}%;background:{{ color }}"></span></div>
-  {% endif %}
-{% endmacro %}
-
 {% block contenido %}
-<h1>Qué máquina necesita service</h1>
-<p class="sub">
-  Los kilos y los rollos salen solos de Asinfo — es la tela cruda que cada máquina
-  entregó a bodega desde su último service. Nadie los carga a mano.
-</p>
+<h1>Qué máquina necesita mantenimiento</h1>
 
 {% if error %}
-  <div class="aviso"><b>No se pudo leer la producción de Asinfo.</b><br>{{ error }}<br>
-  Los contadores de abajo no se pueden calcular hasta que vuelva la conexión.</div>
+  <div class="aviso"><b>No se pudo leer Asinfo.</b> {{ error }}<br>
+  Sin eso no se pueden contar los kilos.</div>
 {% elif not fresco and leido_en %}
   <div class="aviso"><b>Asinfo no contestó recién.</b> Estos números son de la última
-  lectura buena y pueden estar viejos. No son un cero — simplemente no se actualizaron.</div>
+  lectura buena. No son un cero: no se actualizaron.</div>
 {% endif %}
 
 {% if not hay_tipos %}
-  <div class="card vacio">
-    <p style="font-size:16px"><b>Arranquemos. Son dos pasos.</b></p>
-    <p style="max-width:560px;margin:10px auto 22px;line-height:1.7">
-      <b>1.</b> Definir qué services existen y cada cuántos kilos, rollos o días va cada uno.
-      Hay una lista sugerida para corregir con el mecánico, así no arrancás de cero.<br>
-      <b>2.</b> Poner a contar todas las máquinas de una vez.
-    </p>
-    <a class="btn" href="{{ url_for('tipos_view') }}">Empezar por los tipos de service</a>
-  </div>
+  <div class="bloque"><div class="vacio">
+    <h3>Arranquemos</h3>
+    <p>Primero, qué mantenimientos existen y cada cuántos kilos va cada uno.</p>
+    <a class="btn" href="{{ url_for('tipos_view') }}">Definir los tipos</a>
+  </div></div>
+
 {% elif not filas and pendientes %}
-  <div class="card vacio">
-    <p style="font-size:16px"><b>Ya hay tipos de service. Falta poner a contar las máquinas.</b></p>
-    <p style="max-width:560px;margin:10px auto 22px;line-height:1.7">
-      Ninguna máquina tiene todavía una fecha desde la cual contar, así que no hay nada
-      que mostrar. Se hace de una sola vez, no máquina por máquina.
-    </p>
-    <a class="btn" href="{{ url_for('arranque') }}">Poner a contar las {{ pendientes|length }} máquinas</a>
-  </div>
+  <div class="bloque"><div class="vacio">
+    <h3>Falta poner a contar las máquinas</h3>
+    <p>Ninguna tiene todavía una fecha desde la cual contar.</p>
+    <a class="btn" href="{{ url_for('arranque') }}">Arrancar todas hoy</a>
+  </div></div>
+
 {% elif not filas and not pendientes %}
-  <div class="card vacio">No hay máquinas para mostrar.</div>
+  <div class="bloque"><div class="vacio"><h3>No hay nada para mostrar</h3></div></div>
+
 {% else %}
 
-<div class="kpis">
-  <div class="kpi"><small>Vencidos</small><b style="color:var(--rojo)">{{ resumen.vencido }}</b></div>
-  <div class="kpi"><small>Por vencer</small><b style="color:var(--amarillo)">{{ resumen.por_vencer }}</b></div>
-  <div class="kpi"><small>En regla</small><b style="color:var(--verde)">{{ resumen.ok }}</b></div>
-  <div class="kpi"><small>Sin arrancar</small><b style="color:var(--gris)">{{ pendientes|length }}</b></div>
+<div class="cifras">
+  <a class="cifra" href="{{ url_for('semaforo', solo='vencidas') }}">
+    <b style="color:var(--rojo)">{{ resumen.vencido }}</b><small>Vencidas</small></a>
+  <div class="cifra"><b style="color:var(--ambar)">{{ resumen.por_vencer }}</b><small>Falta poco</small></div>
+  <div class="cifra"><b style="color:var(--verde)">{{ resumen.ok }}</b><small>En regla</small></div>
+  {% if resumen.sin_tope %}
+  <div class="cifra"><b class="tenue">{{ resumen.sin_tope }}</b><small>Sin kilos puestos</small></div>
+  {% endif %}
+  {% if pendientes %}
+  <div class="cifra"><b class="tenue">{{ pendientes|length }}</b><small>Sin arrancar</small></div>
+  {% endif %}
 </div>
 
 {% if filas %}
-<div class="card">
-  <p class="label">Contadores en marcha · lo más urgente arriba</p>
+<div class="bloque">
+  <div class="titulo">
+    <h2>{% if solo == 'vencidas' %}Vencidas{% else %}Todas{% endif %}</h2>
+    {% if solo == 'vencidas' %}
+      <p><a href="{{ url_for('semaforo') }}">Ver todas</a></p>
+    {% else %}
+      <p>Lo más pasado, arriba</p>
+    {% endif %}
+  </div>
   <table>
     <thead>
       <tr>
-        <th>Máquina</th><th>Service</th><th>Último</th><th>Quién</th>
-        <th class="der">Kg</th><th class="der">Rollos</th><th class="der">Días</th><th>Estado</th>
+        <th>Máquina</th>
+        <th>Mantenimiento</th>
+        <th class="der">Kilos</th>
+        <th class="der">Le falta</th>
+        <th>Estado</th>
+        <th class="oculta-chico">Última vez</th>
       </tr>
     </thead>
     <tbody>
     {% for f in filas %}
-      <tr>
-        <td><a href="{{ url_for('maquina_detalle', id_maquina=f.maquina.id) }}"
-               style="color:var(--azul);font-weight:600;text-decoration:none">{{ f.maquina.nombre }}</a></td>
+      <tr class="{{ f.estado }}">
+        <td>
+          <a href="{{ url_for('maquina_detalle', id_maquina=f.maquina.id) }}"
+             style="text-decoration:none;color:inherit">
+            <span class="mq">{{ f.maquina | mq }}</span>
+            <span class="chico">{{ f.maquina.nombre }}</span>
+          </a>
+        </td>
         <td>{{ f.tipo.nombre }}</td>
-        <td>{{ f.desde | fecha_es }}</td>
-        <td style="color:var(--gris)">{{ f.hecho_por }}</td>
-        <td class="der">
-          {{ f.kg | num(0) }}{% if f.tipo.cada_kg %} <span style="color:var(--gris)">/ {{ f.tipo.cada_kg | num(0) }}</span>{% endif %}
-          {{ barra(f.pct_kg) }}
+        <td class="der" style="min-width:150px">
+          <b>{{ f.kg | num(0) }}</b>{% if f.tope %} <span class="tenue">de {{ f.tope | num(0) }}</span>{% endif %}
+          {% if f.pct is not none %}
+            {% set ancho = (f.pct * 100) if f.pct < 1 else 100 %}
+            {% set color = 'var(--rojo)' if f.pct >= 1 else ('var(--ambar)' if f.pct >= 0.8 else 'var(--verde)') %}
+            <div class="progreso"><span style="width:{{ ancho }}%;background:{{ color }}"></span></div>
+          {% endif %}
         </td>
         <td class="der">
-          {{ f.rollos | num(0) }}{% if f.tipo.cada_rollos %} <span style="color:var(--gris)">/ {{ f.tipo.cada_rollos | num(0) }}</span>{% endif %}
-          {{ barra(f.pct_rollos) }}
-        </td>
-        <td class="der">
-          {{ f.dias }}{% if f.tipo.cada_dias %} <span style="color:var(--gris)">/ {{ f.tipo.cada_dias }}</span>{% endif %}
-          {{ barra(f.pct_dias) }}
+          {% if f.falta is none %}<span class="tenue">—</span>
+          {% elif f.falta > 0 %}{{ f.falta | num(0) }} kg
+          {% else %}<span style="color:var(--rojo);font-weight:700">+{{ (-f.falta) | num(0) }} kg</span>
+          {% endif %}
         </td>
         <td>
-          <span class="chip {{ f.estado }}">
-            {% if f.estado == 'vencido' %}VENCIDO
-            {% elif f.estado == 'por_vencer' %}FALTA POCO
-            {% elif f.estado == 'ok' %}OK
-            {% else %}SIN UMBRAL{% endif %}
+          <span class="marca-estado {{ f.estado }}">
+            {% if f.estado == 'vencido' %}Vencida
+            {% elif f.estado == 'por_vencer' %}Falta poco
+            {% elif f.estado == 'ok' %}En regla
+            {% else %}Sin kilos{% endif %}
           </span>
+        </td>
+        <td class="tenue oculta-chico">
+          hace {{ f.dias }} días<span class="chico">{{ f.desde | fecha_es }}</span>
         </td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
+  <div class="nota">Los días son dato. Lo que gasta la máquina son los kilos.</div>
 </div>
 {% endif %}
 
 {% if pendientes %}
-<div class="card">
-  <p class="label">Sin arrancar · todavía no tienen un primer service cargado</p>
-  <p class="sub" style="margin-top:-6px">
-    Estas combinaciones no cuentan nada todavía. El contador de una máquina empieza el día
-    que se le carga el primer service.
-    <a class="btn gris" style="height:30px;padding:0 14px;font-size:13px;margin-left:8px"
-       href="{{ url_for('arranque') }}">Poner a contar todas de una vez</a>
-  </p>
+<div class="bloque">
+  <div class="titulo">
+    <h2>Sin arrancar</h2>
+    <p>Empiezan a contar el día que se les carga la última vez</p>
+  </div>
   <table>
-    <thead><tr><th>Máquina</th><th>Service</th><th></th></tr></thead>
+    <thead><tr><th>Máquina</th><th>Mantenimiento</th><th></th></tr></thead>
     <tbody>
     {% for p in pendientes %}
       <tr>
-        <td>{{ p.maquina.nombre }}</td>
+        <td><span class="mq">{{ p.maquina | mq }}</span>
+            <span class="chico">{{ p.maquina.nombre }}</span></td>
         <td>{{ p.tipo.nombre }}</td>
-        <td><a class="btn gris" style="height:30px;padding:0 14px;font-size:13px"
-               href="{{ url_for('registrar') }}?id_maquina={{ p.maquina.id }}&tipo_id={{ p.tipo.id }}">Cargar</a></td>
+        <td class="der"><a class="btn suave chico"
+               href="{{ url_for('registrar') }}?numero={{ p.maquina.numero }}&tipo_id={{ p.tipo.id }}">Cargar</a></td>
       </tr>
     {% endfor %}
     </tbody>

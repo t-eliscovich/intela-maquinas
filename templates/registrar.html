@@ -1,39 +1,40 @@
 {% extends "base.html" %}
-{% block titulo %}Cargar service{% endblock %}
+{% block titulo %}Cargar mantenimiento{% endblock %}
 {% block contenido %}
-<h1>Cargar un service hecho</h1>
-<p class="sub">Al guardar, los contadores de esa máquina para ese service vuelven a cero.</p>
+<h1>Cargar un mantenimiento hecho
+  <small>Al guardar, esa máquina vuelve a cero.</small></h1>
 
-<div class="card">
+<div class="bloque"><div class="relleno">
   <form method="POST" class="formulario">
-    <div>
-      <label class="campo" for="id_maquina">Máquina</label>
-      <select name="id_maquina" id="id_maquina" required>
-        <option value="">— Elegir máquina —</option>
-        {% for m in maquinas %}
-          <option value="{{ m.id }}"
-            {{ 'selected' if request.args.get('id_maquina')|int == m.id }}>{{ m.nombre }}</option>
-        {% endfor %}
-      </select>
+    <div style="max-width:220px">
+      <label class="campo" for="maquina">Máquina</label>
+      <input name="maquina" id="maquina" list="maquinas" required autofocus
+             inputmode="numeric" autocomplete="off" placeholder="1"
+             value="{{ request.args.get('numero', '') }}"
+             style="font-size:20px;font-weight:700;height:48px">
+      <datalist id="maquinas">
+        {% for m in maquinas %}<option value="{{ m.numero }}">{{ m.nombre }}</option>{% endfor %}
+      </datalist>
+      <p class="tenue" style="font-size:13px;margin:7px 0 0">
+        El número nomás. La 1 es la {{ maquinas[0].nombre if maquinas else 'TEJEDURIA-MQ 001' }}.</p>
     </div>
 
     <div>
       <label class="campo" for="tipo_id">Qué se le hizo</label>
       <select name="tipo_id" id="tipo_id" required>
-        <option value="">— Elegir service —</option>
+        <option value="">— Elegir mantenimiento —</option>
         {% for t in tipos %}
           <option value="{{ t.id }}"
             {{ 'selected' if request.args.get('tipo_id')|int == t.id }}>{{ t.nombre }}</option>
         {% endfor %}
       </select>
       {% if not tipos %}
-        <p class="sub" style="margin-top:8px">
-          No hay tipos cargados. <a href="{{ url_for('tipos_view') }}">Definilos acá primero.</a>
-        </p>
+        <p class="tenue" style="font-size:13px;margin-top:8px">
+          No hay tipos. <a href="{{ url_for('tipos_view') }}">Definilos primero.</a></p>
       {% endif %}
     </div>
 
-    <div class="fila-grid">
+    <div class="rejilla">
       <div>
         <label class="campo" for="fecha">Cuándo</label>
         <input type="date" name="fecha" id="fecha" value="{{ hoy }}" max="{{ hoy }}" required>
@@ -53,15 +54,15 @@
       <textarea name="nota" id="nota" placeholder="Repuestos cambiados, algo raro que se vio…"></textarea>
     </div>
 
-    <div><button class="btn" type="submit">Guardar service</button></div>
+    <div><button class="btn" type="submit">Guardar</button></div>
   </form>
-</div>
+</div></div>
 
 {% if historial %}
-<div class="card">
-  <p class="label">Últimos services cargados</p>
+<div class="bloque">
+  <div class="titulo"><h2>Últimos cargados</h2></div>
   <table>
-    <thead><tr><th>Fecha</th><th>Máquina</th><th>Service</th><th>Quién</th><th>Nota</th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Máquina</th><th>Mantenimiento</th><th>Quién</th><th>Nota</th></tr></thead>
     <tbody>
     {% for h in historial %}
       <tr>
@@ -69,7 +70,7 @@
         <td>{{ h.maquina_nombre }}</td>
         <td>{{ h.tipo_nombre }}</td>
         <td>{{ h.hecho_por }}</td>
-        <td style="white-space:normal;color:var(--gris)">{{ h.nota or '—' }}</td>
+        <td class="tenue">{{ h.nota or '—' }}</td>
       </tr>
     {% endfor %}
     </tbody>

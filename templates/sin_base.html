@@ -1,26 +1,23 @@
 {% extends "base.html" %}
 {% block titulo %}Sin base de datos{% endblock %}
 {% block contenido %}
-<h1>No hay conexión con la base</h1>
-<p class="sub">
-  El programa levantó, pero no pudo abrir la base de datos. Hasta que eso se resuelva
-  no puede mostrar ni guardar nada — y prefiere decírtelo antes que mostrarte
-  pantallas vacías que parecen datos.
-</p>
+<h1>No hay conexión con la base
+  <small>El programa levantó, pero no puede leer ni guardar nada. Mejor decirlo que
+  mostrar pantallas vacías que parecen datos.</small></h1>
 
-<div class="card">
-  <p class="label">El error, tal cual</p>
-  <pre style="white-space:pre-wrap;background:#f8fafc;border:1px solid var(--borde);
-              border-radius:8px;padding:14px;font-size:13px;margin:0">{{ error }}</pre>
+<div class="bloque">
+  <div class="titulo"><h2>El error, tal cual</h2></div>
+  <div class="relleno"><pre style="white-space:pre-wrap;background:#f8fafc;border:1px solid var(--borde);
+              border-radius:8px;padding:14px;font-size:13px;margin:0">{{ error }}</pre></div>
 </div>
 
-<div class="card">
-  <p class="label">Qué mirar</p>
-  <ul style="margin:0;padding-left:20px;line-height:1.9">
+<div class="bloque">
+  <div class="titulo"><h2>Qué mirar</h2></div>
+  <div class="relleno"><ul style="margin:0;padding-left:20px;line-height:1.9">
     <li>Que <code>MAQUINAS_DATABASE_URL</code> esté seteada a nivel «Machine» en el server.</li>
     <li>Que la tarea se haya reiniciado <b>después</b> de setear la variable — si no, el
         proceso sigue con el entorno viejo.</li>
     <li>El log del día en <code>C:\maquinas_app\logs\</code>.</li>
-  </ul>
+  </ul></div>
 </div>
 {% endblock %}

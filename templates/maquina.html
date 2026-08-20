@@ -1,22 +1,50 @@
 {% extends "base.html" %}
-{% block titulo %}{{ maquina.nombre if maquina else 'Máquina' }}{% endblock %}
+{% block titulo %}{{ maquina | mq }}{% endblock %}
 {% block contenido %}
-<h1>{{ maquina.nombre if maquina else 'Máquina' }}</h1>
-<p class="sub">Todo lo que se le hizo, de lo más nuevo a lo más viejo.</p>
+<h1>{{ maquina | mq }}
+  <small>{{ maquina.nombre if maquina else 'Esta máquina no está en Asinfo.' }}</small></h1>
 
-<div class="card">
+<div class="bloque">
+  <div class="titulo"><h2>Ficha</h2><p>Lo que no sepas, dejalo vacío</p></div>
+  <div class="relleno">
+    <form method="POST" class="formulario" style="max-width:none">
+      <div class="rejilla">
+        <div><label class="campo" for="marca">Marca</label>
+          <input name="marca" id="marca" value="{{ ficha.marca or '' }}"></div>
+        <div><label class="campo" for="modelo">Modelo</label>
+          <input name="modelo" id="modelo" value="{{ ficha.modelo or '' }}"></div>
+        <div><label class="campo" for="galga">Galga</label>
+          <input name="galga" id="galga" value="{{ ficha.galga or '' }}"></div>
+        <div><label class="campo" for="diametro">Diámetro</label>
+          <input name="diametro" id="diametro" value="{{ ficha.diametro | num(0) if ficha.diametro else '' }}"></div>
+        <div><label class="campo" for="alimentadores">Alimentadores</label>
+          <input name="alimentadores" id="alimentadores" value="{{ ficha.alimentadores or '' }}"></div>
+        <div><label class="campo" for="agujas">Agujas</label>
+          <input name="agujas" id="agujas" value="{{ ficha.agujas or '' }}"></div>
+        <div><label class="campo" for="anio">Año</label>
+          <input name="anio" id="anio" value="{{ ficha.anio or '' }}"></div>
+      </div>
+      <div><label class="campo" for="nota">Nota</label>
+        <textarea name="nota" id="nota">{{ ficha.nota or '' }}</textarea></div>
+      <div><button class="btn" type="submit">Guardar</button></div>
+    </form>
+  </div>
+</div>
+
+<div class="bloque">
+  <div class="titulo"><h2>Todo lo que se le hizo</h2></div>
   {% if not historial %}
-    <div class="vacio">Esta máquina todavía no tiene ningún service cargado.</div>
+    <div class="vacio"><h3>Todavía no tiene nada cargado</h3></div>
   {% else %}
   <table>
-    <thead><tr><th>Fecha</th><th>Service</th><th>Quién</th><th>Nota</th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Mantenimiento</th><th>Quién</th><th>Nota</th></tr></thead>
     <tbody>
     {% for h in historial %}
       <tr>
         <td>{{ h.fecha | fecha_es }}</td>
         <td>{{ h.tipo_nombre }}</td>
-        <td>{{ h.hecho_por }}</td>
-        <td style="white-space:normal;color:var(--gris)">{{ h.nota or '—' }}</td>
+        <td class="tenue">{{ h.hecho_por }}</td>
+        <td class="tenue">{{ h.nota or '—' }}</td>
       </tr>
     {% endfor %}
     </tbody>
@@ -24,5 +52,30 @@
   {% endif %}
 </div>
 
-<a class="btn gris" href="{{ url_for('semaforo') }}">← Volver al semáforo</a>
+{% if mensual %}
+{% set techo = mensual | map(attribute='kg') | max %}
+<div class="bloque">
+  <div class="titulo">
+    <h2>Cuánto teje por mes</h2>
+    <p>Dice si los kilos están bien puestos</p>
+  </div>
+  <table>
+    <thead><tr><th>Mes</th><th class="der">Kilos</th><th class="der oculta-chico">Rollos</th>
+               <th style="width:45%"></th></tr></thead>
+    <tbody>
+    {% for m in mensual %}
+      <tr>
+        <td>{{ '%02d' % m.mes }}/{{ m.anio }}</td>
+        <td class="der">{{ m.kg | num(0) }}</td>
+        <td class="der tenue oculta-chico">{{ m.rollos | num(0) }}</td>
+        <td><div class="progreso" style="margin:0"><span
+            style="width:{{ (m.kg / techo * 100) if techo else 0 }}%;background:var(--acento)"></span></div></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<a class="btn suave" href="{{ url_for('semaforo') }}">← Volver</a>
 {% endblock %}
