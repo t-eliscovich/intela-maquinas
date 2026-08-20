@@ -26,6 +26,8 @@ from functools import wraps
 from flask import (Flask, Response, flash, g, redirect, render_template,
                    request, session, url_for)
 
+import jinja2
+
 import ajustes as ajustes_excel
 import asinfo
 import config
@@ -901,6 +903,11 @@ def maquina_detalle(id_maquina):
     except asinfo.AsinfoNoDisponible:
         maquinas = []
     maquina = next((m for m in maquinas if m["id"] == id_maquina), None)
+    # Una máquina que no está en Asinfo no tiene ficha que mostrar. Se vuelve
+    # al listado diciéndolo, en vez de dibujar media pantalla vacía.
+    if not maquina and maquinas:
+        flash("Esa máquina no está en Asinfo.", "error")
+        return redirect(url_for("maquinas_lista"))
 
     tipos = store.tipos()
     if request.method == "POST" and request.form.get("que") == "eficiencia":
@@ -1258,24 +1265,36 @@ def healthz():
 # --------------------------------------------------------------------------
 # Formato (español: punto para miles, coma para decimales)
 # --------------------------------------------------------------------------
+# Un dato que no está se muestra como «—», no tira la pantalla abajo. Jinja
+# devuelve Undefined cuando falta una clave del diccionario, y eso no es None:
+# sin este freno, un campo que no vino rompe la pantalla entera con un 500.
+def _falta(valor):
+    return valor is None or isinstance(valor, jinja2.Undefined)
+
+
 @app.template_filter("num")
 def _num(valor, decimales=0):
-    if valor is None:
+    if _falta(valor):
         return "—"
-    s = f"{float(valor):,.{decimales}f}"
+    try:
+        s = f"{float(valor):,.{decimales}f}"
+    except (TypeError, ValueError):
+        return "—"
     return s.replace(",", "\x00").replace(".", ",").replace("\x00", ".")
 
 
 @app.template_filter("pct")
 def _pct(valor):
-    if valor is None:
+    if _falta(valor):
         return "—"
     return f"{valor * 100:,.0f} %".replace(",", ".")
 
 
 @app.template_filter("fecha_es")
 def _fecha_es(valor):
-    return valor.strftime("%d/%m/%Y") if valor else "—"
+    if _falta(valor) or not valor:
+        return "—"
+    return valor.strftime("%d/%m/%Y")
 
 
 @app.template_filter("editable")

@@ -938,6 +938,15 @@ r = c.get("/maquina?numero=1")
 check("/maquina?numero=1 lleva a la ficha de la 1",
       r.status_code == 302 and r.headers["Location"].endswith("/maquina/10"))
 r = c.get("/maquina?numero=77", follow_redirects=True)
+# Un dato que falta se muestra como «—»: Jinja devuelve Undefined cuando no
+# está la clave, y sin este freno una pantalla entera se caía con un 500.
+check("un dato que falta no tira la pantalla abajo",
+      A._num(A.jinja2.Undefined(name="x")) == "—"
+      and A._fecha_es(A.jinja2.Undefined(name="x")) == "—"
+      and A._num("no soy un numero") == "—")
+check("una maquina que no esta en Asinfo vuelve al listado, no rompe",
+      c.get("/maquina/999999").status_code == 302)
+
 check("un numero que no existe vuelve al listado y lo dice",
       "No hay ninguna máquina 77" in r.get_data(as_text=True))
 cuerpo = c.get("/maquina/10").get_data(as_text=True)
