@@ -343,12 +343,40 @@ r = c.post("/registrar", data={"maquina": "", "tipo_id": "1",
                                "fecha": hoy.isoformat(), "hecho_por": "Luis"})
 check("sin numero pide el numero", "Poné el número" in r.get_data(as_text=True))
 
+# --- 8c. archivos ----------------------------------------------------------
+print("Archivos:")
+guardados = {}
+store.guardar_archivo = lambda nombre, contenido, **k: (
+    guardados.update(nombre=nombre, contenido=contenido, extra=k), 1)[1]
+store.archivos = lambda id_maquina=None: [
+    {"id": 1, "id_maquina": 10, "nombre": "planilla.xlsx", "descripcion": "la de planta",
+     "tamano": 2048, "subido_por": "Roberto", "creado_en": datetime(2026, 8, 20)}]
+store.archivo = lambda i: {"id": 1, "id_maquina": 10, "nombre": "planilla.xlsx",
+                           "contenido": b"PK\x03\x04hola", "descripcion": None,
+                           "tamano": 9, "subido_por": None, "creado_en": None}
+store.borrar_archivo = lambda i: guardados.update(borrado=i)
+
+r = c.post("/archivos", data={"archivo": (io.BytesIO(b"unos bytes"), "manual.pdf"),
+                              "id_maquina": "3", "descripcion": "manual",
+                              "subido_por": "Darlin"},
+           content_type="multipart/form-data")
+check("sube un archivo", r.status_code == 302 and guardados.get("nombre") == "manual.pdf")
+check("lo liga a la maquina por el numero", guardados["extra"]["id_maquina"] == 12)
+r = c.post("/archivos", data={"descripcion": "sin archivo"},
+           content_type="multipart/form-data")
+check("sin archivo avisa", "Elegí un archivo" in r.get_data(as_text=True))
+r = c.get("/archivos/1")
+check("se puede bajar", r.status_code == 200 and b"hola" in r.data)
+check("baja con su nombre", "planilla.xlsx" in r.headers.get("Content-Disposition", ""))
+r = c.post("/archivos/1/borrar")
+check("se puede borrar", guardados.get("borrado") == 1)
+
 # --- 9. las pantallas abren -----------------------------------------------
 print("Pantallas:")
 store.fichas = lambda: {10: {"marca": "Mayer", "modelo": "Relanit", "galga": 24,
                             "diametro": 32, "alimentadores": 96, "agujas": 2460,
                             "anio": 2017, "serie": "7", "tipo_agujas": None, "nota": None}}
-for ruta in ("/", "/registrar", "/tipos", "/arranque", "/carga", "/maquina/10", "/maquinas"):
+for ruta in ("/", "/registrar", "/tipos", "/arranque", "/carga", "/maquina/10", "/maquinas", "/archivos"):
     r = c.get(ruta)
     check(f"{ruta} abre", r.status_code == 200)
 r = c.get("/?solo=vencidas")

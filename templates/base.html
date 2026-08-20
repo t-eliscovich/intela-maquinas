@@ -140,6 +140,7 @@
       <a href="{{ url_for('registrar') }}"  class="{{ 'activo' if request.endpoint=='registrar' }}">Cargar uno</a>
       <a href="{{ url_for('tipos_view') }}" class="{{ 'activo' if request.endpoint=='tipos_view' }}">Tipos</a>
       <a href="{{ url_for('maquinas_lista') }}" class="{{ 'activo' if request.endpoint in ('maquinas_lista','maquina_detalle') }}">Máquinas</a>
+      <a href="{{ url_for('archivos') }}" class="{{ 'activo' if request.endpoint in ('archivos','carga','carga_revisar') }}">Archivos</a>
     </nav>
 
     {# La campanita. Si Asinfo no contesta, `vencidas` es None y lo dice: nunca

@@ -125,6 +125,21 @@ def bootstrap() -> None:
                 ADD COLUMN IF NOT EXISTS repuestos text;
             ALTER TABLE mantenimiento.service
                 ADD COLUMN IF NOT EXISTS horas numeric(5,2);
+
+            -- Archivos subidos desde el programa: la planilla de planta, el
+            -- manual de una maquina, una foto. Guardados en la base y no en
+            -- una carpeta del server: asi sobreviven a una actualizacion, que
+            -- reemplaza la carpeta entera.
+            CREATE TABLE IF NOT EXISTS mantenimiento.archivo (
+                id           serial PRIMARY KEY,
+                id_maquina   integer,
+                nombre       text NOT NULL,
+                descripcion  text,
+                contenido    bytea NOT NULL,
+                tamano       integer NOT NULL,
+                subido_por   text,
+                creado_en    timestamptz NOT NULL DEFAULT now()
+            );
             """
         )
         con.commit()
@@ -372,3 +387,42 @@ def cargar_lote(servicios: list[tuple], topes: list[tuple], fichas_: list[tuple]
             )
         con.commit()
     return {"servicios": len(servicios), "topes": len(topes), "fichas": len(fichas_)}
+
+
+# --- Archivos --------------------------------------------------------------
+def guardar_archivo(nombre, contenido, id_maquina=None, descripcion=None,
+                    subido_por=None) -> int:
+    with _conn() as con, con.cursor() as cur:
+        cur.execute(
+            """INSERT INTO mantenimiento.archivo
+                   (id_maquina, nombre, descripcion, contenido, tamano, subido_por)
+               VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+            (id_maquina, nombre.strip(), (descripcion or "").strip() or None,
+             psycopg2.Binary(contenido), len(contenido),
+             (subido_por or "").strip() or None),
+        )
+        nuevo = cur.fetchone()[0]
+        con.commit()
+    return nuevo
+
+
+def archivos(id_maquina=None) -> list[dict]:
+    """La lista, SIN el contenido: traer los bytes de todos para pintar una
+    tabla es la forma mas facil de tirar abajo la pantalla."""
+    if id_maquina is None:
+        return _todos(
+            """SELECT id, id_maquina, nombre, descripcion, tamano, subido_por, creado_en
+                 FROM mantenimiento.archivo ORDER BY creado_en DESC""")
+    return _todos(
+        """SELECT id, id_maquina, nombre, descripcion, tamano, subido_por, creado_en
+             FROM mantenimiento.archivo WHERE id_maquina = %s
+            ORDER BY creado_en DESC""", (id_maquina,))
+
+
+def archivo(id_archivo: int) -> dict | None:
+    filas = _todos("SELECT * FROM mantenimiento.archivo WHERE id = %s", (id_archivo,))
+    return filas[0] if filas else None
+
+
+def borrar_archivo(id_archivo: int) -> None:
+    _ejecutar("DELETE FROM mantenimiento.archivo WHERE id = %s", (id_archivo,))

@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block titulo %}Archivos{% endblock %}
+{% block contenido %}
+<h1>Archivos
+  <small>La planilla de planta, un manual, una foto. Quedan guardados acá.</small></h1>
+
+<div class="bloque"><div class="relleno">
+  <form method="POST" enctype="multipart/form-data" class="formulario" style="max-width:none">
+    <div class="rejilla">
+      <div style="grid-column:span 2">
+        <label class="campo" for="archivo">Archivo</label>
+        <input type="file" name="archivo" id="archivo" required style="padding:9px;height:auto">
+      </div>
+      <div>
+        <label class="campo" for="id_maquina">De qué máquina (opcional)</label>
+        <input name="id_maquina" id="id_maquina" list="maquinas" inputmode="numeric"
+               autocomplete="off" placeholder="1">
+        <datalist id="maquinas">
+          {% for m in maquinas %}<option value="{{ m.numero }}">{{ m.nombre }}</option>{% endfor %}
+        </datalist>
+      </div>
+      <div>
+        <label class="campo" for="subido_por">Quién lo sube</label>
+        <input name="subido_por" id="subido_por" list="quienes" autocomplete="off">
+        <datalist id="quienes">
+          {% for r in responsables %}<option value="{{ r }}">{% endfor %}
+        </datalist>
+      </div>
+    </div>
+    <div>
+      <label class="campo" for="descripcion">Qué es (opcional)</label>
+      <input name="descripcion" id="descripcion" placeholder="Planilla de mantenimiento de tejeduría">
+    </div>
+    <div><button class="btn" type="submit">Subir</button></div>
+  </form>
+  <p class="tenue" style="font-size:13px;margin:14px 0 0">Hasta 8 MB por archivo.</p>
+</div></div>
+
+<div class="bloque">
+  <div class="titulo"><h2>Lo que hay</h2><p>{{ archivos | length }} archivos</p></div>
+  {% if not archivos %}
+    <div class="vacio"><h3>Todavía no hay nada subido</h3></div>
+  {% else %}
+  <table>
+    <thead><tr><th>Archivo</th><th>Máquina</th><th>Qué es</th>
+               <th class="der oculta-chico">Tamaño</th><th class="oculta-chico">Quién</th>
+               <th class="oculta-chico">Cuándo</th><th></th></tr></thead>
+    <tbody>
+    {% for a in archivos %}
+      <tr>
+        <td><a href="{{ url_for('archivo_bajar', id_archivo=a.id) }}"
+               style="font-weight:700">{{ a.nombre }}</a></td>
+        <td>{% if a.maquina %}{{ a.maquina | mq }}{% else %}<span class="tenue">—</span>{% endif %}</td>
+        <td class="tenue">{{ a.descripcion or '—' }}</td>
+        <td class="der tenue oculta-chico">{{ (a.tamano / 1024) | num(0) }} KB</td>
+        <td class="tenue oculta-chico">{{ a.subido_por or '—' }}</td>
+        <td class="tenue oculta-chico">{{ a.creado_en.strftime('%d/%m/%Y') if a.creado_en else '—' }}</td>
+        <td class="der" style="white-space:nowrap">
+          {% if a.nombre.lower().endswith('.xlsx') or a.nombre.lower().endswith('.xlsm') %}
+          <form method="POST" action="{{ url_for('archivo_leer', id_archivo=a.id) }}"
+                style="display:inline">
+            <button class="btn suave chico">Leer la planilla</button>
+          </form>
+          {% endif %}
+          <form method="POST" action="{{ url_for('archivo_borrar', id_archivo=a.id) }}"
+                style="display:inline"
+                onsubmit="return confirm('¿Borrar {{ a.nombre }}?')">
+            <button class="btn suave chico">Borrar</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

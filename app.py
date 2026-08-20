@@ -22,8 +22,8 @@ import time
 from datetime import date, datetime
 from functools import wraps
 
-from flask import (Flask, flash, g, redirect, render_template, request,
-                   session, url_for)
+from flask import (Flask, Response, flash, g, redirect, render_template,
+                   request, session, url_for)
 
 import asinfo
 import config
@@ -595,6 +595,90 @@ def CAMPOS_MAPA(tipos):
 
 
 # --------------------------------------------------------------------------
+# Archivos
+# --------------------------------------------------------------------------
+# Un lugar para subir cosas desde el programa: la planilla de planta, el manual
+# de una máquina, una foto. Van a la BASE, no a una carpeta del server: la
+# actualización reemplaza la carpeta entera y se las llevaría puestas.
+@app.route("/archivos", methods=["GET", "POST"])
+@requiere_login
+def archivos():
+    try:
+        maquinas, _, _ = asinfo.maquinas()
+    except asinfo.AsinfoNoDisponible:
+        maquinas = []
+
+    if request.method == "POST":
+        try:
+            subido = request.files.get("archivo")
+            if not subido or not subido.filename:
+                raise ValueError("Elegí un archivo.")
+            contenido = subido.read()
+            if not contenido:
+                raise ValueError("El archivo llegó vacío.")
+
+            crudo = (request.form.get("id_maquina") or "").strip()
+            id_maquina = _buscar_maquina(crudo, maquinas) if crudo else None
+
+            store.guardar_archivo(
+                os.path.basename(subido.filename), contenido,
+                id_maquina=id_maquina,
+                descripcion=request.form.get("descripcion"),
+                subido_por=request.form.get("subido_por"))
+            flash(f"«{os.path.basename(subido.filename)}» guardado.", "ok")
+            return redirect(url_for("archivos"))
+        except Exception as exc:  # noqa: BLE001
+            flash(str(exc), "error")
+
+    lista = store.archivos()
+    nombres = {m["id"]: m for m in maquinas}
+    for a in lista:
+        a["maquina"] = nombres.get(a["id_maquina"])
+    return render_template("archivos.html", archivos=lista, maquinas=maquinas,
+                           responsables=store.responsables())
+
+
+@app.route("/archivos/<int:id_archivo>")
+@requiere_login
+def archivo_bajar(id_archivo):
+    a = store.archivo(id_archivo)
+    if not a:
+        flash("Ese archivo ya no está.", "error")
+        return redirect(url_for("archivos"))
+    return Response(
+        bytes(a["contenido"]),
+        headers={"Content-Disposition": f'attachment; filename="{a["nombre"]}"'},
+        mimetype="application/octet-stream")
+
+
+@app.route("/archivos/<int:id_archivo>/borrar", methods=["POST"])
+@requiere_login
+def archivo_borrar(id_archivo):
+    store.borrar_archivo(id_archivo)
+    flash("Archivo borrado.", "ok")
+    return redirect(url_for("archivos"))
+
+
+@app.route("/archivos/<int:id_archivo>/leer", methods=["POST"])
+@requiere_login
+def archivo_leer(id_archivo):
+    """Leer una planilla ya subida, sin volver a subirla."""
+    a = store.archivo(id_archivo)
+    if not a:
+        flash("Ese archivo ya no está.", "error")
+        return redirect(url_for("archivos"))
+    if not a["nombre"].lower().endswith((".xlsx", ".xlsm")):
+        flash("Sólo se pueden leer planillas de Excel.", "error")
+        return redirect(url_for("archivos"))
+
+    os.makedirs(CARPETA_CARGA, exist_ok=True)
+    token = secrets.token_hex(8)
+    with open(os.path.join(CARPETA_CARGA, token + ".xlsx"), "wb") as f:
+        f.write(bytes(a["contenido"]))
+    return redirect(url_for("carga_revisar", token=token))
+
+
+# --------------------------------------------------------------------------
 # Todas las máquinas
 # --------------------------------------------------------------------------
 @app.route("/maquinas")
@@ -660,6 +744,7 @@ def maquina_detalle(id_maquina):
         "maquina.html",
         maquina=maquina,
         ficha=store.ficha(id_maquina),
+        archivos=store.archivos(id_maquina),
         historial=store.historial(id_maquina),
         mensual=mensual,
     )

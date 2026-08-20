@@ -84,5 +84,24 @@
 </div>
 {% endif %}
 
+{% if archivos %}
+<div class="bloque">
+  <div class="titulo"><h2>Archivos de esta máquina</h2></div>
+  <table>
+    <thead><tr><th>Archivo</th><th>Qué es</th><th class="der">Tamaño</th></tr></thead>
+    <tbody>
+    {% for a in archivos %}
+      <tr>
+        <td><a href="{{ url_for('archivo_bajar', id_archivo=a.id) }}"
+               style="font-weight:700">{{ a.nombre }}</a></td>
+        <td class="tenue">{{ a.descripcion or '—' }}</td>
+        <td class="der tenue">{{ (a.tamano / 1024) | num(0) }} KB</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
 <a class="btn suave" href="{{ url_for('semaforo') }}">← Volver</a>
 {% endblock %}
