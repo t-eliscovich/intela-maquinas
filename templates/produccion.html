@@ -2,32 +2,29 @@
 {% block titulo %}Producción{% endblock %}
 {% block contenido %}
 
+{# El aviso de que esto es un cálculo estaba en un recuadro de tres renglones.
+   Dice lo mismo en la bajada del título y no ocupa media pantalla. #}
 <h1>Producción por máquina
-  <small>Cuántos kilos debería dar cada una en 12 horas, según la planilla.</small></h1>
-
-<div class="aviso">
-  Esto es un <b>cálculo</b>, no lo que la máquina tejió. Los kilos de verdad
-  están en <a href="{{ url_for('kilos') }}">Kilos</a> y salen de Asinfo. Que no
-  coincidan no es un error: uno es lo que debería dar y el otro es lo que pasó.
-</div>
+  <small>Cuántos kilos debería dar cada una en 12 horas. Es un cálculo, no lo que tejió.</small></h1>
 
 <div class="bloque">
   <div class="titulo"><h2>{{ filas | length }} máquinas</h2>
     {# `select` saca las vacías: hay máquinas anotadas en la planilla a las que
        todavía no les calcularon los kilos, y sumar un vacío rompe la pantalla. #}
-    <p>{{ filas | map(attribute='e.kg_dia') | select | sum | num(0) }} kg por día
-       entre las que tienen el número puesto</p></div>
+    <p>{{ filas | map(attribute='e.kg_dia') | select | sum | num(0) }} kg por día ·
+       los kilos que tejió de verdad, en <a href="{{ url_for('kilos') }}">Kilos</a></p></div>
   {% if not filas %}
     <div class="vacio"><h3>Todavía no hay nada cargado</h3>
       <p>Subí la planilla de control de ajuste en Archivos y tocá «Leer la planilla».</p>
       <a class="btn" href="{{ url_for('archivos') }}">Ir a Archivos</a></div>
   {% else %}
-  <table>
+  <table style="font-size:13px;line-height:1.25">
     <thead><tr>
       <th>Máquina</th><th class="der">rpm</th><th class="der oculta-chico">Sistemas</th>
       <th class="der">Diámetro</th><th class="der oculta-chico">Alimentadores</th>
       <th class="der oculta-chico">Rollo</th><th class="der oculta-chico">Min/rollo</th>
-      <th class="der">Rollos/día</th><th class="der">kg/día</th>
+      <th class="der">Rollos 12 h</th><th class="der">kg 12 h</th>
+      <th class="der oculta-chico">kg 24 h</th>
     </tr></thead>
     <tbody>
     {% for f in filas %}
@@ -42,6 +39,7 @@
         <td class="der tenue oculta-chico">{{ f.e.minutos_rollo | num(1) }}</td>
         <td class="der">{{ f.e.rollos_dia | num(0) }}</td>
         <td class="der"><b>{{ f.e.kg_dia | num(0) }}</b></td>
+        <td class="der tenue oculta-chico">{{ f.e.kg_dia_24 | num(0) }}</td>
       </tr>
     {% endfor %}
     </tbody>
@@ -53,14 +51,15 @@
 <div class="bloque">
   <div class="titulo"><h2>Consumo de hilo</h2>
     <p>Cuánto lleva cada tela de cada hilo</p></div>
-  <table>
-    <thead><tr><th>Tela</th><th>Hilo</th><th>Código</th><th class="der">Rendimiento</th></tr></thead>
+  <table style="font-size:13px;line-height:1.25">
+    <thead><tr><th>Tela</th><th>Hilo</th><th class="oculta-chico">Código</th>
+               <th class="der">Rendimiento</th></tr></thead>
     <tbody>
     {% for c in consumo %}
       <tr>
         <td>{{ c.tela }}</td>
         <td class="tenue">{{ c.hilo }}</td>
-        <td class="tenue">{{ c.codigo_hilo or '—' }}</td>
+        <td class="tenue oculta-chico">{{ c.codigo_hilo or '—' }}</td>
         <td class="der">{{ c.rendimiento | num(4) }}</td>
       </tr>
     {% endfor %}
@@ -73,9 +72,9 @@
 <div class="bloque">
   <div class="titulo"><h2>Gramajes medidos</h2>
     <p>El peso que dio la tela de cada máquina</p></div>
-  <table>
-    <thead><tr><th>Máquina</th><th>Fecha</th><th>Tela</th><th>Hilos</th>
-               <th class="der">Peso</th></tr></thead>
+  <table style="font-size:13px;line-height:1.25">
+    <thead><tr><th>Máquina</th><th>Fecha</th><th>Tela</th>
+               <th class="oculta-chico">Hilos</th><th class="der">Peso</th></tr></thead>
     <tbody>
     {% for g in gramajes %}
       <tr>
@@ -83,7 +82,7 @@
                class="mq" style="text-decoration:none">{{ g.maquina | mq }}</a></td>
         <td>{{ g.fecha | fecha_es }}</td>
         <td>{{ g.tela or '—' }}</td>
-        <td class="tenue">{{ g.hilos or '—' }}</td>
+        <td class="tenue oculta-chico">{{ g.hilos or '—' }}</td>
         <td class="der">{{ g.peso | num(2) }}</td>
       </tr>
     {% endfor %}

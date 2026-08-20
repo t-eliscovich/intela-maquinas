@@ -26,8 +26,10 @@ import config; config.PASSWORD = ""
 import store, asinfo, app as A
 
 hoy = date.today()
+# El cambio de agujas NO tiene tope de kilos a propósito: no se hace por
+# desgaste. Así el semáforo lo muestra como fecha y no lo pinta de rojo.
 TIPOS = [
-    {"id": 1, "nombre": "Cambio de agujas", "cada_kg": 250000, "cada_rollos": None,
+    {"id": 1, "nombre": "Cambio de agujas", "cada_kg": None, "cada_rollos": None,
      "cada_dias": None, "activo": True},
     {"id": 2, "nombre": "Limpieza", "cada_kg": 50000, "cada_rollos": None,
      "cada_dias": None, "activo": True},
@@ -56,12 +58,19 @@ store.archivos = lambda id_maquina=None: [
      "subido_por": "Roberto", "creado_en": datetime.utcnow()}]
 store.historial = lambda id_maquina=None, limite=200: [
     {"fecha": hoy - timedelta(days=40), "tipo_nombre": "Limpieza",
-     "hecho_por": "Roberto", "nota": None, "repuestos": None, "horas": 1.5,
-     "maquina_nombre": "TEJEDURIA-MQ 001"},
+     "hecho_por": "Roberto", "nota": "limpieza de cilindro", "repuestos": None,
+     "horas": 1.5, "maquina_nombre": "TEJEDURIA-MQ 001"},
+    # El mismo día se limpió y se cambiaron agujas: en la ficha van juntos.
     {"fecha": hoy - timedelta(days=300), "tipo_nombre": "Cambio de agujas",
      "hecho_por": "Darlin", "nota": "Se cambiaron 12 agujas rotas",
      "repuestos": "12 agujas de cilindro", "horas": 4,
      "maquina_nombre": "TEJEDURIA-MQ 001"},
+    {"fecha": hoy - timedelta(days=300), "tipo_nombre": "Limpieza",
+     "hecho_por": "Darlin", "nota": "limpieza general", "repuestos": None,
+     "horas": 2, "maquina_nombre": "TEJEDURIA-MQ 001"},
+    {"fecha": hoy - timedelta(days=520), "tipo_nombre": "Limpieza",
+     "hecho_por": "Humberto", "nota": "limpiesa de memminger", "repuestos": None,
+     "horas": None, "maquina_nombre": "TEJEDURIA-MQ 001"},
 ]
 store.ultimos_por_maquina_y_tipo = lambda: {
     (m["id"], t["id"]): {"fecha": hoy - timedelta(days=30 + (m["id"] % 90)),
@@ -86,6 +95,8 @@ store.telas = lambda: [
     for i, t in enumerate(["FALSO F. KW", "TANIA SPUN LYCRA", "PIQUE", "BOXER"])]
 store.resumen_ajustes = lambda: {"filas": 1153, "maquinas": 42, "con_fecha": 931,
                                  "desde": date(2021, 5, 31), "hasta": hoy}
+store.cuantos_de_la_carga_vieja = lambda: 66
+store.guardar_historial = lambda filas: {"mantenimientos": len(filas), "borrados": 66}
 AGUJA_FALSA = {"id_maquina": 101, "descripcion": "MAYER", "plato": None,
                "cilindro": "VO LS-140,50 G00 36 · VO LS-140,50 G00 37",
                "platinas": "206085101G00", "nota": None}
@@ -95,18 +106,31 @@ store.levas = lambda: [
      "ubicacion": "cilindro", "accionamiento": "TRABAJO RECOMIENDA LYCRA"},
     {"id": 2, "maquinas": "MAYER (2-3-9-10 )", "codigo": "30-32 274078-4",
      "cantidad": 414, "ubicacion": "cilindro", "accionamiento": "RETENIDO"}]
-store.bandas = lambda: [
-    {"id": 1, "maquinas": "MAYER JERSEY", "cantidad_maquinas": 4, "diametro": 32,
-     "media": "7.2", "tres_cuartos": "8.8", "lycra": "11.4"},
-    {"id": 2, "maquinas": "PILOTELLI JERSEY", "cantidad_maquinas": 3, "diametro": 30,
-     "media": "7", "tres_cuartos": "8.4", "lycra": "9"}]
+store.bandas = lambda clase="memminger": (
+    [{"id": 1, "clase": "memminger", "maquinas": "MAYER JERSEY",
+      "cantidad_maquinas": 4, "diametro": 32, "media": "7.2",
+      "tres_cuartos": "8.8", "lycra": "11.4", "banda": None, "cobrador": None,
+      "nota": None},
+     {"id": 2, "clase": "memminger", "maquinas": "PILOTELLI JERSEY",
+      "cantidad_maquinas": 3, "diametro": 30, "media": "7",
+      "tres_cuartos": "8.4", "lycra": "9", "banda": None, "cobrador": None,
+      "nota": None}]
+    if clase == "memminger" else
+    [{"id": 3, "clase": "motor", "maquinas": "MAYER", "cantidad_maquinas": 2,
+      "diametro": 30, "media": None, "tres_cuartos": None, "lycra": None,
+      "banda": "1040 M8 /50", "cobrador": "14/5/1015LI", "nota": None}])
 store.banda_stock = lambda: [{"medida": 6.6, "cantidad": 10},
                              {"medida": 7.2, "cantidad": 20},
                              {"medida": 7.8, "cantidad": 0}]
 store.eficiencias = lambda: {
     m["id"]: {"id_maquina": m["id"], "rpm": 25, "sistemas": "102", "diametro": 32,
               "alimentadores": 24, "tamano_rollo": 1410, "minutos_rollo": 56.4,
-              "rollos_dia": 12, "kg_dia": 270} for m in MAQS}
+              "rollos_dia": 12, "kg_dia": 270,
+              "rollos_dia_24": 25, "kg_dia_24": 612.5} for m in MAQS}
+store.agujas_por_modelo = lambda: [
+    {"id": 1, "modelo": "MAYER)1-2-3-4-5-7-9-10", "marca_aguja": "GROZ BECKERT",
+     "codigos": "VO-LS 140.50 G0036 · VO-LS 140.50 G0037", "donde": "CILINDRO",
+     "platinas": "206085101G00", "marca_platina": "KERN LIEBERS", "nota": None}]
 store.consumo_hilo = lambda: [
     {"id": 1, "tela": "JAMES", "hilo": "poliester 75/36f", "codigo_hilo": "75F36",
      "rendimiento": 0.4786},
@@ -119,6 +143,10 @@ store.gramajes = lambda id_maquina=None: [
 asinfo.maquinas = lambda: (MAQS, datetime.utcnow(), True)
 asinfo.acumulados = lambda pares: (
     {(m, t): (_kg(m, t), int(_kg(m, t) / 22)) for m, t, _ in pares}, datetime.utcnow(), True)
+# Cuanto mas vieja la fecha, mas kilos lleva encima: asi la resta entre dos
+# mantenimientos da un numero positivo, como en la realidad.
+asinfo.kilos_desde = lambda id_maquina, fechas: {
+    str(f)[:10]: float((hoy - f).days * 480) for f in fechas if f}
 asinfo.produccion_mensual = lambda id_maquina, meses=12: (
     [{"anio": 2026, "mes": mes, "kg": 8000 + (id_maquina * mes * 37) % 9000,
       "rollos": 300 + mes} for mes in range(8, 0, -1)], datetime.utcnow(), True)
@@ -165,16 +193,20 @@ except ImportError:
 
 # La revisión de la planilla de control de ajuste, con la planilla de verdad si
 # está a mano. No se commitea: el repo es público.
-planilla = os.path.join(os.path.dirname(destino), "CONTROL DE AGJUSTE",
-                        "CONTROL DE AGJUSTE ).xlsx")
-if os.path.exists(planilla):
-    with open(planilla, "rb") as f:
+raiz = os.path.dirname(destino)
+for nombre, ruta_planilla in (
+        ("subir-ajuste-revisar",
+         os.path.join(raiz, "CONTROL DE AGJUSTE", "CONTROL DE AGJUSTE ).xlsx")),
+        ("subir-historial-revisar",
+         os.path.join(raiz, "MANTENIMIENTO", "R01-MANTENIMIENTO(1).xlsx"))):
+    if not os.path.exists(ruta_planilla):
+        print(f"  (falta {os.path.basename(ruta_planilla)}: no se previsualiza)")
+        continue
+    with open(ruta_planilla, "rb") as f:
         buffer = io.BytesIO(f.read())
-    r = c.post("/carga", data={"archivo": (buffer, "ajuste.xlsx")},
+    r = c.post("/carga", data={"archivo": (buffer, "planilla.xlsx")},
                content_type="multipart/form-data")
     if r.status_code == 302:
-        guardar("subir-ajuste-revisar", c.get(r.headers["Location"]))
-else:
-    print("  (la planilla de ajuste no está en la carpeta: no se previsualiza)")
+        guardar(nombre, c.get(r.headers["Location"]))
 
 print(f"\nListo. Abrí los archivos de {destino}")

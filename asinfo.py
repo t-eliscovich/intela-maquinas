@@ -232,6 +232,24 @@ def acumulados(pares: list[tuple[int, int, str]]) -> tuple[dict, datetime, bool]
     return _cacheado(clave, cargar)
 
 
+def kilos_desde(id_maquina: int, fechas: list) -> dict:
+    """Cuántos kilos tejió la máquina desde cada una de esas fechas.
+
+    Devuelve {'YYYY-MM-DD': kg}. Con eso, los kilos ENTRE dos mantenimientos
+    son la resta de los dos acumulados — que es la única forma honesta de
+    contarlos: Asinfo guarda cada rollo con su fecha, no un contador.
+    """
+    limpias = sorted({str(f)[:10] for f in fechas if f})
+    if not limpias:
+        return {}
+    # Se reusa `acumulados`: la consulta es la misma. El segundo valor del par
+    # es sólo una llave para poder devolver una fila por fecha.
+    pares = [(id_maquina, i, f) for i, f in enumerate(limpias)]
+    datos, _, _ = acumulados(pares)
+    return {f: datos.get((id_maquina, i), (0.0, 0))[0]
+            for i, f in enumerate(limpias)}
+
+
 def _numero(nombre: str, codigo: str | None = None) -> int | None:
     """El número con el que la llaman en planta.
 

@@ -4,35 +4,33 @@
 
 {% if paso == 'subir' %}
 <h1>Subir el Excel de planta
-  <small>El de siempre, como esté. Pantalla interna: la usamos nosotros.</small></h1>
+  <small>El de siempre, como esté.</small></h1>
 
 <div class="bloque"><div class="relleno">
+  {# El archivo y el cuadro de pegar son la misma decisión: van juntos, con el
+     botón al lado, para que se vea de una que hay dos maneras de traer las
+     filas. #}
   <form method="POST" enctype="multipart/form-data" class="formulario">
-    <div>
+    <div style="grid-column:span 2">
       <label class="campo" for="archivo">Archivo</label>
       <input type="file" name="archivo" id="archivo" accept=".xlsx,.xlsm"
-             style="padding:10px;height:auto">
-    </div>
-    <div>
-      <label class="campo" for="pegado">O pegá las filas</label>
-      <textarea name="pegado" id="pegado" rows="8"
-                style="font-family:ui-monospace,monospace;font-size:13px"
-                placeholder="Máquina&#9;Limpieza cada cuántos kg&#10;1&#9;20000&#10;2&#9;20000">{{ pegado or '' }}</textarea>
-      <p class="tenue" style="font-size:13px;margin:6px 0 0">
-        Copiá las celdas en el Excel y pegalas acá, con la fila de títulos. Sirve
-        cuando la planilla está en otra computadora.
-      </p>
+             style="padding:6px;height:34px">
     </div>
     <div><button class="btn" type="submit">Revisar</button></div>
+    <div class="ancho">
+      <label class="campo" for="pegado">O pegá las filas, con la de títulos</label>
+      <textarea name="pegado" id="pegado" rows="5"
+                style="font-family:ui-monospace,monospace;font-size:13px"
+                placeholder="Máquina&#9;Limpieza cada cuántos kg&#10;1&#9;20000&#10;2&#9;20000">{{ pegado or '' }}</textarea>
+      <p class="ayuda">Sirve cuando la planilla está en otra computadora. Nada se
+        guarda hasta que lo mires.</p>
+    </div>
   </form>
-  <p class="tenue" style="font-size:13px;margin:16px 0 0">
-    Nada se guarda hasta que lo mires.
-  </p>
 </div></div>
 
 {% else %}
 <h1>Revisá antes de guardar
-  <small>Todavía no se guardó nada. Si una columna quedó mal, cambiala y volvé a leer.</small></h1>
+  <small>Todavía no se guardó nada.</small></h1>
 
 <form method="POST" action="{{ url_for('carga_revisar', token=token) }}">
 
@@ -40,22 +38,23 @@
 
 {% if formato == 'tabla' %}
 <div class="bloque">
-  <div class="titulo"><h2>Qué columna es cada cosa</h2></div>
+  <div class="titulo"><h2>Qué columna es cada cosa</h2>
+    <p>Si una quedó mal, cambiala y volvé a leer</p></div>
   <div class="relleno">
-  {% if hojas | length > 1 %}
-  <div style="margin-bottom:16px;max-width:320px">
-    <label class="campo" for="hoja">Hoja</label>
-    <select name="hoja" id="hoja">
-      {% for h in hojas %}<option value="{{ h }}" {{ 'selected' if h == hoja }}>{{ h }}</option>{% endfor %}
-    </select>
-  </div>
-  {% else %}<input type="hidden" name="hoja" value="{{ hoja }}">{% endif %}
+  <div class="rejilla">
+    {% if hojas | length > 1 %}
+    <div>
+      <label class="campo" for="hoja">Hoja</label>
+      <select name="hoja" id="hoja">
+        {% for h in hojas %}<option value="{{ h }}" {{ 'selected' if h == hoja }}>{{ h }}</option>{% endfor %}
+      </select>
+    </div>
+    {% else %}<input type="hidden" name="hoja" value="{{ hoja }}">{% endif %}
 
-  <div class="rejilla" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr))">
     {% for campo, etiqueta in campos %}
     <div>
       <label class="campo" for="col_{{ campo }}">{{ etiqueta }}</label>
-      <select name="col_{{ campo }}" id="col_{{ campo }}" style="height:38px">
+      <select name="col_{{ campo }}" id="col_{{ campo }}">
         <option value="-1">— no está —</option>
         {% for t in titulos %}
           <option value="{{ loop.index0 }}" {{ 'selected' if mapa.get(campo) == loop.index0 }}>
@@ -65,7 +64,7 @@
     </div>
     {% endfor %}
   </div>
-  <div style="margin-top:16px">
+  <div style="margin-top:10px">
     <button class="btn suave" type="submit" name="boton" value="releer">Volver a leer</button>
   </div>
   </div>
@@ -91,19 +90,53 @@
     {% endfor %}
     </tbody>
   </table>
+  <p class="nota">Si ya se cargó antes, las filas que estaban se
+    <b>actualizan</b>: no se duplican.</p>
+</div>
+{% elif formato == 'historial' %}
+<div class="bloque">
+  <div class="titulo"><h2>Planilla de mantenimiento</h2>
+    <p>{{ hojas | length }} hojas · el historial completo</p></div>
+  <div class="relleno" style="padding:8px 14px 0">
+    <div class="cifras" style="margin:0 0 4px">
+      <div class="cifra"><b>{{ total | num(0) }}</b><small>Mantenimientos</small></div>
+      <div class="cifra"><b>{{ resumen | length }}</b><small>Máquinas</small></div>
+      <div class="cifra"><b>{{ fichas }}</b><small>Fichas</small></div>
+    </div>
+  </div>
+  <table>
+    <thead><tr><th>Máquina</th><th class="oculta-chico">Hoja</th><th class="der">Mantenimientos</th>
+               <th>Desde</th><th>Hasta</th></tr></thead>
+    <tbody>
+    {% for r in resumen %}
+      <tr>
+        <td><span class="mq">{{ r.maquina | mq }}</span></td>
+        <td class="tenue oculta-chico">{{ r.hoja }}</td>
+        <td class="der">{{ r.n | num(0) }}</td>
+        <td class="tenue">{{ r.desde | fecha_es }}</td>
+        <td class="tenue">{{ r.hasta | fecha_es }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if ya_cargados %}
   <p class="nota">
-    Si esta planilla ya se cargó antes, las filas que ya estaban se
-    <b>actualizan</b>: no se duplican.
+    Hay <b>{{ ya_cargados }}</b> mantenimientos de la primera carga, que sólo
+    guardaba la última fecha. Son estas mismas fechas: al confirmar se
+    reemplazan, así ninguna máquina queda con el historial repetido.
   </p>
+  {% endif %}
+  <p class="nota">Si ya se cargó, cada fila se <b>actualiza</b> en su lugar: no
+    se duplica.</p>
 </div>
 {% else %}
 <div class="bloque">
   <div class="titulo"><h2>Una hoja por máquina</h2>
-    <p>{{ hojas | length }} hojas · la ficha de arriba y la última fecha de cada mantenimiento</p></div>
+    <p>{{ hojas | length }} hojas · la ficha y la última fecha de cada mantenimiento</p></div>
 </div>
 {% endif %}
 
-{% if formato != 'ajuste' %}
+{% if formato not in ('ajuste', 'historial') %}
 <div class="bloque">
   <div class="titulo"><h2>Va a entrar</h2><p>{{ listas | length }} máquinas</p></div>
   {% if not listas %}
@@ -115,14 +148,14 @@
       <tr>
         <th>Máquina</th>
         {% for t in tipos %}<th>{{ t.nombre }}</th>{% endfor %}
-        <th>Ficha</th><th></th>
+        <th class="oculta-chico">Ficha</th><th></th>
       </tr>
     </thead>
     <tbody>
     {% for item in listas %}
       <tr>
         <td><span class="mq">{{ item.maquina | mq }}</span>
-            <span class="chico">{{ item.maquina.nombre }}</span></td>
+            <span class="chico oculta-chico">{{ item.maquina.nombre }}</span></td>
         {% for t in tipos %}
           {% set m = (item.mantenimientos | selectattr('tipo.id','equalto',t.id) | list | first) %}
           <td>
@@ -132,7 +165,7 @@
             {% else %}<span class="tenue">—</span>{% endif %}
           </td>
         {% endfor %}
-        <td class="tenue">
+        <td class="tenue oculta-chico">
           {% set f = item.ficha %}
           {{ [f.marca, f.modelo,
               f.diametro and ('D' ~ (f.diametro | num(0))),
@@ -158,14 +191,15 @@
 <div class="bloque">
   <div class="titulo"><h2>Qué no entra</h2>
     <p>{{ descartes | length }} · el programa no adivina</p></div>
+  {% set con_donde = formato in ('ajuste', 'historial') %}
   <table>
     <thead><tr><th>Dónde</th>
-      {% if formato != 'ajuste' %}<th>Qué decía</th>{% endif %}
+      {% if not con_donde %}<th>Qué decía</th>{% endif %}
       <th>Por qué no entra</th></tr></thead>
     <tbody>
     {% for d in descartes %}
-      <tr><td>{{ d.donde if formato == 'ajuste' else d.fila }}</td>
-          {% if formato != 'ajuste' %}<td class="tenue">{{ d.texto }}</td>{% endif %}
+      <tr><td>{{ d.donde if con_donde else d.fila }}</td>
+          {% if not con_donde %}<td class="tenue">{{ d.texto }}</td>{% endif %}
           <td>{{ d.motivo }}</td></tr>
     {% endfor %}
     </tbody>
@@ -173,13 +207,17 @@
 </div>
 {% endif %}
 
-<div class="bloque"><div class="relleno">
+<div class="bloque"><div class="relleno"
+     style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
   {% if formato == 'ajuste' %}
-    {% set total = bloques.values() | map('length') | sum %}
+    {% set total_filas = bloques.values() | map('length') | sum %}
     <button class="btn" type="submit" name="boton" value="confirmar"
-            {{ 'disabled' if not total }}>Guardar estas {{ total | num(0) }} filas</button>
+            {{ 'disabled' if not total_filas }}>Guardar estas {{ total_filas | num(0) }} filas</button>
+  {% elif formato == 'historial' %}
+    <button class="btn" type="submit" name="boton" value="confirmar"
+            {{ 'disabled' if not total }}>Guardar estos {{ total | num(0) }} mantenimientos</button>
   {% else %}
-    <div style="max-width:320px;margin-bottom:16px">
+    <div style="width:220px">
       <label class="campo" for="hecho_por">Quién lo hizo</label>
       <input name="hecho_por" id="hecho_por" placeholder="Carga del Excel">
     </div>

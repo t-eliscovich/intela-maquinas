@@ -447,6 +447,123 @@ def _ficha_de_hoja(filas, corte):
     }
 
 
+def _columnas_historial(fila):
+    """Qué columna es cada cosa en la tabla de abajo de la hoja.
+
+    Los títulos no están siempre en el mismo lugar y a veces hay dos que dicen
+    «Fecha». Lo que importa es dónde quedaron la actividad, los repuestos y las
+    observaciones: la fecha se busca por su valor, no por su columna.
+    """
+    mapa = {}
+    for i, celda in enumerate(fila):
+        t = _limpio(celda)
+        if not t:
+            continue
+        for campo, etiquetas in (
+            ("tipo", ("tipo de mantenimiento", "tipo")),
+            ("actividad", ("actividad realizada", "actividad")),
+            ("repuestos", ("repuestos", "repuesto")),
+            ("observaciones", ("observaciones", "observacion")),
+            ("responsable", ("responsable", "hecho por", "quien")),
+        ):
+            if campo not in mapa and any(t == e or t.startswith(e) for e in etiquetas):
+                mapa[campo] = i
+                break
+    return mapa
+
+
+def leer_historial_por_maquina(ruta, maquinas, tipos, hoy=None):
+    """El historial COMPLETO de la planilla de planta: todas las filas.
+
+    `leer_por_maquina` se queda con la ÚLTIMA fecha de cada tipo, porque eso es
+    lo único que necesita el semáforo. Pero la planilla tiene el historial
+    entero desde 2018 — 1.366 filas — y ése es el valor de la planilla: poder
+    mirar qué se le hizo a una máquina y cuándo.
+
+    Devuelve (mantenimientos, fichas, descartes).
+    """
+    hoy = hoy or date.today()
+    por_numero = {m["numero"]: m for m in maquinas if m.get("numero") is not None}
+    tipo_agujas = next((t for t in tipos if "aguja" in t["nombre"].lower()), None)
+    tipo_limpieza = next((t for t in tipos if t is not tipo_agujas), None)
+
+    wb = load_workbook(ruta, read_only=True, data_only=True)
+    mantenimientos, fichas, descartes = [], [], []
+    try:
+        for nombre_hoja in wb.sheetnames:
+            numero = a_numero(nombre_hoja)
+            maquina = por_numero.get(numero) if numero is not None else None
+            if not maquina:
+                descartes.append({"donde": nombre_hoja,
+                                  "motivo": f"La máquina {numero} no está en Asinfo"})
+                continue
+
+            filas = [list(f) for f in wb[nombre_hoja].iter_rows(values_only=True)]
+            corte = _fila_de_titulos(filas)
+            if corte is None:
+                descartes.append({"donde": nombre_hoja, "motivo": "La hoja está vacía"})
+                continue
+
+            ficha = _ficha_de_hoja(filas, corte)
+            fichas.append((maquina, ficha))
+            mapa = _columnas_historial(filas[corte])
+
+            # El responsable de la hoja NO se copia a las 1.300 filas: es quién
+            # tiene la máquina a cargo, no quién hizo cada mantenimiento. La
+            # planilla no dice quién hizo cada uno, así que no se inventa.
+            # Queda en la ficha, que es donde está escrito.
+
+            def celda(fila, campo):
+                i = mapa.get(campo)
+                return fila[i] if i is not None and i < len(fila) else None
+
+            leidas = 0
+            for n, fila in enumerate(filas[corte + 1:], start=1):
+                fecha = next((c.date() for c in fila if isinstance(c, datetime)), None)
+                if not fecha or fecha > hoy or fecha.year < 1990:
+                    continue
+
+                # El tipo no está en una columna: está escrito adentro del
+                # texto. Si dice «aguja» es cambio de agujas; si no, limpieza.
+                partes = [_texto(celda(fila, c)) for c in ("tipo", "actividad")]
+                actividad = " · ".join(p for p in partes if p) or None
+                if actividad is None and not (mapa.get("tipo") or mapa.get("actividad")):
+                    # Sólo si la hoja no tiene esas columnas. Si las tiene y
+                    # vinieron vacías, la fila no dice qué se hizo — y juntar
+                    # todo el texto suelto traería la columna «Próximo», que es
+                    # un kilaje, no una actividad.
+                    actividad = " ".join(
+                        str(c).strip() for c in fila
+                        if isinstance(c, str) and c.strip())[:300] or None
+                observaciones = _texto(celda(fila, "observaciones"))
+                tipo = (tipo_agujas if (actividad and _ES_AGUJAS.search(actividad)
+                                        and tipo_agujas) else tipo_limpieza)
+                if not tipo:
+                    continue
+
+                mantenimientos.append({
+                    "id_maquina": maquina["id"],
+                    "maquina_nombre": maquina["nombre"],
+                    "tipo_id": tipo["id"],
+                    "fecha": fecha,
+                    "hecho_por": _texto(celda(fila, "responsable")) or "Planilla de planta",
+                    "nota": " · ".join(p for p in (actividad, observaciones) if p) or None,
+                    "repuestos": _texto(celda(fila, "repuestos")),
+                    "horas": None,
+                    "hoja": nombre_hoja,
+                    "orden": n,
+                })
+                leidas += 1
+
+            if not leidas:
+                descartes.append({"donde": nombre_hoja,
+                                  "motivo": "La hoja no tiene ninguna fecha cargada"})
+    finally:
+        wb.close()
+
+    return mantenimientos, fichas, descartes
+
+
 def leer_por_maquina(ruta, maquinas, tipos, hoy=None):
     """Lee la planilla de planta: una hoja por máquina.
 

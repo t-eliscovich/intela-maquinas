@@ -126,6 +126,20 @@ def bootstrap() -> None:
             ALTER TABLE mantenimiento.service
                 ADD COLUMN IF NOT EXISTS horas numeric(5,2);
 
+            -- De que hoja y de que fila de la planilla salio este
+            -- mantenimiento. Es lo que permite cargar el historial COMPLETO
+            -- (1.366 filas desde 2018) y volver a cargarlo sin duplicarlo.
+            -- Un mantenimiento cargado a mano no tiene hoja: por eso el indice
+            -- es parcial, y la carga de la planilla nunca pisa lo que se
+            -- escribio en la pantalla.
+            ALTER TABLE mantenimiento.service
+                ADD COLUMN IF NOT EXISTS hoja text;
+            ALTER TABLE mantenimiento.service
+                ADD COLUMN IF NOT EXISTS orden integer;
+            CREATE UNIQUE INDEX IF NOT EXISTS service_hoja_orden_idx
+                ON mantenimiento.service (hoja, orden)
+                WHERE hoja IS NOT NULL;
+
             -- Archivos subidos desde el programa: la planilla de planta, el
             -- manual de una maquina, una foto. Guardados en la base y no en
             -- una carpeta del server: asi sobreviven a una actualizacion, que
@@ -208,7 +222,25 @@ def bootstrap() -> None:
                 ON mantenimiento.leva
                    (maquinas, codigo, coalesce(accionamiento, ''));
 
-            -- Las bandas Memminger, por modelo y diámetro.
+            -- Qué aguja lleva cada MODELO de máquina, con la marca. Es la hoja
+            -- «CODIGO DE AGUJAS»: la misma información que `aguja_maquina`
+            -- pero agrupada, y con un dato que la otra no tiene — de quién es
+            -- la aguja (Groz Beckert) y de quién la platina (Kern Liebers).
+            CREATE TABLE IF NOT EXISTS mantenimiento.aguja_modelo (
+                id             serial PRIMARY KEY,
+                modelo         text NOT NULL,
+                marca_aguja    text,
+                codigos        text,
+                donde          text,
+                platinas       text,
+                marca_platina  text,
+                nota           text,
+                creado_en      timestamptz NOT NULL DEFAULT now()
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS aguja_modelo_idx
+                ON mantenimiento.aguja_modelo (modelo);
+
+            -- Las bandas, por modelo y diámetro.
             CREATE TABLE IF NOT EXISTS mantenimiento.banda (
                 id                serial PRIMARY KEY,
                 maquinas          text NOT NULL,
@@ -219,8 +251,21 @@ def bootstrap() -> None:
                 lycra             text,
                 creado_en         timestamptz NOT NULL DEFAULT now()
             );
-            CREATE UNIQUE INDEX IF NOT EXISTS banda_clave_idx
-                ON mantenimiento.banda (maquinas, coalesce(diametro, -1));
+
+            -- Memminger o de motor. Son dos repuestos distintos y la planilla
+            -- los tiene en dos tablas al lado de la otra; sin esta columna se
+            -- mezclarian y una medida de una taparia a la otra.
+            ALTER TABLE mantenimiento.banda
+                ADD COLUMN IF NOT EXISTS clase text NOT NULL DEFAULT 'memminger';
+            ALTER TABLE mantenimiento.banda
+                ADD COLUMN IF NOT EXISTS banda text;
+            ALTER TABLE mantenimiento.banda
+                ADD COLUMN IF NOT EXISTS cobrador text;
+            ALTER TABLE mantenimiento.banda
+                ADD COLUMN IF NOT EXISTS nota text;
+            DROP INDEX IF EXISTS mantenimiento.banda_clave_idx;
+            CREATE UNIQUE INDEX IF NOT EXISTS banda_clase_clave_idx
+                ON mantenimiento.banda (clase, maquinas, coalesce(diametro, -1));
 
             -- Cuántas bandas hay de cada medida.
             CREATE TABLE IF NOT EXISTS mantenimiento.banda_stock (
@@ -243,6 +288,12 @@ def bootstrap() -> None:
                 kg_dia        numeric(10,2),
                 editado_en    timestamptz NOT NULL DEFAULT now()
             );
+
+            -- La planilla calcula dos turnos: 12 horas y 24 horas.
+            ALTER TABLE mantenimiento.eficiencia
+                ADD COLUMN IF NOT EXISTS rollos_dia_24 numeric(8,2);
+            ALTER TABLE mantenimiento.eficiencia
+                ADD COLUMN IF NOT EXISTS kg_dia_24 numeric(10,2);
 
             -- Cuánto hilo lleva cada tela. Una fila por (tela, hilo).
             CREATE TABLE IF NOT EXISTS mantenimiento.consumo_hilo (
@@ -370,6 +421,57 @@ def ultimos_por_maquina_y_tipo() -> dict[tuple[int, int], dict]:
     return {(f["id_maquina"], f["tipo_id"]): f for f in filas}
 
 
+# El sello con el que entró la carga vieja, que sólo guardaba la ÚLTIMA fecha
+# de cada tipo (66 filas de las 1.366 que tiene la planilla). Cuando entra el
+# historial completo hay que sacarlas: son las mismas fechas, y dejarlas
+# duplicaría cada máquina dos veces en su propio historial.
+SELLO_CARGA_VIEJA = "Carga inicial de la planilla"
+
+
+def guardar_historial(filas: list[dict]) -> dict:
+    """Guarda el historial COMPLETO de la planilla de planta, en una transacción.
+
+    `filas` = [{id_maquina, maquina_nombre, tipo_id, fecha, hecho_por, nota,
+                repuestos, horas, hoja, orden}, ...]
+
+    Volver a cargar la misma planilla ACTUALIZA por (hoja, fila) en vez de
+    duplicar: la planilla sigue viva en planta y se vuelve a subir corregida.
+    """
+    if not filas:
+        return {"mantenimientos": 0, "borrados": 0}
+    campos = ("id_maquina", "maquina_nombre", "tipo_id", "fecha", "hecho_por",
+              "nota", "repuestos", "horas", "hoja", "orden")
+    columnas = ", ".join(campos)
+    marcas = ", ".join(["%s"] * len(campos))
+    updates = ", ".join(f"{c}=EXCLUDED.{c}" for c in campos
+                        if c not in ("hoja", "orden"))
+    with _conn() as con, con.cursor() as cur:
+        cur.execute(
+            "DELETE FROM mantenimiento.service WHERE hoja IS NULL AND hecho_por = %s",
+            (SELLO_CARGA_VIEJA,),
+        )
+        borrados = cur.rowcount or 0
+        cur.executemany(
+            f"""INSERT INTO mantenimiento.service ({columnas})
+                VALUES ({marcas})
+                ON CONFLICT (hoja, orden) DO UPDATE SET {updates}""",
+            [tuple(f.get(c) for c in campos) for f in filas],
+        )
+        con.commit()
+    return {"mantenimientos": len(filas), "borrados": borrados}
+
+
+def cuantos_de_la_carga_vieja() -> int:
+    """Cuántos mantenimientos quedaron de la carga que sólo traía la última
+    fecha. Se muestra en la pantalla de revisión: si se van a reemplazar, hay
+    que decirlo antes, no después."""
+    filas = _todos(
+        "SELECT COUNT(*) n FROM mantenimiento.service WHERE hoja IS NULL AND hecho_por = %s",
+        (SELLO_CARGA_VIEJA,),
+    )
+    return filas[0]["n"] if filas else 0
+
+
 def historial(id_maquina: int | None = None, limite: int = 200) -> list[dict]:
     if id_maquina is None:
         return _todos(
@@ -395,6 +497,13 @@ def historial(id_maquina: int | None = None, limite: int = 200) -> list[dict]:
 ENCARGADOS = ("Roberto", "Darlin", "Humberto")
 
 
+# Los sellos que le pone el programa a lo que entra por el Excel. Son máquina,
+# no personas: no tienen que aparecer en «quién lo hizo» ofreciéndose para
+# firmar un mantenimiento nuevo.
+SELLOS = ("Carga inicial de la planilla", "Planilla de planta", "Carga del Excel",
+          "Cargado desde el Excel")
+
+
 def responsables() -> list[str]:
     """Para el campo 'quién lo hizo': los encargados primero, y después
     cualquier otro nombre que ya se haya usado."""
@@ -403,7 +512,7 @@ def responsables() -> list[str]:
             GROUP BY hecho_por ORDER BY n DESC LIMIT 30"""
     )
     usados = [f["hecho_por"] for f in filas]
-    otros = [u for u in usados if u not in ENCARGADOS]
+    otros = [u for u in usados if u not in ENCARGADOS and u not in SELLOS]
     return list(ENCARGADOS) + otros
 
 
@@ -652,9 +761,14 @@ def levas() -> list[dict]:
         "SELECT * FROM mantenimiento.leva ORDER BY maquinas, accionamiento, codigo")
 
 
-def bandas() -> list[dict]:
+def bandas(clase: str = "memminger") -> list[dict]:
     return _todos(
-        "SELECT * FROM mantenimiento.banda ORDER BY maquinas, diametro")
+        "SELECT * FROM mantenimiento.banda WHERE clase = %s ORDER BY maquinas, diametro",
+        (clase,))
+
+
+def agujas_por_modelo() -> list[dict]:
+    return _todos("SELECT * FROM mantenimiento.aguja_modelo ORDER BY id")
 
 
 def banda_stock() -> list[dict]:
@@ -700,10 +814,13 @@ def _lote(cur, tabla: str, campos: tuple, conflicto: str, filas: list[dict]):
 
 CAMPOS_AGUJA = ("id_maquina", "descripcion", "cilindro", "plato", "platinas", "nota")
 CAMPOS_LEVA = ("maquinas", "codigo", "cantidad", "ubicacion", "accionamiento")
-CAMPOS_BANDA = ("maquinas", "cantidad_maquinas", "diametro", "media",
-                "tres_cuartos", "lycra")
+CAMPOS_BANDA = ("clase", "maquinas", "cantidad_maquinas", "diametro", "media",
+                "tres_cuartos", "lycra", "banda", "cobrador", "nota")
+CAMPOS_AGUJA_MODELO = ("modelo", "marca_aguja", "codigos", "donde", "platinas",
+                       "marca_platina", "nota")
 CAMPOS_EFICIENCIA = ("id_maquina", "rpm", "sistemas", "diametro", "alimentadores",
-                     "tamano_rollo", "minutos_rollo", "rollos_dia", "kg_dia")
+                     "tamano_rollo", "minutos_rollo", "rollos_dia", "kg_dia",
+                     "rollos_dia_24", "kg_dia_24")
 CAMPOS_CONSUMO = ("tela", "hilo", "codigo_hilo", "rendimiento")
 CAMPOS_GRAMAJE = ("id_maquina", "fecha", "tela", "hilos", "peso", "orden")
 
@@ -731,8 +848,10 @@ def guardar_planilla_ajuste(datos: dict) -> dict:
         _lote(cur, "mantenimiento.leva", CAMPOS_LEVA,
               "maquinas, codigo, coalesce(accionamiento, '')",
               datos.get("levas") or [])
+        _lote(cur, "mantenimiento.aguja_modelo", CAMPOS_AGUJA_MODELO,
+              "modelo", datos.get("agujas_modelo") or [])
         _lote(cur, "mantenimiento.banda", CAMPOS_BANDA,
-              "maquinas, coalesce(diametro, -1)", datos.get("bandas") or [])
+              "clase, maquinas, coalesce(diametro, -1)", datos.get("bandas") or [])
         _lote(cur, "mantenimiento.banda_stock", ("medida", "cantidad"),
               "medida", datos.get("banda_stock") or [])
         _lote(cur, "mantenimiento.eficiencia", CAMPOS_EFICIENCIA,

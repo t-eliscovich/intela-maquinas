@@ -2,13 +2,19 @@
 {% block titulo %}Tipos{% endblock %}
 {% block contenido %}
 <h1>Tipos de mantenimiento
-  <small>Poné cada cuántos kilos toca. Vacío = no se controla.</small></h1>
+  <small>Cómo se llama cada cosa que se le hace a una máquina.</small></h1>
+
+{# Acá NO se cargan kilos. El tope va por máquina, en la pantalla Kilos: la
+   máquina que más teje hace casi veinte veces más kilos que la que menos, así
+   que un número general no sirve para las dos. Y tener el mismo número en dos
+   pantallas termina siempre igual: uno de los dos queda viejo y nadie sabe
+   cuál. El kg que ya estaba cargado viaja en un campo escondido para que
+   guardar el nombre no lo borre. #}
 
 {% if not tipos %}
 <div class="bloque"><div class="vacio">
   <h3>Todavía no hay ninguno</h3>
-  <p>Cargá la lista sugerida y después corregí los números con el mecánico.
-     Son de ejemplo: lo importante es tener de dónde partir.</p>
+  <p>Cargá la lista sugerida y corregila con el mecánico.</p>
   <form method="POST" action="{{ url_for('tipos_sugeridos') }}">
     <button class="btn" type="submit">Cargar la lista sugerida</button>
   </form>
@@ -17,20 +23,22 @@
 
 <div class="bloque">
   <div class="titulo"><h2>Los que hay</h2>
-    <p>El número vale para todas. El de una máquina se pone en su ficha.</p></div>
+    <p>Los kilos de cada máquina se ponen en
+       <a href="{{ url_for('kilos') }}">Kilos</a>.</p></div>
   <table>
-    <thead><tr><th>Nombre</th><th class="der">Cada … kg</th><th>Activo</th><th></th></tr></thead>
+    <thead><tr><th>Nombre</th><th>Activo</th><th></th></tr></thead>
     <tbody>
     {% for t in tipos %}
       <tr>
         <form method="POST" id="f{{ t.id }}"></form>
-        <td><input form="f{{ t.id }}" name="nombre" value="{{ t.nombre }}" style="height:36px">
-            <input form="f{{ t.id }}" type="hidden" name="tipo_id" value="{{ t.id }}"></td>
-        <td class="der" style="width:160px"><input form="f{{ t.id }}" name="cada_kg"
-              value="{{ t.cada_kg | int if t.cada_kg else '' }}" style="height:36px;text-align:right"></td>
-        <td><input form="f{{ t.id }}" type="checkbox" name="activo" {{ 'checked' if t.activo }}
-                   style="width:auto;height:auto"></td>
-        <td class="der"><button form="f{{ t.id }}" class="btn suave chico">Guardar</button></td>
+        <td><input form="f{{ t.id }}" name="nombre" value="{{ t.nombre }}">
+            <input form="f{{ t.id }}" type="hidden" name="tipo_id" value="{{ t.id }}">
+            <input form="f{{ t.id }}" type="hidden" name="cada_kg"
+                   value="{{ t.cada_kg | int if t.cada_kg else '' }}"></td>
+        <td style="width:70px"><input form="f{{ t.id }}" type="checkbox" name="activo"
+                   {{ 'checked' if t.activo }} style="width:auto;height:auto"></td>
+        <td class="der" style="width:110px">
+            <button form="f{{ t.id }}" class="btn suave chico">Guardar</button></td>
       </tr>
     {% endfor %}
     </tbody>
@@ -38,20 +46,13 @@
 </div>
 {% endif %}
 
-<div class="bloque">
-  <div class="titulo"><h2>Nuevo</h2></div>
-  <div class="relleno">
-    <form method="POST" class="formulario">
-      <div>
-        <label class="campo" for="nombre">Nombre</label>
-        <input name="nombre" id="nombre" required placeholder="Cambio de agujas">
-      </div>
-      <div style="max-width:220px">
-        <label class="campo" for="cada_kg">Cada … kg</label>
-        <input name="cada_kg" id="cada_kg" placeholder="250000">
-      </div>
-      <div><button class="btn" type="submit">Crear</button></div>
-    </form>
-  </div>
-</div>
+<div class="bloque"><div class="relleno">
+  <form method="POST" class="formulario">
+    <div>
+      <label class="campo" for="nombre">Nombre del tipo nuevo</label>
+      <input name="nombre" id="nombre" required placeholder="Cambio de agujas">
+    </div>
+    <div><button class="btn" type="submit">Crear</button></div>
+  </form>
+</div></div>
 {% endblock %}

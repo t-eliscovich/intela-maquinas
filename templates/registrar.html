@@ -5,67 +5,70 @@
   <small>Al guardar, esa máquina vuelve a cero.</small></h1>
 
 <div class="bloque"><div class="relleno">
+  {# Esta es la pantalla que más se usa en el día. En columna, los ocho campos
+     obligaban a scrollear hasta el botón para cargar UN mantenimiento: por eso
+     los cortos van todos en la misma rejilla y Guardar queda al lado de la
+     nota, a la vista desde el primer campo. #}
   <form method="POST" class="formulario">
-    <div style="max-width:220px">
+    <div>
       <label class="campo" for="maquina">Máquina</label>
       <input name="maquina" id="maquina" list="maquinas" required autofocus
              inputmode="numeric" autocomplete="off" placeholder="1"
-             value="{{ request.args.get('numero', '') }}"
-             style="font-size:20px;font-weight:700;height:48px">
+             value="{{ request.args.get('numero', '') }}">
       <datalist id="maquinas">
         {% for m in maquinas %}<option value="{{ m.numero }}">{{ m.nombre }}</option>{% endfor %}
       </datalist>
-      <p class="tenue" style="font-size:13px;margin:7px 0 0">
-        El número nomás. La 1 es la {{ maquinas[0].nombre if maquinas else 'TEJEDURIA-MQ 001' }}.</p>
     </div>
 
     <div>
       <label class="campo" for="tipo_id">Qué se le hizo</label>
       <select name="tipo_id" id="tipo_id" required>
-        <option value="">— Elegir mantenimiento —</option>
+        <option value="">— Elegir —</option>
         {% for t in tipos %}
           <option value="{{ t.id }}"
             {{ 'selected' if request.args.get('tipo_id')|int == t.id }}>{{ t.nombre }}</option>
         {% endfor %}
       </select>
-      {% if not tipos %}
-        <p class="tenue" style="font-size:13px;margin-top:8px">
-          No hay tipos. <a href="{{ url_for('tipos_view') }}">Definilos primero.</a></p>
-      {% endif %}
-    </div>
-
-    <div class="rejilla">
-      <div>
-        <label class="campo" for="fecha">Cuándo</label>
-        <input type="date" name="fecha" id="fecha" value="{{ hoy }}" max="{{ hoy }}" required>
-      </div>
-      <div style="grid-column:span 2">
-        <label class="campo" for="hecho_por">Quién lo hizo</label>
-        <input name="hecho_por" id="hecho_por" list="responsables" required
-               placeholder="Nombre del mecánico" autocomplete="off">
-        <datalist id="responsables">
-          {% for r in responsables %}<option value="{{ r }}">{% endfor %}
-        </datalist>
-      </div>
-    </div>
-
-    <div class="rejilla">
-      <div>
-        <label class="campo" for="repuestos">Repuestos (opcional)</label>
-        <input name="repuestos" id="repuestos" placeholder="12 agujas de cilindro">
-      </div>
-      <div>
-        <label class="campo" for="horas">Cuánto llevó, en horas (opcional)</label>
-        <input name="horas" id="horas" inputmode="decimal" placeholder="2,5">
-      </div>
     </div>
 
     <div>
-      <label class="campo" for="nota">Nota (opcional)</label>
-      <textarea name="nota" id="nota" placeholder="Repuestos cambiados, algo raro que se vio…"></textarea>
+      <label class="campo" for="fecha">Cuándo</label>
+      <input type="date" name="fecha" id="fecha" value="{{ hoy }}" max="{{ hoy }}" required>
     </div>
 
-    <div><button class="btn" type="submit">Guardar</button></div>
+    <div>
+      <label class="campo" for="hecho_por">Quién lo hizo</label>
+      <input name="hecho_por" id="hecho_por" list="responsables" required
+             placeholder="Nombre del mecánico" autocomplete="off">
+      <datalist id="responsables">
+        {% for r in responsables %}<option value="{{ r }}">{% endfor %}
+      </datalist>
+    </div>
+
+    <div>
+      <label class="campo" for="repuestos">Repuestos (opcional)</label>
+      <input name="repuestos" id="repuestos" placeholder="12 agujas de cilindro">
+    </div>
+
+    <div>
+      <label class="campo" for="horas">Horas</label>
+      <input name="horas" id="horas" inputmode="decimal" placeholder="2,5" required>
+    </div>
+
+    <p class="ayuda ancho" style="margin:0">
+      La máquina es el número nomás. La 1 es la
+      {{ maquinas[0].nombre if maquinas else 'TEJEDURIA-MQ 001' }}.
+      {%- if not tipos %} No hay tipos:
+        <a href="{{ url_for('tipos_view') }}">definilos primero</a>.{% endif %}
+    </p>
+
+    <div class="ancho" style="display:flex;gap:12px;align-items:flex-end">
+      <div style="flex:1;min-width:0">
+        <label class="campo" for="nota">Nota (opcional)</label>
+        <input name="nota" id="nota" placeholder="Algo raro que se vio">
+      </div>
+      <button class="btn" type="submit">Guardar</button>
+    </div>
   </form>
 </div></div>
 
@@ -74,7 +77,8 @@
   <div class="titulo"><h2>Últimos cargados</h2></div>
   <table>
     <thead><tr><th>Fecha</th><th>Máquina</th><th>Mantenimiento</th><th>Quién</th>
-               <th>Repuestos</th><th class="der">Horas</th><th>Nota</th></tr></thead>
+               <th class="oculta-chico">Repuestos</th><th class="der oculta-chico">Horas</th>
+               <th class="oculta-chico">Nota</th></tr></thead>
     <tbody>
     {% for h in historial %}
       <tr>
@@ -82,9 +86,9 @@
         <td>{{ h.maquina_nombre }}</td>
         <td>{{ h.tipo_nombre }}</td>
         <td>{{ h.hecho_por }}</td>
-        <td class="tenue">{{ h.repuestos or '—' }}</td>
-        <td class="der tenue">{{ h.horas | num(1) if h.horas else '—' }}</td>
-        <td class="tenue">{{ h.nota or '—' }}</td>
+        <td class="tenue oculta-chico">{{ h.repuestos or '—' }}</td>
+        <td class="der tenue oculta-chico">{{ h.horas | num(1) if h.horas else '—' }}</td>
+        <td class="tenue oculta-chico">{{ h.nota or '—' }}</td>
       </tr>
     {% endfor %}
     </tbody>

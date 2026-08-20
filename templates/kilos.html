@@ -2,7 +2,7 @@
 {% block titulo %}Kilos{% endblock %}
 {% block contenido %}
 <h1>Cada cuántos kilos
-  <small>El número de cada máquina. Vacío = esa máquina no se controla.</small></h1>
+  <small>Uno por máquina. Vacío = no se controla.</small></h1>
 
 {% if error %}<div class="aviso"><b>No se pudo leer Asinfo.</b> {{ error }}</div>{% endif %}
 
@@ -25,32 +25,28 @@
     {% for f in filas %}
       <tr>
         <td><span class="mq">{{ f.maquina | mq }}</span>
-            <span class="chico">{{ f.maquina.nombre }}</span></td>
+            <span class="chico oculta-chico">{{ f.maquina.nombre }}</span></td>
         {% for t in tipos %}
-          <td class="der" style="width:170px">
+          {# Columnas angostas: son 43 filas y lo que importa es ver muchas
+             máquinas juntas, no un campo ancho para cinco dígitos. #}
+          <td class="der" style="width:120px">
             <input name="kg_{{ f.maquina.id }}_{{ t.id }}" inputmode="numeric"
                    value="{{ f.topes[t.id] | num(0) if f.topes[t.id] else '' }}"
                    placeholder="{{ t.cada_kg | num(0) if t.cada_kg else '—' }}"
-                   style="height:34px;text-align:right">
+                   style="height:30px;text-align:right">
           </td>
         {% endfor %}
       </tr>
     {% endfor %}
     </tbody>
   </table>
-  <div class="nota" style="display:flex;align-items:center;gap:14px">
+  <div class="nota" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
     <button class="btn" type="submit">Guardar todo</button>
-    <span>Lo que dejes vacío usa el número general del tipo, que aparece en gris.</span>
+    <span>Vacío usa el número en gris. Ojo: la máquina que más teje hace veinte
+      veces más kilos que la que menos, así que el número de una grande deja a
+      una chica en verde para siempre.</span>
   </div>
 </div>
 </form>
-
-<div class="bloque"><div class="relleno">
-  <p class="tenue" style="font-size:13px;margin:0">
-    Ojo: la máquina que más teje hace casi veinte veces más kilos al año que la que
-    menos. Si a una chica le ponés el número de una grande, queda en verde para
-    siempre. En la ficha de cada máquina está cuánto teje por mes.
-  </p>
-</div></div>
 {% endif %}
 {% endblock %}

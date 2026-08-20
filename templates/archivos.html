@@ -2,38 +2,38 @@
 {% block titulo %}Archivos{% endblock %}
 {% block contenido %}
 <h1>Archivos
-  <small>La planilla de planta, un manual, una foto. Quedan guardados acá.</small></h1>
+  <small>La planilla de planta, un manual, una foto.</small></h1>
 
 <div class="bloque"><div class="relleno">
-  <form method="POST" enctype="multipart/form-data" class="formulario" style="max-width:none">
-    <div class="rejilla">
-      <div style="grid-column:span 2">
-        <label class="campo" for="archivo">Archivo</label>
-        <input type="file" name="archivo" id="archivo" required style="padding:9px;height:auto">
-      </div>
-      <div>
-        <label class="campo" for="id_maquina">De qué máquina (opcional)</label>
-        <input name="id_maquina" id="id_maquina" list="maquinas" inputmode="numeric"
-               autocomplete="off" placeholder="1">
-        <datalist id="maquinas">
-          {% for m in maquinas %}<option value="{{ m.numero }}">{{ m.nombre }}</option>{% endfor %}
-        </datalist>
-      </div>
-      <div>
-        <label class="campo" for="subido_por">Quién lo sube</label>
-        <input name="subido_por" id="subido_por" list="quienes" autocomplete="off">
-        <datalist id="quienes">
-          {% for r in responsables %}<option value="{{ r }}">{% endfor %}
-        </datalist>
-      </div>
+  {# Subir es un trámite de un segundo: los cuatro campos y el botón entran en
+     una fila, para que la lista de abajo se vea sin scrollear. #}
+  <form method="POST" enctype="multipart/form-data" class="formulario">
+    <div style="grid-column:span 2">
+      <label class="campo" for="archivo">Archivo</label>
+      <input type="file" name="archivo" id="archivo" required style="padding:6px;height:34px">
+    </div>
+    <div>
+      <label class="campo" for="id_maquina">Máquina (opcional)</label>
+      <input name="id_maquina" id="id_maquina" list="maquinas" inputmode="numeric"
+             autocomplete="off" placeholder="1">
+      <datalist id="maquinas">
+        {% for m in maquinas %}<option value="{{ m.numero }}">{{ m.nombre }}</option>{% endfor %}
+      </datalist>
+    </div>
+    <div>
+      <label class="campo" for="subido_por">Quién lo sube</label>
+      <input name="subido_por" id="subido_por" list="quienes" autocomplete="off">
+      <datalist id="quienes">
+        {% for r in responsables %}<option value="{{ r }}">{% endfor %}
+      </datalist>
     </div>
     <div>
       <label class="campo" for="descripcion">Qué es (opcional)</label>
-      <input name="descripcion" id="descripcion" placeholder="Planilla de mantenimiento de tejeduría">
+      <input name="descripcion" id="descripcion" placeholder="Planilla de tejeduría">
     </div>
     <div><button class="btn" type="submit">Subir</button></div>
+    <p class="ayuda ancho" style="margin:0">Hasta 8 MB por archivo.</p>
   </form>
-  <p class="tenue" style="font-size:13px;margin:14px 0 0">Hasta 8 MB por archivo.</p>
 </div></div>
 
 <div class="bloque">

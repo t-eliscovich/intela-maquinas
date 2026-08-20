@@ -2,8 +2,7 @@
 {% block titulo %}Repuestos{% endblock %}
 {% block contenido %}
 
-<h1>Repuestos
-  <small>Qué aguja lleva cada máquina, las levas y las bandas.</small></h1>
+<h1>Repuestos <small>Agujas, levas y bandas</small></h1>
 
 <div class="bloque">
   <div class="titulo"><h2>Agujas</h2><p>{{ filas | length }} máquinas</p></div>
@@ -12,7 +11,7 @@
       <p>Subí la planilla de control de ajuste en Archivos y tocá «Leer la planilla».</p>
       <a class="btn" href="{{ url_for('archivos') }}">Ir a Archivos</a></div>
   {% else %}
-  <table>
+  <table style="font-size:13px;line-height:1.25">
     <thead><tr><th>Máquina</th><th>Modelo</th><th>Cilindro</th>
                <th class="oculta-chico">Plato</th><th class="oculta-chico">Platinas</th></tr></thead>
     <tbody>
@@ -31,21 +30,48 @@
   {% endif %}
 </div>
 
+{% if modelos %}
+<div class="bloque">
+  <div class="titulo"><h2>Agujas por modelo</h2>
+    <p>Lo mismo agrupado, con la marca</p></div>
+  <table style="font-size:13px;line-height:1.25">
+    <thead><tr><th>Modelo</th><th>Marca</th><th>Códigos</th>
+               <th class="oculta-chico">Dónde va</th>
+               <th class="oculta-chico">Platinas</th></tr></thead>
+    <tbody>
+    {% for m in modelos %}
+      <tr>
+        <td>{{ m.modelo }}</td>
+        <td class="tenue">{{ m.marca_aguja or '—' }}</td>
+        <td class="tenue">{{ m.codigos or '—' }}</td>
+        <td class="tenue oculta-chico">{{ m.donde or '—' }}</td>
+        <td class="tenue oculta-chico">
+          {{ m.platinas or '—' }}
+          {% if m.marca_platina %}<span style="font-size:11px">· {{ m.marca_platina }}</span>{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
 {% if levas %}
 <div class="bloque">
   <div class="titulo"><h2>Levas</h2>
-    <p>No cuelgan de una máquina: la misma leva sirve para varias del mismo modelo</p></div>
-  <table>
+    <p>La misma leva sirve para varias máquinas del mismo modelo</p></div>
+  <table style="font-size:13px;line-height:1.25">
     <thead><tr><th>Máquinas</th><th>Código</th><th class="der">Cantidad</th>
-               <th>Dónde va</th><th>Para qué</th></tr></thead>
+               <th class="oculta-chico">Dónde va</th>
+               <th class="oculta-chico">Para qué</th></tr></thead>
     <tbody>
     {% for l in levas %}
       <tr>
         <td>{{ l.maquinas }}</td>
         <td class="tenue">{{ l.codigo }}</td>
         <td class="der">{{ l.cantidad | num(0) }}</td>
-        <td class="tenue">{{ l.ubicacion or '—' }}</td>
-        <td>{{ l.accionamiento or '—' }}</td>
+        <td class="tenue oculta-chico">{{ l.ubicacion or '—' }}</td>
+        <td class="oculta-chico">{{ l.accionamiento or '—' }}</td>
       </tr>
     {% endfor %}
     </tbody>
@@ -56,7 +82,7 @@
 {% if bandas %}
 <div class="bloque">
   <div class="titulo"><h2>Bandas</h2><p>Las Memminger, por modelo y diámetro</p></div>
-  <table>
+  <table style="font-size:13px;line-height:1.25">
     <thead><tr><th>Máquinas</th><th class="der">Cuántas</th><th class="der">Diámetro</th>
                <th class="der">1/2</th><th class="der">3/4</th><th class="der">Lycra</th></tr></thead>
     <tbody>
@@ -72,18 +98,39 @@
     {% endfor %}
     </tbody>
   </table>
-  <p class="nota">
-    Las bandas de motor están en la misma hoja del Excel pero no se cargan acá:
-    son otro repuesto y tienen otras columnas.
-  </p>
+  <p class="nota">Las de motor van en el cuadro de abajo.</p>
+</div>
+{% endif %}
+
+{% if bandas_motor %}
+<div class="bloque">
+  <div class="titulo"><h2>Bandas de motor</h2><p>Por modelo y diámetro</p></div>
+  <table style="font-size:13px;line-height:1.25">
+    <thead><tr><th>Máquinas</th><th class="der">Cuántas</th><th class="der">Diámetro</th>
+               <th>Banda</th><th class="oculta-chico">Cobrador</th>
+               <th class="oculta-chico">Nota</th></tr></thead>
+    <tbody>
+    {% for b in bandas_motor %}
+      <tr>
+        <td>{{ b.maquinas }}</td>
+        <td class="der">{{ b.cantidad_maquinas | num(0) }}</td>
+        <td class="der">{{ (b.diametro | num(0)) ~ '"' if b.diametro else '—' }}</td>
+        <td>{{ b.banda or '—' }}</td>
+        <td class="tenue oculta-chico">{{ b.cobrador or '—' }}</td>
+        <td class="tenue oculta-chico">{{ b.nota or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
 </div>
 {% endif %}
 
 {% if stock %}
 <div class="bloque">
   <div class="titulo"><h2>Bandas en stock</h2>
-    <p>{{ stock | map(attribute='cantidad') | select | sum | num(0) }} en total</p></div>
-  <table>
+    <p>{{ stock | map(attribute='cantidad') | select | sum | num(0) }} en total ·
+       la medida en rojo quedó en cero</p></div>
+  <table style="font-size:13px;line-height:1.25">
     <thead><tr><th>Medida</th><th class="der">Cantidad</th></tr></thead>
     <tbody>
     {% for s in stock %}
@@ -94,7 +141,6 @@
     {% endfor %}
     </tbody>
   </table>
-  <p class="nota">La medida en rojo es la que quedó en cero.</p>
 </div>
 {% endif %}
 

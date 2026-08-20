@@ -241,13 +241,11 @@ def leer_ajustes(wb, maquinas, hoy=None) -> tuple[list[dict], list[dict]]:
         if limpio in _HOJAS_PROPIAS or limpio == "hoja3":
             continue
         if limpio == "agustes":
-            # La hoja vieja, de cuando estaba todo junto antes de partirlo en
-            # una hoja por máquina. Lo que tiene ya está en las otras hojas:
-            # cargarla sería el mismo ajuste dos veces.
-            descartes.append({
-                "donde": nombre_hoja,
-                "motivo": "Es la hoja vieja con todo junto: lo mismo ya está en "
-                          "las hojas de cada máquina"})
+            # La hoja vieja, de cuando estaba todo junto antes de partirla en
+            # una hoja por máquina. Parecía repetida y NO lo es: de sus 201
+            # ajustes, 124 no están en ninguna hoja por máquina — son los más
+            # viejos, casi todos sin fecha. Se lee aparte porque el número de
+            # máquina está en cada fila, no en el nombre de la hoja.
             continue
         numero = _numero(nombre_hoja)
         if numero is None:
@@ -331,13 +329,88 @@ def leer_ajustes(wb, maquinas, hoy=None) -> tuple[list[dict], list[dict]]:
     return salida, descartes
 
 
+def leer_agustes(wb, maquinas, hoy=None) -> tuple[list[dict], list[dict]]:
+    """La hoja «AGUSTES»: los ajustes viejos, todos juntos.
+
+    Es de antes de partir la planilla en una hoja por máquina. Parece repetida
+    y no lo es: la mayoría de sus filas no quedaron en ninguna hoja. La
+    diferencia con las otras es que acá el número de máquina va en la primera
+    columna de cada fila — y cuando se repite, no se vuelve a escribir: se
+    arrastra el de la fila de arriba, que es como está escrita la hoja.
+    """
+    hoy = hoy or date.today()
+    hoja = next((n for n in wb.sheetnames if _apretado(n) == "agustes"), None)
+    if not hoja:
+        return [], []
+    por_numero = {m["numero"]: m for m in maquinas if m.get("numero") is not None}
+    filas = _filas_de(wb[hoja])
+    corte, mapa = _fila_de_titulos(filas)
+    if corte is None or "fecha" not in mapa:
+        return [], [{"donde": hoja, "motivo": "No se encontraron los títulos"}]
+
+    salida, descartes = [], []
+    numero = None
+    for n, fila in enumerate(filas[corte + 1:], start=1):
+        if _vacia(fila):
+            continue
+        propio = _numero(fila[0] if fila else None)
+        if propio is not None:
+            numero = propio
+        maquina = por_numero.get(numero) if numero is not None else None
+        if not maquina:
+            descartes.append({"donde": f"{hoja}, fila {n}",
+                              "motivo": f"La máquina {numero} no está en Asinfo"})
+            continue
+
+        fecha = next((f for f in (_fecha(c, hoy) for c in fila) if f), None)
+        item = {
+            "id_maquina": maquina["id"],
+            "maquina_nombre": maquina["nombre"],
+            "fecha": fecha,
+            "tipo_maquina": _texto(_una(fila, mapa, "tipo_maquina")),
+            "cilindro": _texto(_una(fila, mapa, "cilindro")),
+            "poleas": _juntar(_celdas(fila, mapa.get("poleas", []))),
+            "ajuste_agujas": _texto(_una(fila, mapa, "ajuste_agujas")),
+            "estiraje": _texto(_una(fila, mapa, "estiraje")),
+            "tela": _texto(_una(fila, mapa, "tela")),
+            "hilos": _juntar(_celdas(fila, mapa.get("hilos", []))),
+            "gramaje_crudo": _decimal(_una(fila, mapa, "gramaje_crudo")),
+            "malla_manual": _texto(_una(fila, mapa, "malla_manual")),
+            "malla": _texto(_una(fila, mapa, "malla")),
+            "rendimiento": _decimal(_una(fila, mapa, "rendimiento")),
+            "kg_m": _decimal(_una(fila, mapa, "kg_m")),
+            "hoja": hoja,
+            "orden": n,
+        }
+        util = ("cilindro", "poleas", "ajuste_agujas", "estiraje", "tela",
+                "hilos", "gramaje_crudo", "malla_manual", "malla")
+        if not fecha and not any(item[c] for c in util):
+            continue
+        salida.append(item)
+    return salida, descartes
+
+
+def _firma(a) -> tuple:
+    """Cómo se reconoce que dos filas son el mismo ajuste: la máquina, el día y
+    la tela. Sirve para no cargar dos veces lo que la hoja vieja repite."""
+    return (a["id_maquina"], a["fecha"],
+            (a["tela"] or "").upper().strip(),
+            (a["hilos"] or "").upper().strip())
+
+
 # --------------------------------------------------------------------------
 # Las hojas chicas
 # --------------------------------------------------------------------------
-def _buscar_titulos(filas, etiquetas, hasta=8) -> tuple[int | None, dict[str, int]]:
-    """La fila que tiene esos títulos, y en qué columna cayó cada uno."""
+def _buscar_titulos(filas, etiquetas, hasta=8, desde=0) -> tuple[int | None, dict[str, int]]:
+    """La fila que tiene esos títulos, y en qué columna cayó cada uno.
+
+    `desde` es la primera columna donde mirar. Existe porque la hoja de bandas
+    tiene dos tablas al lado de la otra y sus títulos se parecen: sin este
+    freno, «BANDAS DE MEMMIGER» de la izquierda se lleva la columna «BANDA» de
+    la tabla de la derecha.
+    """
     for i, fila in enumerate(filas[:hasta]):
-        limpias = [_apretado(c) for c in fila]
+        limpias = [_apretado(c) if j >= desde else "" for j, c in enumerate(fila)]
         mapa = {}
         for campo, pistas in etiquetas.items():
             for j, t in enumerate(limpias):
@@ -411,6 +484,56 @@ def leer_agujas(wb, maquinas) -> tuple[list[dict], list[dict]]:
             continue
         vistas.add(maquina["id"])
         salida.append(item)
+    return salida, descartes
+
+
+def leer_agujas_modelo(wb) -> tuple[list[dict], list[dict]]:
+    """La hoja «CODIGO DE AGUJAS»: la aguja de cada MODELO, con la marca.
+
+    Se parece a «AGUJAS», pero trae un dato que la otra no tiene: de qué marca
+    es la aguja y de qué marca la platina. Va a su propia tabla en vez de
+    mezclarse, porque acá la fila es un modelo («MAYER)1-2-3-4-5-7-9-10») y no
+    una máquina, y repartir eso entre máquinas sería adivinar.
+    """
+    hoja = next((n for n in wb.sheetnames if _apretado(n) == "codigo de agujas"), None)
+    if not hoja:
+        return [], []
+    filas = _filas_de(wb[hoja])
+    corte, mapa = _buscar_titulos(filas, {
+        "modelo": ("maquina",), "marca": ("marca",), "codigo": ("codigo",),
+        "donde": ("cilindro",), "platinas": ("platinas",),
+    })
+    if corte is None:
+        return [], [{"donde": hoja, "motivo": "No se encontraron los títulos"}]
+
+    # Los códigos son varias columnas seguidas, todas tituladas «CODIGO».
+    ini = mapa.get("codigo")
+    fin = mapa.get("donde", (ini + 4) if ini is not None else 0)
+
+    salida, descartes, vistos = [], [], set()
+    for fila in filas[corte + 1:]:
+        if _vacia(fila):
+            continue
+        modelo = _texto(fila[mapa["modelo"]]) if "modelo" in mapa else None
+        if not modelo or _apretado(modelo) == "vacia":
+            continue
+        if _apretado(modelo) in vistos:
+            descartes.append({"donde": f"{hoja} · {modelo}",
+                              "motivo": "El modelo aparece dos veces; se guarda el primero"})
+            continue
+        vistos.add(_apretado(modelo))
+        col_pl = mapa.get("platinas")
+        salida.append({
+            "modelo": modelo,
+            "marca_aguja": _texto(fila[mapa["marca"]]) if "marca" in mapa else None,
+            "codigos": _juntar(_celdas(fila, range(ini, fin))) if ini is not None else None,
+            "donde": _juntar(_celdas(fila, range(fin, col_pl))) if col_pl else None,
+            "platinas": _texto(fila[col_pl]) if col_pl is not None else None,
+            "marca_platina": _texto(fila[col_pl + 1]) if col_pl is not None
+                             and col_pl + 1 < len(fila) else None,
+            "nota": _juntar(_celdas(fila, range(col_pl + 2, len(fila))))
+                    if col_pl is not None else None,
+        })
     return salida, descartes
 
 
@@ -495,10 +618,12 @@ def leer_bandas(wb) -> tuple[list[dict], list[dict], list[dict]]:
         if maquinas and any(medidas.values()) and (maquinas, diametro) not in vistas:
             vistas.add((maquinas, diametro))
             bandas.append({
+                "clase": "memminger",
                 "maquinas": maquinas,
                 "cantidad_maquinas": _numero(fila[mapa["cantidad_maquinas"]])
                                      if "cantidad_maquinas" in mapa else None,
                 "diametro": diametro,
+                "banda": None, "cobrador": None, "nota": None,
                 **medidas,
             })
         # La fila «total» es una suma del Excel, no una medida de banda: como
@@ -508,10 +633,41 @@ def leer_bandas(wb) -> tuple[list[dict], list[dict], list[dict]]:
             if medida is not None:
                 stock.append({"medida": medida, "cantidad": _numero(fila[col_stock])})
 
-    descartes.append({
-        "donde": hoja,
-        "motivo": "Las bandas de motor (a la derecha de la hoja) no se cargan: "
-                  "son otro repuesto y tienen otras columnas"})
+    # Las bandas de MOTOR, en su propia tabla a la derecha de la hoja. Otro
+    # repuesto y otras columnas, así que van con clase propia: si se mezclaran
+    # con las Memminger, una medida taparía a la otra.
+    corte2, mapa2 = _buscar_titulos(filas, {
+        "maquinas": ("maquina",), "cantidad_maquinas": ("cantidad",),
+        "diametro": ("diametro",), "banda": ("banda",), "cobrador": ("cobrador",),
+    }, hasta=4, desde=(col_stock + 1) if col_stock is not None else 0)
+    if corte2 is not None and mapa2.get("cobrador"):
+        vistas2 = set()
+        for fila in filas[corte2 + 1:]:
+            if _vacia(fila):
+                continue
+            maquinas = _texto(fila[mapa2["maquinas"]]) if "maquinas" in mapa2 else None
+            banda = _texto(fila[mapa2["banda"]]) if "banda" in mapa2 else None
+            if not maquinas or not banda:
+                continue
+            diametro = _decimal(fila[mapa2["diametro"]]) if "diametro" in mapa2 else None
+            if (maquinas, diametro) in vistas2:
+                continue
+            vistas2.add((maquinas, diametro))
+            col_cob = mapa2["cobrador"]
+            bandas.append({
+                "clase": "motor",
+                "maquinas": maquinas,
+                "cantidad_maquinas": _numero(fila[mapa2["cantidad_maquinas"]])
+                                     if "cantidad_maquinas" in mapa2 else None,
+                "diametro": diametro,
+                "media": None, "tres_cuartos": None, "lycra": None,
+                "banda": banda,
+                "cobrador": _texto(fila[col_cob]),
+                "nota": _juntar(_celdas(fila, range(col_cob + 1, len(fila)))),
+            })
+    else:
+        descartes.append({"donde": hoja,
+                          "motivo": "No se encontró la tabla de bandas de motor"})
     return bandas, stock, descartes
 
 
@@ -534,18 +690,32 @@ def leer_eficiencia(wb, maquinas) -> tuple[list[dict], list[dict]]:
     salida, descartes, vistas = [], [], set()
     mapa: dict[str, int] = {}
     for fila in filas:
-        cabecera = {}
+        cabecera, repetidas = {}, {"aproximacion": [], "peso kg": []}
         for j, celda in enumerate(fila):
             t = _apretado(celda)
+            if not t:
+                continue
+            for etiqueta in repetidas:
+                if t.startswith(etiqueta):
+                    repetidas[etiqueta].append(j)
             for campo, pistas in (("numero", ("maquina",)), ("rpm", ("velocidad",)),
                                   ("sistemas", ("sistema",)), ("diametro", ("diametro",)),
                                   ("alimentadores", ("f",)), ("tamano_rollo", ("tamano de rollo",)),
                                   ("minutos_rollo", ("tiempo",)), ("rollos_dia", ("aproximacion",)),
                                   ("kg_dia", ("peso kg",))):
-                if t and campo not in cabecera and any(t == p or t.startswith(p) for p in pistas):
+                if campo not in cabecera and any(t == p or t.startswith(p) for p in pistas):
                     cabecera[campo] = j
                     break
         if len(cabecera) >= 6:
+            # La hoja calcula dos turnos con los MISMOS títulos repetidos: el
+            # de 12 horas primero y el de 24 después. No hay forma de
+            # distinguirlos por el nombre, así que se toman por orden de
+            # aparición — y abajo se chequea que el de 24 sea mayor que el de
+            # 12 antes de guardarlo. Si no lo es, se deja vacío.
+            if len(repetidas["aproximacion"]) >= 3:
+                cabecera["rollos_dia_24"] = repetidas["aproximacion"][2]
+            if len(repetidas["peso kg"]) >= 4:
+                cabecera["kg_dia_24"] = repetidas["peso kg"][3]
             mapa = cabecera
             continue
         if not mapa:
@@ -559,16 +729,32 @@ def leer_eficiencia(wb, maquinas) -> tuple[list[dict], list[dict]]:
                               "motivo": f"La máquina {numero} no está en Asinfo"})
             continue
         vistas.add(numero)
+
+        def val(campo, como=_decimal):
+            i = mapa.get(campo)
+            return como(fila[i]) if i is not None and i < len(fila) else None
+
+        kg_dia = val("kg_dia")
+        kg_24 = val("kg_dia_24")
+        rollos_24 = val("rollos_dia_24")
+        # El turno de 24 horas tiene que dar más que el de 12. Si no da, los
+        # títulos repetidos no cayeron donde creíamos: mejor vacío que un
+        # número puesto en la columna equivocada.
+        if not (kg_dia and kg_24 and kg_24 > kg_dia):
+            kg_24 = rollos_24 = None
+
         salida.append({
             "id_maquina": maquina["id"],
-            "rpm": _decimal(fila[mapa["rpm"]]) if "rpm" in mapa else None,
-            "sistemas": _texto(fila[mapa["sistemas"]]) if "sistemas" in mapa else None,
-            "diametro": _decimal(fila[mapa["diametro"]]) if "diametro" in mapa else None,
-            "alimentadores": _numero(fila[mapa["alimentadores"]]) if "alimentadores" in mapa else None,
-            "tamano_rollo": _decimal(fila[mapa["tamano_rollo"]]) if "tamano_rollo" in mapa else None,
-            "minutos_rollo": _decimal(fila[mapa["minutos_rollo"]]) if "minutos_rollo" in mapa else None,
-            "rollos_dia": _decimal(fila[mapa["rollos_dia"]]) if "rollos_dia" in mapa else None,
-            "kg_dia": _decimal(fila[mapa["kg_dia"]]) if "kg_dia" in mapa else None,
+            "rpm": val("rpm"),
+            "sistemas": val("sistemas", _texto),
+            "diametro": val("diametro"),
+            "alimentadores": val("alimentadores", _numero),
+            "tamano_rollo": val("tamano_rollo"),
+            "minutos_rollo": val("minutos_rollo"),
+            "rollos_dia": val("rollos_dia"),
+            "kg_dia": kg_dia,
+            "rollos_dia_24": rollos_24,
+            "kg_dia_24": kg_24,
         })
     return salida, descartes
 
@@ -656,6 +842,7 @@ def leer_gramajes(wb, maquinas, hoy=None) -> tuple[list[dict], list[dict]]:
 NOMBRES = {
     "ajustes": "Ajustes de máquina",
     "agujas": "Agujas por máquina",
+    "agujas_modelo": "Agujas por modelo",
     "levas": "Levas",
     "bandas": "Bandas",
     "banda_stock": "Bandas en stock",
@@ -674,7 +861,9 @@ def leer(ruta: str, maquinas: list[dict], hoy=None) -> tuple[dict, list[dict]]:
     wb = load_workbook(ruta, data_only=True)
     try:
         ajustes_, d1 = leer_ajustes(wb, maquinas, hoy)
+        viejos_, d8 = leer_agustes(wb, maquinas, hoy)
         agujas_, d2 = leer_agujas(wb, maquinas)
+        modelos_, d9 = leer_agujas_modelo(wb)
         levas_, d3 = leer_levas(wb)
         bandas_, stock_, d4 = leer_bandas(wb)
         eficiencia_, d5 = leer_eficiencia(wb, maquinas)
@@ -683,9 +872,21 @@ def leer(ruta: str, maquinas: list[dict], hoy=None) -> tuple[dict, list[dict]]:
     finally:
         wb.close()
 
+    # De la hoja vieja entra sólo lo que no está en las hojas por máquina. Lo
+    # repetido se cuenta y se avisa, para que el número cierre.
+    conocidas = {_firma(a) for a in ajustes_}
+    nuevos = [a for a in viejos_ if _firma(a) not in conocidas]
+    repetidos = len(viejos_) - len(nuevos)
+    if repetidos:
+        d8.append({
+            "donde": "AGUSTES",
+            "motivo": f"{repetidos} ajustes de la hoja vieja ya estaban en las "
+                      "hojas de cada máquina"})
+
     bloques = {
-        "ajustes": ajustes_,
+        "ajustes": ajustes_ + nuevos,
         "agujas": agujas_,
+        "agujas_modelo": modelos_,
         "levas": levas_,
         "bandas": bandas_,
         "banda_stock": stock_,
@@ -693,4 +894,4 @@ def leer(ruta: str, maquinas: list[dict], hoy=None) -> tuple[dict, list[dict]]:
         "consumo_hilo": consumo_,
         "gramajes": gramajes_,
     }
-    return bloques, d1 + d2 + d3 + d4 + d5 + d6 + d7
+    return bloques, d1 + d8 + d2 + d9 + d3 + d4 + d5 + d6 + d7

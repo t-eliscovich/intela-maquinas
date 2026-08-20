@@ -130,10 +130,14 @@ def tope_de(topes, id_maquina, tipo):
 
 
 def armar_semaforo():
-    """Una fila por (máquina, tipo) que ya tenga un primer mantenimiento.
+    """Una fila por MÁQUINA.
 
-    Las máquinas sin ninguno todavía no tienen desde cuándo contar, así que no
-    entran al semáforo: se listan aparte como pendientes de arrancar.
+    El semáforo se prende con los mantenimientos que TIENEN un tope de kilos:
+    ésos son los que se vencen por desgaste. El cambio de agujas no se hace
+    porque pasó el tiempo — se hace cuando la tela lo pide — así que no pinta
+    nada de rojo: va al lado, como fecha, para saber cuándo fue el último.
+    Mezclarlos hacía que la lista mostrara la misma máquina dos veces con dos
+    colores distintos, que era justo lo que había que evitar.
     """
     tipos = store.tipos()
     maquinas, _, _ = asinfo.maquinas()
@@ -141,30 +145,30 @@ def armar_semaforo():
     topes = store.topes_por_maquina()
 
     hoy = date.today()
-    filas, pendientes, pares = [], [], []
-
+    pares = []
     for maquina in maquinas:
         for tipo in tipos:
             ultimo = ultimos.get((maquina["id"], tipo["id"]))
-            if not ultimo:
-                pendientes.append({"maquina": maquina, "tipo": tipo})
-                continue
-            pares.append((maquina["id"], tipo["id"], ultimo["fecha"].isoformat()))
+            if ultimo:
+                pares.append((maquina["id"], tipo["id"], ultimo["fecha"].isoformat()))
 
     acum, leido_en, fresco = asinfo.acumulados(pares)
 
+    filas, pendientes = [], []
     for maquina in maquinas:
+        por_tipo, con_tope = {}, []
         for tipo in tipos:
+            tope, propio = tope_de(topes, maquina["id"], tipo)
             ultimo = ultimos.get((maquina["id"], tipo["id"]))
             if not ultimo:
+                por_tipo[tipo["id"]] = {"tipo": tipo, "tope": tope, "desde": None,
+                                        "estado": "sin_arrancar"}
+                if tope:
+                    pendientes.append({"maquina": maquina, "tipo": tipo})
                 continue
 
             desde = ultimo["fecha"]
             kg, rollos = acum.get((maquina["id"], tipo["id"]), (0.0, 0))
-            tope, propio = tope_de(topes, maquina["id"], tipo)
-
-            # El semáforo va por KILOS. Los días se muestran como dato, no
-            # prenden nada: el desgaste es lo que la máquina tejió.
             pct = (float(kg) / tope) if tope else None
             if pct is None:
                 estado = "sin_tope"
@@ -175,20 +179,28 @@ def armar_semaforo():
             else:
                 estado = "ok"
 
-            filas.append({
-                "maquina": maquina,
-                "tipo": tipo,
-                "desde": desde,
-                "hecho_por": ultimo["hecho_por"],
-                "kg": kg,
-                "rollos": rollos,
-                "dias": (hoy - desde).days,
-                "tope": tope,
-                "tope_propio": propio,
+            info = {
+                "tipo": tipo, "desde": desde, "hecho_por": ultimo["hecho_por"],
+                "kg": kg, "rollos": rollos, "dias": (hoy - desde).days,
+                "tope": tope, "tope_propio": propio,
                 "falta": (tope - float(kg)) if tope else None,
-                "pct": pct,
-                "estado": estado,
-            })
+                "pct": pct, "estado": estado,
+            }
+            por_tipo[tipo["id"]] = info
+            if tope:
+                con_tope.append(info)
+
+        if not por_tipo:
+            continue
+        # El peor de los que se vencen por kilos manda el color de la fila.
+        principal = max(con_tope, key=lambda i: i["pct"] or 0) if con_tope else None
+        filas.append({
+            "maquina": maquina,
+            "principal": principal,
+            "por_tipo": por_tipo,
+            "estado": principal["estado"] if principal else "sin_arrancar",
+            "pct": principal["pct"] if principal else None,
+        })
 
     filas.sort(key=lambda f: (f["pct"] is None, -(f["pct"] or 0)))
     return filas, pendientes, leido_en, fresco
@@ -246,11 +258,19 @@ def semaforo():
         "por_vencer": sum(1 for f in filas if f["estado"] == "por_vencer"),
         "ok": sum(1 for f in filas if f["estado"] == "ok"),
         "sin_tope": sum(1 for f in filas if f["estado"] == "sin_tope"),
+        "sin_arrancar": sum(1 for f in filas if f["estado"] == "sin_arrancar"),
     }
+    # Qué mantenimientos prenden el semáforo y cuáles van sólo como fecha. Se
+    # decide por si ALGUNA máquina tiene puesto un tope de kilos, no por el
+    # número general del tipo: los kilos se cargan por máquina.
+    tipos = store.tipos()
+    con_tope = {tid for f in filas for tid, i in f["por_tipo"].items() if i.get("tope")}
     return render_template(
         "semaforo.html",
         filas=filas_ver,
         solo=solo,
+        tipos_con_tope=[t for t in tipos if t["id"] in con_tope],
+        tipos_sin_tope=[t for t in tipos if t["id"] not in con_tope],
         pendientes=pendientes,
         resumen=resumen,
         leido_en=leido_en,
@@ -297,9 +317,17 @@ def registrar():
             if datetime.strptime(fecha, "%Y-%m-%d").date() > date.today():
                 raise ValueError("La fecha no puede ser futura.")
 
+            # Cuánto llevó NO es opcional: sin las horas no se sabe cuánto
+            # cuesta parar una máquina, que es media razón por la que esto se
+            # anota. Decisión de la dueña, 20/08/2026.
             crudo = (request.form.get("horas") or "").strip().replace(",", ".")
-            horas = float(crudo) if crudo else None
-            if horas is not None and not (0 < horas <= 200):
+            if not crudo:
+                raise ValueError("Falta poner cuánto llevó, en horas.")
+            try:
+                horas = float(crudo)
+            except ValueError:
+                raise ValueError("Las horas tienen que ser un número. Por ejemplo 2,5.")
+            if not (0 < horas <= 200):
                 raise ValueError("Las horas tienen que ser un número razonable.")
 
             nombre = next(
@@ -536,8 +564,10 @@ def carga_revisar(token):
     es_por_maquina = len(por_maquina) >= 3
 
     if es_por_maquina:
-        listas, descartes = por_maquina, descartes_pm
-        hoja, titulos, mapa = None, [], {}
+        # La planilla de planta trae el historial ENTERO desde 2018. Antes se
+        # cargaba sólo la última fecha de cada tipo — 66 filas de 1.366 — y con
+        # eso el semáforo andaba, pero la ficha de la máquina quedaba muda.
+        return _revisar_historial(token, ruta, maquinas, tipos, nombres_hojas)
     else:
         hoja = request.form.get("hoja") or nombres_hojas[0]
         titulos, filas = excel.leer(ruta, hoja)
@@ -586,6 +616,60 @@ def carga_revisar(token):
         listas=listas,
         descartes=descartes,
         campos=CAMPOS_MAPA(tipos),
+    )
+
+
+def _revisar_historial(token, ruta, maquinas, tipos, nombres_hojas):
+    """Mostrar el historial completo que trae la planilla de planta, y guardarlo."""
+    mantenimientos, fichas, descartes = excel.leer_historial_por_maquina(
+        ruta, maquinas, tipos)
+
+    if request.method == "POST" and request.form.get("boton") == "confirmar":
+        try:
+            if not mantenimientos:
+                raise ValueError("No se pudo leer ningún mantenimiento.")
+            hecho = store.guardar_historial(mantenimientos)
+            if fichas:
+                store.cargar_lote([], [], [
+                    (m["id"], *[f.get(c) for c in store.CAMPOS_FICHA])
+                    for m, f in fichas if any(v is not None for v in f.values())])
+            os.remove(ruta)
+            aviso = f"Listo. {hecho['mantenimientos']} mantenimientos y {len(fichas)} fichas."
+            if hecho["borrados"]:
+                aviso += (f" Se reemplazaron los {hecho['borrados']} que había "
+                          "cargado la primera versión, que sólo traía la última fecha.")
+            flash(aviso, "ok")
+            return redirect(url_for("semaforo"))
+        except Exception as exc:  # noqa: BLE001
+            flash(str(exc), "error")
+
+    # Un resumen por máquina: cuántos trae y desde cuándo.
+    por_maquina = {}
+    for m in mantenimientos:
+        d = por_maquina.setdefault(m["id_maquina"], {"n": 0, "desde": m["fecha"],
+                                                     "hasta": m["fecha"],
+                                                     "hoja": m["hoja"]})
+        d["n"] += 1
+        d["desde"] = min(d["desde"], m["fecha"])
+        d["hasta"] = max(d["hasta"], m["fecha"])
+    nombres = {m["id"]: m for m in maquinas}
+    resumen = sorted(
+        ({"maquina": nombres.get(k), **v} for k, v in por_maquina.items()),
+        key=lambda f: (f["maquina"] or {}).get("numero") or 0)
+
+    return render_template(
+        "carga.html",
+        paso="revisar",
+        formato="historial",
+        token=token,
+        tipos=tipos,
+        hojas=nombres_hojas,
+        resumen=resumen,
+        total=len(mantenimientos),
+        fichas=len(fichas),
+        ya_cargados=store.cuantos_de_la_carga_vieja(),
+        descartes=descartes,
+        listas=[], hoja=None, titulos=[], mapa={}, campos=[],
     )
 
 
@@ -831,17 +915,82 @@ def maquina_detalle(id_maquina):
     except Exception:  # noqa: BLE001
         mensual = []
 
+    historial = store.historial(id_maquina, limite=500)
     return render_template(
         "maquina.html",
         maquina=maquina,
         ficha=store.ficha(id_maquina),
         archivos=store.archivos(id_maquina),
-        historial=store.historial(id_maquina),
+        historial=historial,
+        dias=_dias_de_mantenimiento(id_maquina, historial),
         mensual=mensual,
         ajustes=store.ajustes(id_maquina=id_maquina, limite=30),
         aguja=store.agujas().get(id_maquina),
         eficiencia=store.eficiencias().get(id_maquina),
     )
+
+
+@app.route("/maquina")
+@requiere_login
+def ir_a_maquina():
+    """El buscador de la ficha: se escribe el número y se salta a esa máquina."""
+    try:
+        maquinas, _, _ = asinfo.maquinas()
+    except asinfo.AsinfoNoDisponible:
+        maquinas = []
+    try:
+        id_maquina = _buscar_maquina(request.args.get("numero"), maquinas)
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("maquinas_lista"))
+    return redirect(url_for("maquina_detalle", id_maquina=id_maquina))
+
+
+def _dias_de_mantenimiento(id_maquina, historial):
+    """Un renglón por DÍA, no por registro.
+
+    Si el mismo día se limpió la máquina y se le cambiaron las agujas, en la
+    planilla son dos filas — pero para el mecánico es una sola parada. Se
+    juntan, y al lado van los kilos que tejió desde la parada anterior, que es
+    la pregunta de verdad: cuánto aguantó.
+    """
+    por_dia = {}
+    for h in historial:
+        d = por_dia.setdefault(h["fecha"], {"fecha": h["fecha"], "tipos": [],
+                                            "notas": [], "repuestos": [],
+                                            "quien": set(), "kg": None})
+        if h["tipo_nombre"] not in d["tipos"]:
+            d["tipos"].append(h["tipo_nombre"])
+        for campo, clave in (("nota", "notas"), ("repuestos", "repuestos")):
+            if h.get(campo) and h[campo] not in d[clave]:
+                d[clave].append(h[campo])
+        if h.get("hecho_por"):
+            d["quien"].add(h["hecho_por"])
+
+    dias = sorted(por_dia.values(), key=lambda d: d["fecha"], reverse=True)
+    if not dias:
+        return []
+
+    # Los kilos entre paradas. Si Asinfo no contesta, se muestran los días y
+    # las fechas igual: media pantalla es mejor que un error.
+    try:
+        acum = asinfo.kilos_desde(id_maquina, [d["fecha"] for d in dias])
+    except Exception:  # noqa: BLE001
+        acum = {}
+    for i, d in enumerate(dias):
+        desde = acum.get(d["fecha"].isoformat())
+        if desde is None:
+            continue
+        if i == 0:
+            d["kg"] = desde          # desde la última parada hasta hoy
+            d["hasta_hoy"] = True
+        else:
+            anterior = acum.get(dias[i - 1]["fecha"].isoformat())
+            if anterior is not None:
+                d["kg"] = round(desde - anterior, 2)
+    for d in dias:
+        d["quien"] = ", ".join(sorted(d["quien"]))
+    return dias
 
 
 # --------------------------------------------------------------------------
@@ -899,7 +1048,10 @@ def repuestos():
              if agujas.get(m["id"])]
     filas.sort(key=lambda f: (f["maquina"]["numero"] is None, f["maquina"]["numero"] or 0))
     return render_template("repuestos.html", filas=filas, levas=store.levas(),
-                           bandas=store.bandas(), stock=store.banda_stock())
+                           modelos=store.agujas_por_modelo(),
+                           bandas=store.bandas("memminger"),
+                           bandas_motor=store.bandas("motor"),
+                           stock=store.banda_stock())
 
 
 # --------------------------------------------------------------------------

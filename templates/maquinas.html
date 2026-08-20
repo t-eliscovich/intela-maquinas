@@ -9,11 +9,11 @@
 
 <div class="bloque">
   <div class="titulo"><h2>{{ filas | length }} máquinas</h2>
-    <p>Clickeá una para ver la ficha entera y su historial</p></div>
+    <p>Tocá una para ver la ficha</p></div>
   {% if not filas %}
     <div class="vacio"><h3>No hay máquinas para mostrar</h3></div>
   {% else %}
-  <table>
+  <table style="font-size:13px;line-height:1.25">
     <thead>
       <tr>
         <th>Máquina</th><th>Marca</th><th>Modelo</th>
@@ -26,12 +26,11 @@
     <tbody>
     {% for f in filas %}
       <tr>
+        {# Sólo «MQ 3»: el nombre de Asinfo es «TEJEDURIA-MQ 003» y repetirlo
+           debajo hacía de cada renglón dos. #}
         <td>
           <a href="{{ url_for('maquina_detalle', id_maquina=f.maquina.id) }}"
-             style="text-decoration:none;color:inherit">
-            <span class="mq">{{ f.maquina | mq }}</span>
-            <span class="chico">{{ f.maquina.nombre }}</span>
-          </a>
+             class="mq" style="text-decoration:none;color:inherit">{{ f.maquina | mq }}</a>
         </td>
         <td>{{ f.ficha.marca or '—' }}</td>
         <td>{{ f.ficha.modelo or '—' }}</td>

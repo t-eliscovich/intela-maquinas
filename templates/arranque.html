@@ -14,13 +14,14 @@
 {% else %}
 
 <div class="bloque"><div class="relleno">
+  {# Tres campos y un botón: entra todo en una fila, sin scrollear. #}
   <form method="POST" class="formulario">
     <div>
       <label class="campo" for="tipo_id">Qué mantenimiento</label>
       <select name="tipo_id" id="tipo_id" required>
         {% for t in tipos %}
           <option value="{{ t.id }}" {{ 'disabled' if faltan[t.id] == 0 }}>
-            {{ t.nombre }} — {{ faltan[t.id] }} máquina{{ '' if faltan[t.id] == 1 else 's' }} sin arrancar
+            {{ t.nombre }} — {{ faltan[t.id] }} sin arrancar
             {%- if faltan[t.id] == 0 %} (ya están todas){% endif %}
           </option>
         {% endfor %}
@@ -30,11 +31,6 @@
     <div>
       <label class="campo" for="fecha">Contar desde</label>
       <input type="date" name="fecha" id="fecha" value="{{ hoy }}" max="{{ hoy }}" required>
-      <p class="tenue" style="font-size:14px" style="margin:8px 0 0">
-        Si no sabés cuándo fue el último mantenimiento, poné <b>hoy</b>. El contador arranca
-        de cero y a partir de mañana los números ya son reales. Es preferible eso a
-        inventar una fecha vieja: una fecha inventada pinta rojos que no existen.
-      </p>
     </div>
 
     <div>
@@ -43,26 +39,26 @@
     </div>
 
     <div><button class="btn" type="submit">Poner a contar todas</button></div>
+
+    <p class="ayuda ancho" style="margin:0">
+      Si no sabés cuándo fue el último mantenimiento, poné hoy: una fecha
+      inventada pinta rojos que no existen.
+    </p>
   </form>
+  <p class="ayuda" style="margin:10px 0 0">
+    Se crea un mantenimiento para cada máquina que no tenga uno de ese tipo; las
+    que ya tienen no se tocan. Desde esa fecha los kilos los cuenta Asinfo solo,
+    y cuando se haga uno de verdad se carga en
+    <a href="{{ url_for('registrar') }}">Cargar uno</a>.
+  </p>
 </div></div>
 
 <div class="bloque">
-  <div class="titulo"><h2>Qué va a pasar</h2></div>
-  <div class="relleno"><ul style="margin:0;padding-left:20px;line-height:1.9">
-    <li>Se crea un registro de mantenimiento para cada máquina que todavía no tenga uno
-        de ese tipo. Las que ya tienen no se tocan.</li>
-    <li>Desde esa fecha, los kilos y los rollos los cuenta Asinfo solo.</li>
-    <li>Cuando se haga un mantenimiento de verdad, se carga en
-        <a href="{{ url_for('registrar') }}">Cargar uno</a> y esa máquina vuelve a cero.</li>
-  </ul></div>
-</div>
-
-<div class="bloque">
   <div class="titulo"><h2>Las {{ maquinas|length }} máquinas</h2><p>Salen de Asinfo</p></div>
-  <div class="relleno" style="display:flex;flex-wrap:wrap;gap:6px">
+  <div class="relleno" style="display:flex;flex-wrap:wrap;gap:5px">
     {% for m in maquinas %}
       <span style="background:#f1f5f9;border:1px solid var(--borde);border-radius:6px;
-                   padding:3px 9px;font-size:12px;white-space:nowrap">{{ m | mq }}</span>
+                   padding:2px 8px;font-size:12px;white-space:nowrap">{{ m | mq }}</span>
     {% endfor %}
   </div>
 </div>

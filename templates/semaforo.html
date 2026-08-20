@@ -5,11 +5,9 @@
 <h1>Qué máquina necesita mantenimiento</h1>
 
 {% if error %}
-  <div class="aviso"><b>No se pudo leer Asinfo.</b> {{ error }}<br>
-  Sin eso no se pueden contar los kilos.</div>
+  <div class="aviso"><b>No se pudo leer Asinfo.</b> {{ error }} Sin eso no se cuentan los kilos.</div>
 {% elif not fresco and leido_en %}
-  <div class="aviso"><b>Asinfo no contestó recién.</b> Estos números son de la última
-  lectura buena. No son un cero: no se actualizaron.</div>
+  <div class="aviso"><b>Asinfo no contestó recién.</b> Estos números son de la última lectura buena.</div>
 {% endif %}
 
 {% if not hay_tipos %}
@@ -31,16 +29,22 @@
 
 {% else %}
 
-<div class="cifras">
-  <a class="cifra" href="{{ url_for('semaforo', solo='vencidas') }}">
-    <b style="color:var(--rojo)">{{ resumen.vencido }}</b><small>Vencidas</small></a>
-  <div class="cifra"><b style="color:var(--ambar)">{{ resumen.por_vencer }}</b><small>Falta poco</small></div>
-  <div class="cifra"><b style="color:var(--verde)">{{ resumen.ok }}</b><small>En regla</small></div>
+{# Esta es la pantalla que se mira de parado: los números de arriba van chicos
+   para que la tabla, que es lo que se lee, entre entera. #}
+<div class="cifras" style="margin-bottom:8px">
+  <a class="cifra" style="padding:5px 12px" href="{{ url_for('semaforo', solo='vencidas') }}">
+    <b style="font-size:17px;color:var(--rojo)">{{ resumen.vencido }}</b><small>Vencidas</small></a>
+  <div class="cifra" style="padding:5px 12px">
+    <b style="font-size:17px;color:var(--ambar)">{{ resumen.por_vencer }}</b><small>Falta poco</small></div>
+  <div class="cifra" style="padding:5px 12px">
+    <b style="font-size:17px;color:var(--verde)">{{ resumen.ok }}</b><small>En regla</small></div>
   {% if resumen.sin_tope %}
-  <div class="cifra"><b class="tenue">{{ resumen.sin_tope }}</b><small>Sin kilos puestos</small></div>
+  <div class="cifra" style="padding:5px 12px">
+    <b class="tenue" style="font-size:17px">{{ resumen.sin_tope }}</b><small>Sin kilos puestos</small></div>
   {% endif %}
-  {% if pendientes %}
-  <div class="cifra"><b class="tenue">{{ pendientes|length }}</b><small>Sin arrancar</small></div>
+  {% if resumen.sin_arrancar %}
+  <div class="cifra" style="padding:5px 12px">
+    <b class="tenue" style="font-size:17px">{{ resumen.sin_arrancar }}</b><small>Sin arrancar</small></div>
   {% endif %}
 </div>
 
@@ -54,81 +58,77 @@
       <p>Lo más pasado, arriba</p>
     {% endif %}
   </div>
-  <table>
+  {# Los tipos se parten en dos: los que se vencen por kilos prenden el
+     semáforo; los que no tienen tope se muestran como fecha, sin color. El
+     cambio de agujas no se hace porque pasó el tiempo, así que no puede pintar
+     una máquina de rojo. #}
+  {% set con_tope = tipos_con_tope %}
+  {% set sin_tope = tipos_sin_tope %}
+  {# Un renglón por máquina: nada que ocupe dos líneas, o la tabla no entra. #}
+  <table style="font-size:13px;line-height:1.25">
     <thead>
       <tr>
         <th>Máquina</th>
-        <th>Mantenimiento</th>
+        <th>Estado</th>
         <th class="der">Kilos</th>
         <th class="der">Le falta</th>
-        <th>Estado</th>
-        <th class="oculta-chico">Última vez</th>
+        <th class="oculta-chico">Última {{ (con_tope | first).nombre | lower if con_tope else 'vez' }}</th>
+        {% for t in sin_tope %}<th class="oculta-chico">Último {{ t.nombre | lower }}</th>{% endfor %}
       </tr>
     </thead>
     <tbody>
     {% for f in filas %}
+      {% set p = f.principal %}
       <tr class="{{ f.estado }}">
         <td>
           <a href="{{ url_for('maquina_detalle', id_maquina=f.maquina.id) }}"
-             style="text-decoration:none;color:inherit">
-            <span class="mq">{{ f.maquina | mq }}</span>
-            <span class="chico">{{ f.maquina.nombre }}</span>
-          </a>
-        </td>
-        <td>{{ f.tipo.nombre }}</td>
-        <td class="der" style="min-width:150px">
-          <b>{{ f.kg | num(0) }}</b>{% if f.tope %} <span class="tenue">de {{ f.tope | num(0) }}</span>{% endif %}
-          {% if f.pct is not none %}
-            {% set ancho = (f.pct * 100) if f.pct < 1 else 100 %}
-            {% set color = 'var(--rojo)' if f.pct >= 1 else ('var(--ambar)' if f.pct >= 0.8 else 'var(--verde)') %}
-            <div class="progreso"><span style="width:{{ ancho }}%;background:{{ color }}"></span></div>
-          {% endif %}
-        </td>
-        <td class="der">
-          {% if f.falta is none %}<span class="tenue">—</span>
-          {% elif f.falta > 0 %}{{ f.falta | num(0) }} kg
-          {% else %}<span style="color:var(--rojo);font-weight:700">+{{ (-f.falta) | num(0) }} kg</span>
-          {% endif %}
+             class="mq" style="text-decoration:none;color:inherit">{{ f.maquina | mq }}</a>
         </td>
         <td>
           <span class="marca-estado {{ f.estado }}">
             {% if f.estado == 'vencido' %}Vencida
             {% elif f.estado == 'por_vencer' %}Falta poco
             {% elif f.estado == 'ok' %}En regla
+            {% elif f.estado == 'sin_arrancar' %}Sin arrancar
             {% else %}Sin kilos{% endif %}
           </span>
+          {% if p %}<span class="tenue" style="font-size:11px">{{ p.tipo.nombre }}</span>{% endif %}
+        </td>
+        <td class="der" style="min-width:125px">
+          {% if p and p.desde %}
+            <b>{{ p.kg | num(0) }}</b>{% if p.tope %} <span class="tenue">de {{ p.tope | num(0) }}</span>{% endif %}
+            {% if p.pct is not none %}
+              {% set ancho = (p.pct * 100) if p.pct < 1 else 100 %}
+              {% set color = 'var(--rojo)' if p.pct >= 1 else ('var(--ambar)' if p.pct >= 0.8 else 'var(--verde)') %}
+              <div class="progreso" style="margin-top:2px"><span style="width:{{ ancho }}%;background:{{ color }}"></span></div>
+            {% endif %}
+          {% else %}<span class="tenue">—</span>{% endif %}
+        </td>
+        <td class="der">
+          {% if not p or p.falta is none %}<span class="tenue">—</span>
+          {% elif p.falta > 0 %}{{ p.falta | num(0) }} kg
+          {% else %}<span style="color:var(--rojo);font-weight:700">+{{ (-p.falta) | num(0) }} kg</span>
+          {% endif %}
         </td>
         <td class="tenue oculta-chico">
-          hace {{ f.dias }} días<span class="chico">{{ f.desde | fecha_es }}</span>
+          {% if p and p.desde %}{{ p.desde | fecha_es }}
+            <span style="font-size:11px">· hace {{ p.dias }} días</span>
+          {% else %}—{% endif %}
         </td>
+        {% for t in sin_tope %}
+          {% set o = f.por_tipo.get(t.id) %}
+          <td class="tenue oculta-chico">
+            {% if o and o.desde %}{{ o.desde | fecha_es }}
+              <span style="font-size:11px">· {{ o.kg | num(0) }} kg</span>
+            {% else %}<span class="tenue">nunca</span>{% endif %}
+          </td>
+        {% endfor %}
       </tr>
     {% endfor %}
     </tbody>
   </table>
-  <div class="nota">Los días son dato. Lo que gasta la máquina son los kilos.</div>
-</div>
-{% endif %}
-
-{% if pendientes %}
-<div class="bloque">
-  <div class="titulo">
-    <h2>Sin arrancar</h2>
-    <p>Empiezan a contar el día que se les carga la última vez</p>
-  </div>
-  <table>
-    <thead><tr><th>Máquina</th><th>Mantenimiento</th><th></th></tr></thead>
-    <tbody>
-    {% for p in pendientes %}
-      <tr>
-        <td><span class="mq">{{ p.maquina | mq }}</span>
-            <span class="chico">{{ p.maquina.nombre }}</span></td>
-        <td>{{ p.tipo.nombre }}</td>
-        <td class="der"><a class="btn suave chico"
-               href="{{ url_for('registrar') }}?numero={{ p.maquina.numero }}&tipo_id={{ p.tipo.id }}">Cargar</a></td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+  <div class="nota">El color lo prenden los kilos.{% for t in sin_tope %}
+    <b>{{ t.nombre }}</b> va como fecha: se hace cuando la tela lo pide.{% endfor %}</div>
 </div>
 {% endif %}
 

@@ -3,38 +3,31 @@
 {% block contenido %}
 
 <h1>Ajustes de máquina
-  <small>Cómo se puso cada máquina para tejer cada tela. Sale de la planilla de planta.</small></h1>
+  <small>Cómo se puso cada máquina para tejer cada tela</small></h1>
 
-<div class="cifras">
-  <div class="cifra"><b>{{ resumen.filas | num(0) }}</b><small>Ajustes anotados</small></div>
-  <div class="cifra"><b>{{ resumen.maquinas | num(0) }}</b><small>Máquinas</small></div>
-  <div class="cifra"><b>{{ resumen.con_fecha | num(0) }}</b><small>Con fecha</small></div>
-  <div class="cifra"><b>{{ resumen.desde | fecha_es }}</b><small>El más viejo</small></div>
-</div>
-
-<div class="bloque"><div class="relleno">
-  <form method="GET" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
-    <div style="width:150px">
-      <label class="campo" for="maquina">Máquina</label>
-      <input name="maquina" id="maquina" value="{{ escrito }}" placeholder="21">
+{# El buscador va en la misma línea del título del cuadro: es un renglón de dos
+   casilleros, no merece un bloque propio con aire arriba y abajo. #}
+<div class="bloque">
+  <div class="titulo" style="align-items:center">
+    <div>
+      <h2>{{ filas | length }} ajustes</h2>
+      <p>{{ resumen.filas | num(0) }} anotados · {{ resumen.maquinas | num(0) }} máquinas
+         · del más nuevo al más viejo</p>
     </div>
-    <div style="width:230px">
-      <label class="campo" for="tela">Tela</label>
-      <input name="tela" id="tela" value="{{ tela }}" placeholder="TANIA" list="telas">
+    <form method="GET" style="display:flex;gap:6px;align-items:center">
+      <input name="maquina" id="maquina" value="{{ escrito }}" placeholder="Máquina"
+             aria-label="Máquina" style="width:92px;height:28px">
+      <input name="tela" id="tela" value="{{ tela }}" placeholder="Tela" list="telas"
+             aria-label="Tela" style="width:150px;height:28px">
       <datalist id="telas">
         {% for t in telas %}<option value="{{ t.tela }}">{% endfor %}
       </datalist>
-    </div>
-    <button class="btn" type="submit">Buscar</button>
-    {% if escrito or tela %}
-      <a class="btn suave" href="{{ url_for('ajustes_view') }}">Ver todos</a>
-    {% endif %}
-  </form>
-</div></div>
-
-<div class="bloque">
-  <div class="titulo"><h2>{{ filas | length }} ajustes</h2>
-    <p>Del más nuevo al más viejo. Los que no tienen fecha van al final.</p></div>
+      <button class="btn chico" type="submit">Buscar</button>
+      {% if escrito or tela %}
+        <a class="btn chico suave" href="{{ url_for('ajustes_view') }}">Ver todos</a>
+      {% endif %}
+    </form>
+  </div>
 
   {% if not filas %}
     <div class="vacio">
@@ -43,7 +36,7 @@
       <a class="btn" href="{{ url_for('archivos') }}">Ir a Archivos</a>
     </div>
   {% else %}
-  <table>
+  <table style="font-size:13px;line-height:1.25">
     <thead>
       <tr>
         <th>Máquina</th><th>Fecha</th><th>Tela</th><th>Hilos</th>
@@ -61,16 +54,14 @@
             <a href="{{ url_for('maquina_detalle', id_maquina=f.id_maquina) }}"
                class="mq" style="text-decoration:none">{{ f.maquina | mq }}</a>
           {% else %}<span class="mq">{{ f.hoja }}</span>{% endif %}
-          <span class="chico">{{ f.tipo_maquina or '' }}</span>
+          <span class="tenue" style="font-size:11px">{{ f.tipo_maquina or '' }}</span>
         </td>
         <td>{% if f.fecha %}{{ f.fecha | fecha_es }}
             {% else %}<span class="tenue">sin fecha</span>{% endif %}</td>
         <td>{{ f.tela or '—' }}</td>
         <td class="tenue">{{ f.hilos or '—' }}</td>
         <td class="tenue oculta-chico">
-          {{ [f.cilindro, f.poleas] | select | join(' · ') or '—' }}
-          {% if f.ajuste_agujas %}<span class="chico">{{ f.ajuste_agujas }}</span>{% endif %}
-        </td>
+          {{ [f.cilindro, f.poleas, f.ajuste_agujas] | select | join(' · ') or '—' }}</td>
         <td class="oculta-chico">{{ f.estiraje or '—' }}</td>
         <td class="tenue oculta-chico">
           {{ [f.malla, f.malla_manual] | select | join(' · ') or '—' }}</td>
@@ -79,30 +70,30 @@
     {% endfor %}
     </tbody>
   </table>
-  <p class="nota">
-    Las poleas y los hilos van juntos en una sola columna porque así están
-    anotados: en la planilla son tres o cuatro casilleros que se llaman igual.
-  </p>
+  <p class="nota">Las poleas y los hilos van juntos porque así están anotados en la planilla.</p>
   {% endif %}
 </div>
 
 {% if telas and not tela %}
 <div class="bloque">
   <div class="titulo"><h2>Las telas</h2><p>Tocá una para ver cómo se teje</p></div>
-  <table>
+  <table style="font-size:13px;line-height:1.25">
     <thead><tr><th>Tela</th><th class="der">Ajustes</th><th class="der">Máquinas</th>
-               <th>Último</th></tr></thead>
+               <th class="oculta-chico">Último</th></tr></thead>
     <tbody>
-    {% for t in telas[:40] %}
+    {% for t in telas[:12] %}
       <tr>
         <td><a href="{{ url_for('ajustes_view', tela=t.tela) }}">{{ t.tela }}</a></td>
         <td class="der">{{ t.veces | num(0) }}</td>
         <td class="der">{{ t.maquinas | num(0) }}</td>
-        <td class="tenue">{{ t.ultima | fecha_es }}</td>
+        <td class="tenue oculta-chico">{{ t.ultima | fecha_es }}</td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
+  {% if telas | length > 12 %}
+    <p class="nota">Se muestran las 12 primeras de {{ telas | length }}. Buscá por nombre arriba.</p>
+  {% endif %}
 </div>
 {% endif %}
 
