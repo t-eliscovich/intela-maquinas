@@ -44,27 +44,34 @@ Escribir "commit nuevo $($sha.Substring(0,8)) (tenia '$(if($actual){$actual.Subs
 
 $tmp = Join-Path $env:TEMP ("maq_" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $tmp -Force | Out-Null
+$staging = "C:\maquinas_app.nuevo"
+$viejo   = "C:\maquinas_app.prev"
 try {
+    # --- 1. Preparar la version nueva COMPLETA en una carpeta aparte --------
+    # Nunca se toca la app que esta andando hasta que esto termine bien.
     Invoke-WebRequest -UseBasicParsing -TimeoutSec 120 `
         -Uri "https://codeload.github.com/$repo/tar.gz/refs/heads/main" `
         -OutFile "$tmp\src.tar.gz"
     tar -xzf "$tmp\src.tar.gz" -C $tmp
+    if ($LASTEXITCODE -ne 0) { throw "tar salio con codigo $LASTEXITCODE" }
     $nuevo = Get-ChildItem $tmp -Directory | Where-Object { $_.Name -like "intela-maquinas-*" } | Select-Object -First 1
     if (-not $nuevo) { throw "el tarball no traia la carpeta esperada" }
+    if (-not (Test-Path "$($nuevo.FullName)\app.py")) { throw "falta app.py: descarga incompleta" }
 
-    # Guardar la version que anda, para poder volver.
-    if (Test-Path $prev) { Remove-Item $prev -Recurse -Force }
-    if (Test-Path $app)  { Copy-Item $app $prev -Recurse -Force }
+    if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
+    Copy-Item $nuevo.FullName $staging -Recurse -Force
+    if (Test-Path "$app\logs") { Copy-Item "$app\logs" $staging -Recurse -Force -EA SilentlyContinue }
 
+    # --- 2. Recien ahora, el cambio: renombrar, no borrar ------------------
+    # Renombrar es casi instantaneo. Nunca existe un momento con la carpeta
+    # vacia. Si algo falla, la version que andaba sigue entera en $viejo.
     Stop-ScheduledTask -TaskName $tarea -ErrorAction SilentlyContinue
     Start-Sleep 3
-
-    # Reemplazar el codigo, conservando logs.
-    Get-ChildItem $app -Exclude 'logs' -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
-    Copy-Item "$($nuevo.FullName)\*" $app -Recurse -Force
+    if (Test-Path $viejo) { Remove-Item $viejo -Recurse -Force }
+    Rename-Item $app  $viejo   -Force
+    Rename-Item $staging $app  -Force
 
     & 'C:\Python312\python.exe' -m pip install --quiet -r "$app\requirements.txt" 2>&1 | Out-Null
-
     Start-ScheduledTask -TaskName $tarea
     Start-Sleep 12
 
@@ -74,21 +81,28 @@ try {
             if ((Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:$puerto/healthz" -TimeoutSec 10).StatusCode -eq 200) { $ok = $true; break }
         } catch { Start-Sleep 6 }
     }
+    if (-not $ok) { throw "la version nueva no contesta /healthz" }
 
-    if ($ok) {
-        Set-Content -Path $marca -Value $sha -Encoding ASCII
-        Escribir "OK - actualizado a $($sha.Substring(0,8)) y contestando"
-    } else {
-        Escribir "FALLO el health check - volviendo a la version anterior"
-        Stop-ScheduledTask -TaskName $tarea -ErrorAction SilentlyContinue
-        Start-Sleep 3
-        Get-ChildItem $app -Exclude 'logs' -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
-        Copy-Item "$prev\*" $app -Recurse -Force
-        Start-ScheduledTask -TaskName $tarea
-        Escribir "vuelta atras hecha - el commit $($sha.Substring(0,8)) queda sin aplicar"
-    }
+    Set-Content -Path $marca -Value $sha -Encoding ASCII
+    Escribir "OK - actualizado a $($sha.Substring(0,8)) y contestando"
 } catch {
-    Escribir "ERROR: $($_ | Out-String)"
+    Escribir "FALLO: $($_ | Out-String)"
+    # Vuelta atras. Cubre cualquier error, no solo el health check: el intento
+    # del 19/08 murio a mitad del reemplazo y dejo la app caida porque el
+    # rollback solo cubria "arranco pero no contesta".
+    try {
+        if (Test-Path $viejo) {
+            Stop-ScheduledTask -TaskName $tarea -ErrorAction SilentlyContinue
+            Start-Sleep 2
+            if (Test-Path $app) { Remove-Item $app -Recurse -Force -EA SilentlyContinue }
+            Rename-Item $viejo $app -Force
+            Start-ScheduledTask -TaskName $tarea
+            Escribir "vuelta atras hecha - sigue andando la version anterior"
+        } else {
+            Escribir "NO habia copia anterior para restaurar"
+        }
+    } catch { Escribir "la vuelta atras tambien fallo: $($_ | Out-String)" }
 } finally {
+    Remove-Item "C:\maquinas_app.nuevo" -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }
