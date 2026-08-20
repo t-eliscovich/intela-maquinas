@@ -161,9 +161,10 @@ check("entran las dos que se entienden", len(listas) == 2)
 check("la maquina que no esta en Asinfo queda afuera",
       any("no está en Asinfo" in d["motivo"] for d in descartes))
 check("la fila vacia queda afuera", len(descartes) == 2)
-check("sin fecha arranca hoy, y lo avisa",
-      listas[1]["mantenimientos"][0]["fecha"] == date(2026, 8, 19)
-      and any("empieza a contar hoy" in a for a in listas[1]["avisos"]))
+check("sin fecha guarda el tope pero no inventa un mantenimiento",
+      listas[1]["mantenimientos"][0]["fecha"] is None
+      and listas[1]["mantenimientos"][0]["cada_kg"] == 5000
+      and any("sólo se guarda el tope" in a for a in listas[1]["avisos"]))
 check("lee la ficha", listas[0]["ficha"]["marca"] == "Mayer"
       and listas[0]["ficha"]["galga"] == 24)
 

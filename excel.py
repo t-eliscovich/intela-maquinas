@@ -244,8 +244,12 @@ def armar(titulos, filas, mapa, maquinas, tipos, hoy=None):
                 item["avisos"].append(f"{tipo['nombre']}: la fecha es futura, no se carga")
                 fecha = None
             if fecha is None and kg is not None:
-                item["avisos"].append(f"{tipo['nombre']}: sin fecha, empieza a contar hoy")
-                fecha = hoy
+                # Sin fecha no hay desde cuándo contar, y ponerle hoy no es
+                # gratis: inventa un mantenimiento que le borra los kilos
+                # acumulados a una máquina que ya venía contando. Guardamos
+                # sólo el tope. Para empezar el conteo está /arranque.
+                item["avisos"].append(
+                    f"{tipo['nombre']}: sólo se guarda el tope, no se carga un mantenimiento")
             item["mantenimientos"].append({"tipo": tipo, "fecha": fecha, "cada_kg": kg})
 
         if not item["mantenimientos"] and not any(v for v in item["ficha"].values()):
