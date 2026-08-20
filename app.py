@@ -1100,6 +1100,11 @@ def healthz():
     if ERROR_ARRANQUE:
         estado["error_arranque"] = ERROR_ARRANQUE
         return estado, 503
+    # Si una sentencia del esquema no pudo correr, la app igual levanta pero
+    # acá se dice cuál. Antes eso tiraba abajo el arranque, el server deshacía
+    # el deploy, y desde afuera parecía que pushear no hacía nada.
+    if store.AVISOS_ESQUEMA:
+        estado["avisos_esquema"] = store.AVISOS_ESQUEMA
     try:
         estado["tipos_cargados"] = len(store.tipos())
     except Exception as exc:  # noqa: BLE001

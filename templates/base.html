@@ -168,7 +168,7 @@
     <div class="marca">MÁQUINAS <span>· INTELA</span></div>
     <nav>
       <a href="{{ url_for('semaforo') }}"   class="{{ 'activo' if request.endpoint=='semaforo' }}">Semáforo</a>
-      <a href="{{ url_for('registrar') }}"  class="{{ 'activo' if request.endpoint=='registrar' }}">Cargar uno</a>
+      <a href="{{ url_for('registrar') }}"  class="{{ 'activo' if request.endpoint=='registrar' }}">Cargar mantenimiento</a>
       <a href="{{ url_for('ajustes_view') }}" class="{{ 'activo' if request.endpoint=='ajustes_view' }}">Ajustes</a>
       <a href="{{ url_for('repuestos') }}" class="{{ 'activo' if request.endpoint=='repuestos' }}">Repuestos</a>
       <a href="{{ url_for('tipos_view') }}" class="{{ 'activo' if request.endpoint=='tipos_view' }}">Tipos</a>

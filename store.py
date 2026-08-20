@@ -50,10 +50,44 @@ def _ejecutar(sql: str, args: tuple = ()) -> None:
 
 
 # --------------------------------------------------------------------------
+# Qué sentencias del esquema no pudieron correr. Vacío es lo normal.
+# Se muestra en /healthz.
+AVISOS_ESQUEMA: list[str] = []
+
+
+def _sentencias(sql: str) -> list[str]:
+    """Parte el esquema en sentencias, ignorando los `;` que están adentro de
+    un comentario. Postgres los ignora; un split a lo bruto, no."""
+    sin_comentarios = "\n".join(
+        linea.split("--")[0] if "--" in linea else linea
+        for linea in sql.split("\n"))
+    return [s.strip() for s in sin_comentarios.split(";") if s.strip()]
+
+
 def bootstrap() -> None:
-    with _conn() as con, con.cursor() as cur:
-        cur.execute(
-            """
+    """Crea o completa el esquema, UNA SENTENCIA POR TRANSACCIÓN.
+
+    Antes iba todo junto en un solo execute. El problema no es el rendimiento:
+    es que si una sola sentencia fallaba, `init_pool` reventaba, la app
+    arrancaba en modo error, /healthz devolvía 503 y el auto-update del server
+    deshacía el deploy — sin dejar rastro de CUÁL sentencia había fallado.
+    Desde afuera parecía que pushear no hacía nada.
+
+    Ahora una sentencia que falla queda anotada en AVISOS_ESQUEMA y se sigue.
+    La app levanta, /healthz lo dice, y se ve qué arreglar.
+    """
+    AVISOS_ESQUEMA.clear()
+    for sentencia in _sentencias(ESQUEMA):
+        try:
+            with _conn() as con, con.cursor() as cur:
+                cur.execute(sentencia)
+                con.commit()
+        except Exception as exc:  # noqa: BLE001
+            corta = " ".join(sentencia.split())[:120]
+            AVISOS_ESQUEMA.append(f"{corta} → {exc}")
+
+
+ESQUEMA = """
             CREATE SCHEMA IF NOT EXISTS mantenimiento;
 
             CREATE TABLE IF NOT EXISTS mantenimiento.tipo_service (
@@ -320,9 +354,7 @@ def bootstrap() -> None:
             );
             CREATE UNIQUE INDEX IF NOT EXISTS gramaje_orden_idx
                 ON mantenimiento.gramaje (orden);
-            """
-        )
-        con.commit()
+"""
 
 
 # --- Tipos de service ------------------------------------------------------
