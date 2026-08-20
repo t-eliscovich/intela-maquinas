@@ -327,8 +327,11 @@ check("la clave no se repite dentro de la planilla",
       len({(m["hoja"], m["orden"]) for m in hm}) == len(hm))
 check("la maquina que no esta en Asinfo queda afuera con motivo",
       any("99" in d["motivo"] for d in hd))
-check("la hoja vacia queda afuera con motivo",
-      any(d["donde"] == "MQ 2" and "vacía" in d["motivo"] for d in hd))
+# Una hoja SIN la fila de titulos ya no se da por vacia: seis hojas de la
+# planilla real arrancan directo con el historial, y asi se perdian enteras —
+# la MQ 22 tiene 22 mantenimientos desde 2019.
+check("la hoja sin fecha ninguna queda afuera con motivo",
+      any(d["donde"] == "MQ 2" and "fecha" in d["motivo"] for d in hd))
 
 # --- 7. la carga entera, de punta a punta ---------------------------------
 print("Carga del Excel:")
@@ -563,6 +566,24 @@ check("el listado dice que le falta a cada maquina", "Qué le falta" in cuerpo)
 check("la que esta completa se ve completa", "completa" in cuerpo)
 check("la que no tiene nada cargado dice que le falta la ficha",
       "falta la ficha" in cuerpo)
+
+# --- 8d-bis. las fechas tipeadas a mano -----------------------------------
+# En la planilla hay doce fechas escritas en una celda de texto, con los dos
+# ordenes mezclados. Se acepta sólo lo que no da lugar a duda: elegir mal mueve
+# el mantenimiento de mes, y con eso se corren los kilos.
+print("Fechas escritas a mano:")
+check("dia mayor que 12 al final se entiende",
+      excel.fecha_escrita("01/19/2021", date(2026, 8, 20)) == date(2021, 1, 19))
+check("dia mayor que 12 al principio tambien",
+      excel.fecha_escrita("23/12,/2018", date(2026, 8, 20)) == date(2018, 12, 23))
+check("con los dos numeros chicos NO se adivina",
+      excel.fecha_escrita("6/8/2018", date(2026, 8, 20)) is None)
+check("un anio cortado no se completa",
+      excel.fecha_escrita("21/4/205", date(2026, 8, 20)) is None)
+check("una fecha futura no entra",
+      excel.fecha_escrita("10/30/2026", date(2026, 8, 20)) is None)
+check("lo que no es una fecha no molesta",
+      excel.fecha_escrita("limpiesa de cilindro") is None)
 
 # --- 8e. la planilla de control de ajuste ---------------------------------
 print("Planilla de control de ajuste:")

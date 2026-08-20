@@ -447,6 +447,46 @@ def _ficha_de_hoja(filas, corte):
     }
 
 
+# Una fecha escrita a mano en una celda de texto. En la planilla hay doce, y
+# vienen de todas las formas: «01/19/2021», «23/12,/2018», «6/8//2018».
+_FECHA_A_MANO = re.compile(r"^\s*(\d{1,2})\D+(\d{1,2})\D+(\d{2,4})\s*$")
+
+
+def fecha_escrita(texto, hoy=None):
+    """Una fecha tipeada a mano, sólo cuando NO hay forma de equivocarse.
+
+    La planilla mezcla los dos órdenes: «01/19/2021» es mes primero y
+    «23/12,/2018» es día primero. Cuando uno de los dos números es mayor que
+    12, no hay duda: ése es el día. Cuando los dos son chicos, sí la hay — y
+    elegir uno movería el mantenimiento de mes, que corre los kilos. En ese
+    caso se devuelve None y la fila se muestra aparte para que la corrijan.
+
+    Los años cortados («205», «220») tampoco se completan: no se sabe si son
+    2005 o 2015.
+    """
+    hoy = hoy or date.today()
+    m = _FECHA_A_MANO.match(str(texto or ""))
+    if not m:
+        return None
+    a, b, anio = int(m.group(1)), int(m.group(2)), m.group(3)
+    if len(anio) != 4:
+        return None
+    anio = int(anio)
+    if not (1990 <= anio <= hoy.year):
+        return None
+    if a > 12 and b <= 12:
+        dia, mes = a, b
+    elif b > 12 and a <= 12:
+        dia, mes = b, a
+    else:
+        return None            # los dos pueden ser mes: no se adivina
+    try:
+        f = date(anio, mes, dia)
+    except ValueError:
+        return None
+    return f if f <= hoy else None
+
+
 def _columnas_historial(fila):
     """Qué columna es cada cosa en la tabla de abajo de la hoja.
 
@@ -500,13 +540,25 @@ def leer_historial_por_maquina(ruta, maquinas, tipos, hoy=None):
 
             filas = [list(f) for f in wb[nombre_hoja].iter_rows(values_only=True)]
             corte = _fila_de_titulos(filas)
-            if corte is None:
-                descartes.append({"donde": nombre_hoja, "motivo": "La hoja está vacía"})
-                continue
+            sin_titulos = corte is None
+            if sin_titulos:
+                # Seis hojas no tienen la fila que dice «Fecha»: el historial
+                # arranca directo, sin encabezado. Antes se las daba por
+                # vacías y se perdían enteras — la MQ 22 tiene 22
+                # mantenimientos desde 2019. Cuando no hay títulos, el
+                # historial empieza en la primera fila que trae una fecha de
+                # verdad.
+                primera = next((i for i, f in enumerate(filas)
+                                if any(isinstance(c, datetime) for c in f)), None)
+                if primera is None:
+                    descartes.append({"donde": nombre_hoja,
+                                      "motivo": "La hoja no tiene ninguna fecha"})
+                    continue
+                corte = primera - 1
 
             ficha = _ficha_de_hoja(filas, corte)
             fichas.append((maquina, ficha))
-            mapa = _columnas_historial(filas[corte])
+            mapa = {} if sin_titulos else _columnas_historial(filas[corte])
 
             # El responsable de la hoja NO se copia a las 1.300 filas: es quién
             # tiene la máquina a cargo, no quién hizo cada mantenimiento. La
@@ -520,7 +572,27 @@ def leer_historial_por_maquina(ruta, maquinas, tipos, hoy=None):
             leidas = 0
             for n, fila in enumerate(filas[corte + 1:], start=1):
                 fecha = next((c.date() for c in fila if isinstance(c, datetime)), None)
-                if not fecha or fecha > hoy or fecha.year < 1990:
+                if fecha and (fecha > hoy or fecha.year < 1990):
+                    fecha = None
+                if fecha is None:
+                    # Algunas fechas están tipeadas a mano en una celda de
+                    # texto. Se aceptan sólo las que no dan lugar a duda; el
+                    # resto se avisa, con la fila, para que se corrija la
+                    # planilla en vez de que el programa invente un mes.
+                    for celda_texto in fila[:3]:
+                        if not isinstance(celda_texto, str):
+                            continue
+                        if not _FECHA_A_MANO.match(celda_texto):
+                            continue
+                        fecha = fecha_escrita(celda_texto, hoy)
+                        if fecha is None:
+                            descartes.append({
+                                "donde": f"{nombre_hoja}, fila {n}",
+                                "motivo": f"La fecha «{celda_texto.strip()}» está "
+                                          "escrita a mano y no se entiende: puede "
+                                          "ser día/mes o mes/día"})
+                        break
+                if not fecha:
                     continue
 
                 # El tipo no está en una columna: está escrito adentro del
@@ -532,8 +604,14 @@ def leer_historial_por_maquina(ruta, maquinas, tipos, hoy=None):
                     # vinieron vacías, la fila no dice qué se hizo — y juntar
                     # todo el texto suelto traería la columna «Próximo», que es
                     # un kilaje, no una actividad.
-                    actividad = " ".join(
-                        str(c).strip() for c in fila
+                    #
+                    # Se toma lo que está DESPUÉS de la fecha: a la izquierda
+                    # queda el modelo de la máquina repetido en cada renglón,
+                    # que no es lo que se hizo.
+                    desde_col = next((i for i, c in enumerate(fila)
+                                      if isinstance(c, datetime)), -1) + 1
+                    actividad = " · ".join(
+                        str(c).strip() for c in fila[desde_col:]
                         if isinstance(c, str) and c.strip())[:300] or None
                 observaciones = _texto(celda(fila, "observaciones"))
                 tipo = (tipo_agujas if (actividad and _ES_AGUJAS.search(actividad)
