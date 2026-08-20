@@ -138,8 +138,11 @@
     <nav>
       <a href="{{ url_for('semaforo') }}"   class="{{ 'activo' if request.endpoint=='semaforo' }}">Semáforo</a>
       <a href="{{ url_for('registrar') }}"  class="{{ 'activo' if request.endpoint=='registrar' }}">Cargar uno</a>
+      <a href="{{ url_for('ajustes_view') }}" class="{{ 'activo' if request.endpoint=='ajustes_view' }}">Ajustes</a>
+      <a href="{{ url_for('repuestos') }}" class="{{ 'activo' if request.endpoint=='repuestos' }}">Repuestos</a>
       <a href="{{ url_for('tipos_view') }}" class="{{ 'activo' if request.endpoint=='tipos_view' }}">Tipos</a>
       <a href="{{ url_for('kilos') }}" class="{{ 'activo' if request.endpoint=='kilos' }}">Kilos</a>
+      <a href="{{ url_for('produccion') }}" class="{{ 'activo' if request.endpoint=='produccion' }}">Producción</a>
       <a href="{{ url_for('maquinas_lista') }}" class="{{ 'activo' if request.endpoint in ('maquinas_lista','maquina_detalle') }}">Máquinas</a>
       <a href="{{ url_for('archivos') }}" class="{{ 'activo' if request.endpoint in ('archivos','carga','carga_revisar') }}">Archivos</a>
     </nav>

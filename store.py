@@ -140,6 +140,135 @@ def bootstrap() -> None:
                 subido_por   text,
                 creado_en    timestamptz NOT NULL DEFAULT now()
             );
+
+            -- Cómo se pone la máquina para tejer cada tela. Sale de la planilla
+            -- CONTROL DE AJUSTE, que tiene una hoja por máquina y viene desde
+            -- 2021. No es mantenimiento: es la receta de la puesta a punto, y
+            -- es lo primero que busca el mecánico cuando vuelve una tela.
+            --
+            -- Las poleas y los hilos van juntos en un solo campo de texto: en
+            -- la planilla son 3 o 4 columnas que dicen todas "Polea" y no
+            -- significan siempre lo mismo. Partirlas en columnas fijas sería
+            -- inventar una estructura que el papel no tiene.
+            CREATE TABLE IF NOT EXISTS mantenimiento.ajuste (
+                id             serial PRIMARY KEY,
+                id_maquina     integer NOT NULL,
+                maquina_nombre text,
+                fecha          date,
+                tipo_maquina   text,
+                cilindro       text,
+                poleas         text,
+                ajuste_agujas  text,
+                estiraje       text,
+                tela           text,
+                hilos          text,
+                gramaje_crudo  numeric(10,2),
+                malla_manual   text,
+                malla          text,
+                rendimiento    numeric(10,4),
+                kg_m           numeric(10,4),
+                hoja           text NOT NULL,
+                orden          integer NOT NULL,
+                creado_en      timestamptz NOT NULL DEFAULT now()
+            );
+
+            -- (hoja, orden) = de qué hoja del Excel salió y en qué fila estaba.
+            -- Es lo que hace que volver a cargar la misma planilla ACTUALICE en
+            -- vez de duplicar: sin esto, cargarla dos veces deja 2.388 ajustes
+            -- y ninguna forma de saber cuáles sobran.
+            CREATE UNIQUE INDEX IF NOT EXISTS ajuste_hoja_orden_idx
+                ON mantenimiento.ajuste (hoja, orden);
+            CREATE INDEX IF NOT EXISTS ajuste_maquina_idx
+                ON mantenimiento.ajuste (id_maquina, fecha DESC NULLS LAST, orden);
+
+            -- Qué aguja lleva cada máquina. Una fila por máquina.
+            CREATE TABLE IF NOT EXISTS mantenimiento.aguja_maquina (
+                id_maquina   integer PRIMARY KEY,
+                descripcion  text,
+                cilindro     text,
+                plato        text,
+                platinas     text,
+                nota         text,
+                editado_en   timestamptz NOT NULL DEFAULT now()
+            );
+
+            -- Las levas. No cuelgan de UNA máquina: la planilla las agrupa por
+            -- modelo ("MAYER (2-3-9-10)"), porque la misma leva sirve para
+            -- varias. Se guarda el texto tal cual, sin repartirlo.
+            CREATE TABLE IF NOT EXISTS mantenimiento.leva (
+                id            serial PRIMARY KEY,
+                maquinas      text NOT NULL,
+                codigo        text NOT NULL,
+                cantidad      integer,
+                ubicacion     text,
+                accionamiento text,
+                creado_en     timestamptz NOT NULL DEFAULT now()
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS leva_clave_idx
+                ON mantenimiento.leva
+                   (maquinas, codigo, coalesce(accionamiento, ''));
+
+            -- Las bandas Memminger, por modelo y diámetro.
+            CREATE TABLE IF NOT EXISTS mantenimiento.banda (
+                id                serial PRIMARY KEY,
+                maquinas          text NOT NULL,
+                cantidad_maquinas integer,
+                diametro          numeric(6,2),
+                media             text,
+                tres_cuartos      text,
+                lycra             text,
+                creado_en         timestamptz NOT NULL DEFAULT now()
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS banda_clave_idx
+                ON mantenimiento.banda (maquinas, coalesce(diametro, -1));
+
+            -- Cuántas bandas hay de cada medida.
+            CREATE TABLE IF NOT EXISTS mantenimiento.banda_stock (
+                medida     numeric(6,2) PRIMARY KEY,
+                cantidad   integer,
+                editado_en timestamptz NOT NULL DEFAULT now()
+            );
+
+            -- Cuánto tiene que dar cada máquina en 12 horas. Es un cálculo de
+            -- la planilla, NO lo que la máquina tejió: eso lo mide Asinfo.
+            CREATE TABLE IF NOT EXISTS mantenimiento.eficiencia (
+                id_maquina    integer PRIMARY KEY,
+                rpm           numeric(8,2),
+                sistemas      text,
+                diametro      numeric(6,2),
+                alimentadores integer,
+                tamano_rollo  numeric(10,2),
+                minutos_rollo numeric(10,2),
+                rollos_dia    numeric(8,2),
+                kg_dia        numeric(10,2),
+                editado_en    timestamptz NOT NULL DEFAULT now()
+            );
+
+            -- Cuánto hilo lleva cada tela. Una fila por (tela, hilo).
+            CREATE TABLE IF NOT EXISTS mantenimiento.consumo_hilo (
+                id           serial PRIMARY KEY,
+                tela         text NOT NULL,
+                hilo         text NOT NULL,
+                codigo_hilo  text,
+                rendimiento  numeric(8,4),
+                creado_en    timestamptz NOT NULL DEFAULT now()
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS consumo_hilo_clave_idx
+                ON mantenimiento.consumo_hilo (tela, hilo);
+
+            -- El peso medido de la tela que salió de cada máquina.
+            CREATE TABLE IF NOT EXISTS mantenimiento.gramaje (
+                id          serial PRIMARY KEY,
+                id_maquina  integer NOT NULL,
+                fecha       date,
+                tela        text,
+                hilos       text,
+                peso        numeric(10,2),
+                orden       integer NOT NULL,
+                creado_en   timestamptz NOT NULL DEFAULT now()
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS gramaje_orden_idx
+                ON mantenimiento.gramaje (orden);
             """
         )
         con.commit()
@@ -426,3 +555,191 @@ def archivo(id_archivo: int) -> dict | None:
 
 def borrar_archivo(id_archivo: int) -> None:
     _ejecutar("DELETE FROM mantenimiento.archivo WHERE id = %s", (id_archivo,))
+
+
+# --------------------------------------------------------------------------
+# Ajustes: cómo se pone la máquina para tejer cada tela
+# --------------------------------------------------------------------------
+CAMPOS_AJUSTE = ("id_maquina", "maquina_nombre", "fecha", "tipo_maquina",
+                 "cilindro", "poleas", "ajuste_agujas", "estiraje", "tela",
+                 "hilos", "gramaje_crudo", "malla_manual", "malla",
+                 "rendimiento", "kg_m", "hoja", "orden")
+
+
+def ajustes(id_maquina: int | None = None, tela: str | None = None,
+            limite: int = 400) -> list[dict]:
+    """Los ajustes, del más nuevo al más viejo.
+
+    Muchas filas de la planilla no tienen fecha: se anotó el ajuste y no el
+    día. Van al final, no se descartan — el ajuste sirve igual.
+    """
+    donde, args = [], []
+    if id_maquina is not None:
+        donde.append("id_maquina = %s")
+        args.append(id_maquina)
+    if tela:
+        donde.append("tela ILIKE %s")
+        args.append(f"%{tela.strip()}%")
+    filtro = ("WHERE " + " AND ".join(donde)) if donde else ""
+    args.append(limite)
+    return _todos(
+        f"""SELECT * FROM mantenimiento.ajuste {filtro}
+             ORDER BY fecha DESC NULLS LAST, id_maquina, orden
+             LIMIT %s""",
+        tuple(args),
+    )
+
+
+def telas() -> list[dict]:
+    """Las telas que aparecen en los ajustes, con cuántas veces y en cuántas
+    máquinas. Es el índice para entrar buscando por tela."""
+    return _todos(
+        """SELECT tela, COUNT(*) AS veces,
+                  COUNT(DISTINCT id_maquina) AS maquinas,
+                  MAX(fecha) AS ultima
+             FROM mantenimiento.ajuste
+            WHERE tela IS NOT NULL
+            GROUP BY tela
+            ORDER BY veces DESC, tela"""
+    )
+
+
+def resumen_ajustes() -> dict:
+    filas = _todos(
+        """SELECT COUNT(*) AS filas,
+                  COUNT(DISTINCT id_maquina) AS maquinas,
+                  COUNT(fecha) AS con_fecha,
+                  MIN(fecha) AS desde, MAX(fecha) AS hasta
+             FROM mantenimiento.ajuste"""
+    )
+    return filas[0] if filas else {}
+
+
+def guardar_ajustes(filas: list[dict]) -> int:
+    """Guarda los ajustes en UNA transacción.
+
+    Si la planilla ya se cargó antes, la misma (hoja, fila) se actualiza en vez
+    de duplicarse: la planilla de planta se sigue usando y se vuelve a subir
+    corregida, y una carga que duplica es peor que no cargar.
+    """
+    if not filas:
+        return 0
+    columnas = ", ".join(CAMPOS_AJUSTE)
+    marcas = ", ".join(["%s"] * len(CAMPOS_AJUSTE))
+    updates = ", ".join(f"{c}=EXCLUDED.{c}" for c in CAMPOS_AJUSTE
+                        if c not in ("hoja", "orden"))
+    with _conn() as con, con.cursor() as cur:
+        cur.executemany(
+            f"""INSERT INTO mantenimiento.ajuste ({columnas})
+                VALUES ({marcas})
+                ON CONFLICT (hoja, orden) DO UPDATE SET {updates}""",
+            [tuple(f.get(c) for c in CAMPOS_AJUSTE) for f in filas],
+        )
+        con.commit()
+    return len(filas)
+
+
+# --------------------------------------------------------------------------
+# Repuestos: agujas, levas, bandas
+# --------------------------------------------------------------------------
+def agujas() -> dict[int, dict]:
+    return {f["id_maquina"]: f
+            for f in _todos("SELECT * FROM mantenimiento.aguja_maquina")}
+
+
+def levas() -> list[dict]:
+    return _todos(
+        "SELECT * FROM mantenimiento.leva ORDER BY maquinas, accionamiento, codigo")
+
+
+def bandas() -> list[dict]:
+    return _todos(
+        "SELECT * FROM mantenimiento.banda ORDER BY maquinas, diametro")
+
+
+def banda_stock() -> list[dict]:
+    return _todos(
+        "SELECT * FROM mantenimiento.banda_stock ORDER BY medida")
+
+
+def eficiencias() -> dict[int, dict]:
+    return {f["id_maquina"]: f
+            for f in _todos("SELECT * FROM mantenimiento.eficiencia")}
+
+
+def consumo_hilo() -> list[dict]:
+    return _todos(
+        """SELECT * FROM mantenimiento.consumo_hilo
+            ORDER BY tela, rendimiento DESC NULLS LAST""")
+
+
+def gramajes(id_maquina: int | None = None) -> list[dict]:
+    if id_maquina is None:
+        return _todos(
+            "SELECT * FROM mantenimiento.gramaje ORDER BY id_maquina, orden")
+    return _todos(
+        "SELECT * FROM mantenimiento.gramaje WHERE id_maquina=%s ORDER BY orden",
+        (id_maquina,))
+
+
+def _lote(cur, tabla: str, campos: tuple, conflicto: str, filas: list[dict]):
+    """Un INSERT ... ON CONFLICT DO UPDATE en lote, para todas las tablas de
+    repuestos: son todas iguales salvo el nombre y la clave."""
+    if not filas:
+        return
+    columnas = ", ".join(campos)
+    marcas = ", ".join(["%s"] * len(campos))
+    claves = {c.strip() for c in conflicto.split(",")}
+    updates = ", ".join(f"{c}=EXCLUDED.{c}" for c in campos if c not in claves)
+    cur.executemany(
+        f"""INSERT INTO {tabla} ({columnas}) VALUES ({marcas})
+            ON CONFLICT ({conflicto}) DO UPDATE SET {updates}""",
+        [tuple(f.get(c) for c in campos) for f in filas],
+    )
+
+
+CAMPOS_AGUJA = ("id_maquina", "descripcion", "cilindro", "plato", "platinas", "nota")
+CAMPOS_LEVA = ("maquinas", "codigo", "cantidad", "ubicacion", "accionamiento")
+CAMPOS_BANDA = ("maquinas", "cantidad_maquinas", "diametro", "media",
+                "tres_cuartos", "lycra")
+CAMPOS_EFICIENCIA = ("id_maquina", "rpm", "sistemas", "diametro", "alimentadores",
+                     "tamano_rollo", "minutos_rollo", "rollos_dia", "kg_dia")
+CAMPOS_CONSUMO = ("tela", "hilo", "codigo_hilo", "rendimiento")
+CAMPOS_GRAMAJE = ("id_maquina", "fecha", "tela", "hilos", "peso", "orden")
+
+
+def guardar_planilla_ajuste(datos: dict) -> dict:
+    """Guarda TODA la planilla de control de ajuste en una transacción.
+
+    O entra todo o no entra nada. Media planilla cargada es peor que ninguna:
+    nadie sabría qué bloque quedó viejo.
+    """
+    with _conn() as con, con.cursor() as cur:
+        if datos.get("ajustes"):
+            columnas = ", ".join(CAMPOS_AJUSTE)
+            marcas = ", ".join(["%s"] * len(CAMPOS_AJUSTE))
+            updates = ", ".join(f"{c}=EXCLUDED.{c}" for c in CAMPOS_AJUSTE
+                                if c not in ("hoja", "orden"))
+            cur.executemany(
+                f"""INSERT INTO mantenimiento.ajuste ({columnas})
+                    VALUES ({marcas})
+                    ON CONFLICT (hoja, orden) DO UPDATE SET {updates}""",
+                [tuple(f.get(c) for c in CAMPOS_AJUSTE) for f in datos["ajustes"]],
+            )
+        _lote(cur, "mantenimiento.aguja_maquina", CAMPOS_AGUJA,
+              "id_maquina", datos.get("agujas") or [])
+        _lote(cur, "mantenimiento.leva", CAMPOS_LEVA,
+              "maquinas, codigo, coalesce(accionamiento, '')",
+              datos.get("levas") or [])
+        _lote(cur, "mantenimiento.banda", CAMPOS_BANDA,
+              "maquinas, coalesce(diametro, -1)", datos.get("bandas") or [])
+        _lote(cur, "mantenimiento.banda_stock", ("medida", "cantidad"),
+              "medida", datos.get("banda_stock") or [])
+        _lote(cur, "mantenimiento.eficiencia", CAMPOS_EFICIENCIA,
+              "id_maquina", datos.get("eficiencia") or [])
+        _lote(cur, "mantenimiento.consumo_hilo", CAMPOS_CONSUMO,
+              "tela, hilo", datos.get("consumo_hilo") or [])
+        _lote(cur, "mantenimiento.gramaje", CAMPOS_GRAMAJE,
+              "orden", datos.get("gramajes") or [])
+        con.commit()
+    return {k: len(v or []) for k, v in datos.items()}

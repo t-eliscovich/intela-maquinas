@@ -12,7 +12,7 @@ Cubren lo que ya nos mordió una vez:
   * que el arranque en lote no duplique ni acepte fechas futuras;
   * que ninguna entrada llegue cruda al SQL de Asinfo.
 """
-import os, sys, types
+import io, os, sys, tempfile, types
 from datetime import date, timedelta, datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -382,12 +382,190 @@ check("el vacio borra el numero propio", puestos[(11, 1)] is None)
 r = c.post("/kilos", data={"kg_10_1": "-5"})
 check("rechaza un numero que no es kilos", "mayores que cero" in r.get_data(as_text=True))
 
+# --- 8e. la planilla de control de ajuste ---------------------------------
+print("Planilla de control de ajuste:")
+import ajustes as AJ
+
+MAQS_AJ = [{"id": 10, "numero": 1, "nombre": "TEJEDURIA-MQ 001"},
+           {"id": 11, "numero": 52, "nombre": "TEJEDURIA-MQ 052"}]
+
+
+def _planilla_ajuste(ruta):
+    """Una planilla como la de planta, con sus tres mañas adentro."""
+    from openpyxl import Workbook
+    wb = Workbook()
+
+    # Hoja normal: tres columnas «Polea» y tres «HILO» que se llaman igual.
+    ws = wb.active; ws.title = "MAQ 1"
+    ws.append(["CONTROL DE AGUSTES Y RENDIMIENTOS"])
+    ws.append(["MQ. 1", "Tipo de  MQ.", "FECHA", "SERIE", "Polea", "Polea", "Polea",
+               "ajuste agujas ", "ESTIRAJE", "TIPO DE TELA", "HILO", "HILO", "HILO",
+               "G /m2   crudo", "Longitud de Malla manual", "Longitud de Malla",
+               "Rendimiento Crudo"])
+    ws.append([1, "MAYER 32", datetime(2026, 3, 4), "pro 30", "polea 5", "polea 20",
+               None, "lycra pro 6,5", "B/9", "FALSO F. KW", "20/1 KW", "16/1 EP",
+               None, 181.5, "30,2 dibujo", "29,0 LM", 4.05])
+    # Una fila que sólo tiene el número y el modelo: no es un ajuste.
+    ws.append([1, "MAYER 32", None, None, None, None, None, None, None, None])
+
+    # Hoja a la que se le perdieron las primeras columnas: hay que leerla por
+    # posición, y avisar.
+    ws2 = wb.create_sheet("MAQ 52")
+    ws2.append(["CONTROL DE AGUSTES Y RENDIMIENTOS"])
+    ws2.append(["Polea", "Polea", "ajuste agujas ", "ESTIRAJE", "TIPO DE TELA"])
+    ws2.append([52, "JIUNN LONG", datetime(2024, 5, 15), "pro 25", "dibujo 25",
+                "pro 32", "jersey 50", "Z30", "B/8", "JAMES", "75/72"])
+
+    ws3 = wb.create_sheet("AGUJAS")
+    ws3.append(["TIPO DE AGUJAS POR MAQUINA"])
+    ws3.append(["MQ", "CILINDRO", None, "PLATO", "MAQUINA", "PLATINAS"])
+    ws3.append([1, "VO LS-140,50 G36", "VO LS-140,50 G37", None, "MAYER", "206085101G00"])
+
+    ws4 = wb.create_sheet("BANDAS")
+    ws4.append([None])
+    ws4.append(["MAQUNA", "cantidad de maquinas", "DIAMETRO", "BANDA  1/2",
+                "BANDA 3/4", "BANDA LYCRA", None, None, None, None,
+                "CODIGO", "CANTIDAD"])
+    ws4.append(["MAYER JERSEY", 2, 30, "6.6", "8.2", None, None, None, None, None,
+                6.6, 10])
+    ws4.append([None, None, None, None, None, None, None, None, None, None,
+                "total", 146])
+
+    ws5 = wb.create_sheet("INVENTARIO LEVAS")
+    ws5.append(["INVENTARIO DE LEVAS"])
+    ws5.append(["MAQUINA ", "CODIGO", "CANTIDAD", "UBICACION", "ACCIONAMIENTO"])
+    ws5.append(["MAYER (1 )", "30-32 385953,0", 208, "cilindro", "TRABAJO"])
+    ws5.append(["MAYER (4 5 7 )", "NO", 0, "cilindro", "TRABAJO"])
+
+    ws6 = wb.create_sheet("consumo de hilo")
+    ws6.append(["TELA", "HILO", "HILO", "HILO", None, None])
+    ws6.append(["JAMES", "poliester 75/36f", None, None, 0.4786, "75F36"])
+
+    ws7 = wb.create_sheet("Eficiencia producción ")
+    ws7.append([None])
+    ws7.append([None, "Máquina", "Velocidad  (rpm)", "Sistema", "Diámetro (inch)",
+                "F", "Tamaño de rollo", "Tiempo (min)", "N° Rollos diarios ",
+                "Aproximación ", "Peso (kg)"])
+    ws7.append([None, 1, 25, "102", 32, 24, 1410, 56.4, 12.76, 12, 270])
+
+    wb.save(ruta)
+
+
+_ruta_aj = os.path.join(tempfile.gettempdir(), "test_ajuste.xlsx")
+_planilla_ajuste(_ruta_aj)
+
+check("reconoce la planilla de ajuste", AJ.es_planilla_ajuste(_ruta_aj))
+bloq, desc = AJ.leer(_ruta_aj, MAQS_AJ, hoy=date(2026, 8, 20))
+
+_a1 = [a for a in bloq["ajustes"] if a["hoja"] == "MAQ 1"]
+check("lee un ajuste por fila", len(_a1) == 1)
+check("la fila sin nada útil no entra", all(a["tela"] for a in _a1))
+check("las poleas van juntas en una columna",
+      _a1[0]["poleas"] == "polea 5 · polea 20")
+check("los hilos van juntos en una columna", _a1[0]["hilos"] == "20/1 KW · 16/1 EP")
+check("distingue malla manual de malla",
+      _a1[0]["malla_manual"] == "30,2 dibujo" and _a1[0]["malla"] == "29,0 LM")
+check("el gramaje entra como número", _a1[0]["gramaje_crudo"] == 181.5)
+
+_a52 = [a for a in bloq["ajustes"] if a["hoja"] == "MAQ 52"]
+check("la hoja sin títulos se lee por posición igual", len(_a52) == 1)
+check("leída por posición, la fecha cae en su lugar",
+      _a52[0]["fecha"] == date(2024, 5, 15))
+check("leída por posición, el modelo NO es la fecha",
+      _a52[0]["tipo_maquina"] == "JIUNN LONG")
+check("avisa que esa hoja se leyó por posición",
+      any("por posición" in d["motivo"] for d in desc))
+
+check("las agujas quedan pegadas a su máquina",
+      len(bloq["agujas"]) == 1 and bloq["agujas"][0]["id_maquina"] == 10)
+check("las cuatro columnas de cilindro van juntas",
+      "G36 · VO LS-140,50 G37" in bloq["agujas"][0]["cilindro"])
+
+check("la leva sin código no entra", len(bloq["levas"]) == 1)
+check("la leva guarda para qué sirve", bloq["levas"][0]["accionamiento"] == "TRABAJO")
+
+check("el stock sale de la columna de al lado del código, no de «cantidad de "
+      "maquinas»", bloq["banda_stock"] == [{"medida": 6.6, "cantidad": 10}])
+check("la fila «total» no es una medida de banda",
+      all(s["medida"] != 146 for s in bloq["banda_stock"]))
+check("la banda guarda sus tres medidas",
+      bloq["bandas"][0]["media"] == "6.6" and bloq["bandas"][0]["diametro"] == 30)
+
+check("la producción calculada queda por máquina",
+      len(bloq["eficiencia"]) == 1 and bloq["eficiencia"][0]["kg_dia"] == 270)
+check("el consumo de hilo trae el rendimiento",
+      bloq["consumo_hilo"][0]["rendimiento"] == 0.4786)
+
+# Volver a leer la misma planilla tiene que dar la misma clave (hoja, fila):
+# es lo único que evita que cargarla dos veces duplique todo.
+bloq2, _ = AJ.leer(_ruta_aj, MAQS_AJ, hoy=date(2026, 8, 20))
+check("cargarla dos veces da las mismas claves",
+      [(a["hoja"], a["orden"]) for a in bloq["ajustes"]]
+      == [(a["hoja"], a["orden"]) for a in bloq2["ajustes"]])
+
+check("una fecha futura no se carga",
+      all(a["fecha"] is None or a["fecha"] <= date(2026, 8, 20)
+          for a in bloq["ajustes"]))
+check("la planilla de mantenimiento NO se confunde con esta",
+      not AJ.es_planilla_ajuste(RUTA_EXCEL) if "RUTA_EXCEL" in dir() else True)
+
+# La carga entera por la pantalla, que es como se hace de verdad.
+_guardado = {}
+store.guardar_planilla_ajuste = lambda d: (_guardado.update(d) or
+                                           {k: len(v) for k, v in d.items()})
+with open(_ruta_aj, "rb") as _f:
+    _r = c.post("/carga", data={"archivo": (io.BytesIO(_f.read()), "ajuste.xlsx")},
+                content_type="multipart/form-data")
+check("la planilla de ajuste entra por la misma pantalla", _r.status_code == 302)
+_token = _r.headers["Location"].rstrip("/").split("/")[-1]
+_r = c.get(f"/carga/{_token}")
+check("la revisión muestra qué entendió",
+      "Planilla de control de ajuste" in _r.get_data(as_text=True))
+_r = c.post(f"/carga/{_token}", data={"boton": "confirmar"})
+check("confirmar guarda todo junto", _r.status_code == 302 and _guardado.get("ajustes"))
+
 # --- 9. las pantallas abren -----------------------------------------------
 print("Pantallas:")
+store.ajustes = lambda id_maquina=None, tela=None, limite=400: [
+    {"id": 1, "id_maquina": 10, "maquina_nombre": "TEJEDURIA-MQ 001",
+     "fecha": date(2026, 3, 4), "tipo_maquina": "MAYER 32", "cilindro": "pro 30",
+     "poleas": "polea 5", "ajuste_agujas": None, "estiraje": "B/9",
+     "tela": "FALSO F. KW", "hilos": "20/1 KW", "gramaje_crudo": 181.5,
+     "malla_manual": None, "malla": "29,0 LM", "rendimiento": 4.05, "kg_m": None,
+     "hoja": "MAQ 1", "orden": 1}]
+store.telas = lambda: [{"tela": "FALSO F. KW", "veces": 40, "maquinas": 9,
+                        "ultima": date(2026, 3, 4)}]
+store.resumen_ajustes = lambda: {"filas": 1, "maquinas": 1, "con_fecha": 1,
+                                 "desde": date(2026, 3, 4), "hasta": date(2026, 3, 4)}
+store.agujas = lambda: {10: {"id_maquina": 10, "descripcion": "MAYER",
+                             "cilindro": "VO LS-140,50", "plato": None,
+                             "platinas": "206085101G00", "nota": None}}
+store.levas = lambda: [{"id": 1, "maquinas": "MAYER (1 )", "codigo": "30-32",
+                        "cantidad": 208, "ubicacion": "cilindro",
+                        "accionamiento": "TRABAJO"}]
+store.bandas = lambda: [{"id": 1, "maquinas": "MAYER JERSEY", "cantidad_maquinas": 2,
+                         "diametro": 30, "media": "6.6", "tres_cuartos": "8.2",
+                         "lycra": None}]
+store.banda_stock = lambda: [{"medida": 6.6, "cantidad": 10}]
+# La 11 está anotada en la planilla pero sin números: pasa de verdad, y sumar
+# un vacío rompía la pantalla.
+store.eficiencias = lambda: {10: {"id_maquina": 10, "rpm": 25, "sistemas": "102",
+                                  "diametro": 32, "alimentadores": 24,
+                                  "tamano_rollo": 1410, "minutos_rollo": 56.4,
+                                  "rollos_dia": 12, "kg_dia": 270},
+                             11: {"id_maquina": 11, "rpm": None, "sistemas": "96",
+                                  "diametro": 30, "alimentadores": 28,
+                                  "tamano_rollo": None, "minutos_rollo": None,
+                                  "rollos_dia": None, "kg_dia": None}}
+store.consumo_hilo = lambda: [{"id": 1, "tela": "JAMES", "hilo": "poliester",
+                               "codigo_hilo": "75F36", "rendimiento": 0.4786}]
+store.gramajes = lambda id_maquina=None: []
 store.fichas = lambda: {10: {"marca": "Mayer", "modelo": "Relanit", "galga": 24,
                             "diametro": 32, "alimentadores": 96, "agujas": 2460,
                             "anio": 2017, "serie": "7", "tipo_agujas": None, "nota": None}}
-for ruta in ("/", "/registrar", "/tipos", "/arranque", "/carga", "/maquina/10", "/maquinas", "/archivos", "/kilos"):
+for ruta in ("/", "/registrar", "/tipos", "/arranque", "/carga", "/maquina/10",
+             "/maquinas", "/archivos", "/kilos", "/ajustes", "/ajustes?tela=FALSO",
+             "/ajustes?maquina=1", "/repuestos", "/produccion"):
     r = c.get(ruta)
     check(f"{ruta} abre", r.status_code == 200)
 r = c.get("/?solo=vencidas")

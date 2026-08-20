@@ -70,6 +70,32 @@
   </div>
   </div>
 </div>
+{% elif formato == 'ajuste' %}
+<div class="bloque">
+  <div class="titulo"><h2>Planilla de control de ajuste</h2>
+    <p>{{ hojas | length }} hojas · una por máquina, más las de repuestos</p></div>
+  <table>
+    <thead><tr><th>Qué</th><th class="der">Cuántas filas</th><th>Un ejemplo</th></tr></thead>
+    <tbody>
+    {% for clave, filas_bloque in bloques.items() %}
+      <tr>
+        <td><b>{{ nombres[clave] }}</b></td>
+        <td class="der">{{ filas_bloque | length | num(0) }}</td>
+        <td class="tenue">
+          {% set m = muestras[clave] | first %}
+          {% if m %}
+            {{ m.values() | select | map('string') | join(' · ') | truncate(110) }}
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="nota">
+    Si esta planilla ya se cargó antes, las filas que ya estaban se
+    <b>actualizan</b>: no se duplican.
+  </p>
+</div>
 {% else %}
 <div class="bloque">
   <div class="titulo"><h2>Una hoja por máquina</h2>
@@ -77,6 +103,7 @@
 </div>
 {% endif %}
 
+{% if formato != 'ajuste' %}
 <div class="bloque">
   <div class="titulo"><h2>Va a entrar</h2><p>{{ listas | length }} máquinas</p></div>
   {% if not listas %}
@@ -125,16 +152,20 @@
   </table>
   {% endif %}
 </div>
+{% endif %}
 
 {% if descartes %}
 <div class="bloque">
-  <div class="titulo"><h2>No entra</h2><p>{{ descartes | length }} filas · el programa no adivina</p></div>
+  <div class="titulo"><h2>Qué no entra</h2>
+    <p>{{ descartes | length }} · el programa no adivina</p></div>
   <table>
-    <thead><tr><th>Fila</th><th>Qué decía</th><th>Por qué no entra</th></tr></thead>
+    <thead><tr><th>Dónde</th>
+      {% if formato != 'ajuste' %}<th>Qué decía</th>{% endif %}
+      <th>Por qué no entra</th></tr></thead>
     <tbody>
     {% for d in descartes %}
-      <tr><td>{{ d.fila }}</td>
-          <td class="tenue">{{ d.texto }}</td>
+      <tr><td>{{ d.donde if formato == 'ajuste' else d.fila }}</td>
+          {% if formato != 'ajuste' %}<td class="tenue">{{ d.texto }}</td>{% endif %}
           <td>{{ d.motivo }}</td></tr>
     {% endfor %}
     </tbody>
@@ -143,12 +174,18 @@
 {% endif %}
 
 <div class="bloque"><div class="relleno">
-  <div style="max-width:320px;margin-bottom:16px">
-    <label class="campo" for="hecho_por">Quién lo hizo</label>
-    <input name="hecho_por" id="hecho_por" placeholder="Carga del Excel">
-  </div>
-  <button class="btn" type="submit" name="boton" value="confirmar"
-          {{ 'disabled' if not listas }}>Guardar estas {{ listas | length }} máquinas</button>
+  {% if formato == 'ajuste' %}
+    {% set total = bloques.values() | map('length') | sum %}
+    <button class="btn" type="submit" name="boton" value="confirmar"
+            {{ 'disabled' if not total }}>Guardar estas {{ total | num(0) }} filas</button>
+  {% else %}
+    <div style="max-width:320px;margin-bottom:16px">
+      <label class="campo" for="hecho_por">Quién lo hizo</label>
+      <input name="hecho_por" id="hecho_por" placeholder="Carga del Excel">
+    </div>
+    <button class="btn" type="submit" name="boton" value="confirmar"
+            {{ 'disabled' if not listas }}>Guardar estas {{ listas | length }} máquinas</button>
+  {% endif %}
   <a class="btn suave" href="{{ url_for('carga') }}">Subir otro archivo</a>
 </div></div>
 

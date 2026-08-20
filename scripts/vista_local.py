@@ -50,6 +50,10 @@ FICHA_FALSA = {"marca": "Mayer", "modelo": "MV4-3.2", "galga": 24, "diametro": 3
 store.ficha = lambda id_maquina: FICHA_FALSA
 store.fichas = lambda: {m["id"]: FICHA_FALSA for m in MAQS}
 store.responsables = lambda: list(store.ENCARGADOS)
+store.archivos = lambda id_maquina=None: [
+    {"id": 1, "id_maquina": 101, "nombre": "R01-MANTENIMIENTO.xlsx",
+     "descripcion": "La planilla de planta", "tamano": 233472,
+     "subido_por": "Roberto", "creado_en": datetime.utcnow()}]
 store.historial = lambda id_maquina=None, limite=200: [
     {"fecha": hoy - timedelta(days=40), "tipo_nombre": "Limpieza",
      "hecho_por": "Roberto", "nota": None, "repuestos": None, "horas": 1.5,
@@ -64,6 +68,54 @@ store.ultimos_por_maquina_y_tipo = lambda: {
                          "hecho_por": "Roberto"}
     for m in MAQS for t in TIPOS if not (m["id"] == 115 and t["id"] == 1)
 }
+AJUSTES_FALSOS = [
+    {"id": i, "id_maquina": 100 + (i % 12) + 1, "maquina_nombre": "TEJEDURIA-MQ 001",
+     "fecha": (hoy - timedelta(days=i * 23)) if i % 4 else None,
+     "tipo_maquina": "MAYER 32" if i % 2 else "JIUNN LONG",
+     "cilindro": f"pro {20 + i}", "poleas": f"dibujo {i * 5} · pro {i + 24}",
+     "ajuste_agujas": "lycra pro 6,5" if i % 3 else None, "estiraje": f"B/{i % 12}",
+     "tela": ["FALSO F. KW", "TANIA SPUN LYCRA", "PIQUE", "JERSEY 3,50", "BOXER"][i % 5],
+     "hilos": "20/1 KW · 16/1 EP", "gramaje_crudo": 180.5 + i,
+     "malla_manual": f"{29 + (i % 5)},0 dibujo", "malla": f"{30 + (i % 4)},2 LM",
+     "rendimiento": 4.05, "kg_m": None, "hoja": f"MAQ {i}", "orden": i}
+    for i in range(1, 26)
+]
+store.ajustes = lambda id_maquina=None, tela=None, limite=400: AJUSTES_FALSOS
+store.telas = lambda: [
+    {"tela": t, "veces": 40 - i * 7, "maquinas": 9 - i, "ultima": hoy - timedelta(days=i * 30)}
+    for i, t in enumerate(["FALSO F. KW", "TANIA SPUN LYCRA", "PIQUE", "BOXER"])]
+store.resumen_ajustes = lambda: {"filas": 1153, "maquinas": 42, "con_fecha": 931,
+                                 "desde": date(2021, 5, 31), "hasta": hoy}
+AGUJA_FALSA = {"id_maquina": 101, "descripcion": "MAYER", "plato": None,
+               "cilindro": "VO LS-140,50 G00 36 · VO LS-140,50 G00 37",
+               "platinas": "206085101G00", "nota": None}
+store.agujas = lambda: {m["id"]: dict(AGUJA_FALSA, id_maquina=m["id"]) for m in MAQS}
+store.levas = lambda: [
+    {"id": 1, "maquinas": "MAYER (1 )", "codigo": "30-32 385953,0", "cantidad": 208,
+     "ubicacion": "cilindro", "accionamiento": "TRABAJO RECOMIENDA LYCRA"},
+    {"id": 2, "maquinas": "MAYER (2-3-9-10 )", "codigo": "30-32 274078-4",
+     "cantidad": 414, "ubicacion": "cilindro", "accionamiento": "RETENIDO"}]
+store.bandas = lambda: [
+    {"id": 1, "maquinas": "MAYER JERSEY", "cantidad_maquinas": 4, "diametro": 32,
+     "media": "7.2", "tres_cuartos": "8.8", "lycra": "11.4"},
+    {"id": 2, "maquinas": "PILOTELLI JERSEY", "cantidad_maquinas": 3, "diametro": 30,
+     "media": "7", "tres_cuartos": "8.4", "lycra": "9"}]
+store.banda_stock = lambda: [{"medida": 6.6, "cantidad": 10},
+                             {"medida": 7.2, "cantidad": 20},
+                             {"medida": 7.8, "cantidad": 0}]
+store.eficiencias = lambda: {
+    m["id"]: {"id_maquina": m["id"], "rpm": 25, "sistemas": "102", "diametro": 32,
+              "alimentadores": 24, "tamano_rollo": 1410, "minutos_rollo": 56.4,
+              "rollos_dia": 12, "kg_dia": 270} for m in MAQS}
+store.consumo_hilo = lambda: [
+    {"id": 1, "tela": "JAMES", "hilo": "poliester 75/36f", "codigo_hilo": "75F36",
+     "rendimiento": 0.4786},
+    {"id": 2, "tela": "TANIA", "hilo": "30/1 spun", "codigo_hilo": "30/1 SPUN",
+     "rendimiento": 0.9829}]
+store.gramajes = lambda id_maquina=None: [
+    {"id": 1, "id_maquina": 101, "fecha": date(2021, 11, 10), "tela": "FALSO F",
+     "hilos": "20/1 WARIL · 16/1 PERAL", "peso": 4.39, "orden": 1}]
+
 asinfo.maquinas = lambda: (MAQS, datetime.utcnow(), True)
 asinfo.acumulados = lambda pares: (
     {(m, t): (_kg(m, t), int(_kg(m, t) / 22)) for m, t, _ in pares}, datetime.utcnow(), True)
@@ -85,7 +137,9 @@ def guardar(nombre, respuesta):
 for nombre, ruta in [("semaforo", "/"), ("semaforo-vencidas", "/?solo=vencidas"),
                      ("registrar", "/registrar"), ("tipos", "/tipos"),
                      ("arranque", "/arranque"), ("subir-excel", "/carga"),
-                     ("maquinas", "/maquinas"), ("ficha-maquina", "/maquina/101")]:
+                     ("maquinas", "/maquinas"), ("ficha-maquina", "/maquina/101"),
+                     ("ajustes", "/ajustes"), ("ajustes-por-tela", "/ajustes?tela=PIQUE"),
+                     ("repuestos", "/repuestos"), ("produccion", "/produccion")]:
     guardar(nombre, c.get(ruta))
 
 # La pantalla de revisión necesita un Excel: armamos uno parecido al de planta.
@@ -108,5 +162,19 @@ try:
         guardar("subir-excel-revisar", c.get(r.headers["Location"]))
 except ImportError:
     print("  (sin openpyxl no se puede previsualizar la revisión del Excel)")
+
+# La revisión de la planilla de control de ajuste, con la planilla de verdad si
+# está a mano. No se commitea: el repo es público.
+planilla = os.path.join(os.path.dirname(destino), "CONTROL DE AGJUSTE",
+                        "CONTROL DE AGJUSTE ).xlsx")
+if os.path.exists(planilla):
+    with open(planilla, "rb") as f:
+        buffer = io.BytesIO(f.read())
+    r = c.post("/carga", data={"archivo": (buffer, "ajuste.xlsx")},
+               content_type="multipart/form-data")
+    if r.status_code == 302:
+        guardar("subir-ajuste-revisar", c.get(r.headers["Location"]))
+else:
+    print("  (la planilla de ajuste no está en la carpeta: no se previsualiza)")
 
 print(f"\nListo. Abrí los archivos de {destino}")

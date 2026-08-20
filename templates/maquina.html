@@ -59,6 +59,64 @@
   {% endif %}
 </div>
 
+{% if aguja or eficiencia %}
+<div class="bloque">
+  <div class="titulo"><h2>Agujas y producción</h2>
+    <p>De la planilla de control de ajuste</p></div>
+  <div class="relleno">
+    <div class="rejilla">
+      {% if aguja %}
+        <div><span class="campo">Modelo</span>{{ aguja.descripcion or '—' }}</div>
+        <div style="grid-column:span 2"><span class="campo">Aguja de cilindro</span>
+          {{ aguja.cilindro or '—' }}</div>
+        {% if aguja.plato %}
+          <div><span class="campo">Aguja de plato</span>{{ aguja.plato }}</div>{% endif %}
+        {% if aguja.platinas %}
+          <div><span class="campo">Platinas</span>{{ aguja.platinas }}</div>{% endif %}
+      {% endif %}
+      {% if eficiencia %}
+        <div><span class="campo">Velocidad</span>{{ eficiencia.rpm | num(1) }} rpm</div>
+        <div><span class="campo">Sistemas</span>{{ eficiencia.sistemas or '—' }}</div>
+        <div><span class="campo">Debería dar</span>
+          <b>{{ eficiencia.kg_dia | num(0) }} kg</b> en 12 horas</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if ajustes %}
+<div class="bloque">
+  <div class="titulo"><h2>Cómo se puso para cada tela</h2>
+    <p>Los últimos {{ ajustes | length }}</p></div>
+  <table>
+    <thead><tr><th>Fecha</th><th>Tela</th><th>Hilos</th>
+               <th class="oculta-chico">Cilindro y poleas</th>
+               <th class="oculta-chico">Estiraje</th>
+               <th class="oculta-chico">Malla</th></tr></thead>
+    <tbody>
+    {% for a in ajustes %}
+      <tr>
+        <td>{% if a.fecha %}{{ a.fecha | fecha_es }}
+            {% else %}<span class="tenue">sin fecha</span>{% endif %}</td>
+        <td>{{ a.tela or '—' }}</td>
+        <td class="tenue">{{ a.hilos or '—' }}</td>
+        <td class="tenue oculta-chico">
+          {{ [a.cilindro, a.poleas] | select | join(' · ') or '—' }}</td>
+        <td class="oculta-chico">{{ a.estiraje or '—' }}</td>
+        <td class="tenue oculta-chico">
+          {{ [a.malla, a.malla_manual] | select | join(' · ') or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="nota">
+    <a href="{{ url_for('ajustes_view', maquina=maquina.numero if maquina else '') }}">
+      Ver todos los ajustes de esta máquina →</a>
+  </p>
+</div>
+{% endif %}
+
 {% if mensual %}
 {% set techo = mensual | map(attribute='kg') | max %}
 <div class="bloque">

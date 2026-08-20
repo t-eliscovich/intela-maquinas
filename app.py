@@ -25,6 +25,7 @@ from functools import wraps
 from flask import (Flask, Response, flash, g, redirect, render_template,
                    request, session, url_for)
 
+import ajustes as ajustes_excel
 import asinfo
 import config
 import excel
@@ -517,6 +518,14 @@ def carga_revisar(token):
 
     nombres_hojas = excel.hojas(ruta)
 
+    # La planilla de CONTROL DE AJUSTE es otra cosa: no trae mantenimientos,
+    # trae cómo se pone cada máquina para tejer cada tela, más las agujas, las
+    # levas y las bandas. Se reconoce sola por los nombres de las hojas y entra
+    # por esta misma puerta a propósito: una segunda pantalla de carga sería un
+    # segundo lugar donde equivocarse.
+    if ajustes_excel.es_planilla_ajuste(ruta):
+        return _revisar_planilla_ajuste(token, ruta, maquinas, nombres_hojas)
+
     # Dos formas de planilla, y se reconoce sola cuál es:
     #
     #   * La de planta: UNA HOJA POR MÁQUINA, con la ficha arriba y el
@@ -577,6 +586,41 @@ def carga_revisar(token):
         listas=listas,
         descartes=descartes,
         campos=CAMPOS_MAPA(tipos),
+    )
+
+
+def _revisar_planilla_ajuste(token, ruta, maquinas, nombres_hojas):
+    """Mostrar qué entendió de la planilla de ajuste, y guardar."""
+    bloques, descartes = ajustes_excel.leer(ruta, maquinas)
+
+    if request.method == "POST" and request.form.get("boton") == "confirmar":
+        try:
+            if not any(bloques.values()):
+                raise ValueError("No se pudo leer ninguna fila.")
+            hecho = store.guardar_planilla_ajuste(bloques)
+            os.remove(ruta)
+            flash("Listo. " + ", ".join(
+                f"{n} {ajustes_excel.NOMBRES[k].lower()}"
+                for k, n in hecho.items() if n) + ".", "ok")
+            return redirect(url_for("ajustes_view"))
+        except Exception as exc:  # noqa: BLE001
+            flash(str(exc), "error")
+
+    # Una muestra de cada bloque, para que se vea qué entendió y no haya que
+    # confiar en un número. Cinco filas alcanzan: si están bien, están bien.
+    muestras = {k: v[:5] for k, v in bloques.items()}
+    return render_template(
+        "carga.html",
+        paso="revisar",
+        formato="ajuste",
+        token=token,
+        tipos=store.tipos(),
+        hojas=nombres_hojas,
+        bloques=bloques,
+        muestras=muestras,
+        nombres=ajustes_excel.NOMBRES,
+        descartes=descartes,
+        listas=[], hoja=None, titulos=[], mapa={}, campos=[],
     )
 
 
@@ -794,7 +838,98 @@ def maquina_detalle(id_maquina):
         archivos=store.archivos(id_maquina),
         historial=store.historial(id_maquina),
         mensual=mensual,
+        ajustes=store.ajustes(id_maquina=id_maquina, limite=30),
+        aguja=store.agujas().get(id_maquina),
+        eficiencia=store.eficiencias().get(id_maquina),
     )
+
+
+# --------------------------------------------------------------------------
+# Ajustes: cómo se pone la máquina para tejer cada tela
+# --------------------------------------------------------------------------
+@app.route("/ajustes")
+@requiere_login
+def ajustes_view():
+    """El histórico de puestas a punto.
+
+    Se busca por máquina o por tela, porque son las dos preguntas reales: «qué
+    le hicimos a la 21» y «cómo tejíamos la TANIA».
+    """
+    try:
+        maquinas, _, _ = asinfo.maquinas()
+    except asinfo.AsinfoNoDisponible:
+        maquinas = []
+
+    escrito = (request.args.get("maquina") or "").strip()
+    tela = (request.args.get("tela") or "").strip()
+    id_maquina = None
+    if escrito:
+        try:
+            id_maquina = _buscar_maquina(escrito, maquinas)
+        except ValueError as exc:
+            flash(str(exc), "error")
+
+    filas = store.ajustes(id_maquina=id_maquina, tela=tela or None)
+    nombres = {m["id"]: m for m in maquinas}
+    for f in filas:
+        f["maquina"] = nombres.get(f["id_maquina"])
+
+    return render_template("ajustes.html", filas=filas, telas=store.telas(),
+                           resumen=store.resumen_ajustes(),
+                           escrito=escrito, tela=tela)
+
+
+# --------------------------------------------------------------------------
+# Repuestos: agujas, levas y bandas
+# --------------------------------------------------------------------------
+@app.route("/repuestos")
+@requiere_login
+def repuestos():
+    """Qué repuesto lleva cada máquina y cuánto hay.
+
+    Las agujas cuelgan de una máquina; las levas y las bandas, de un modelo:
+    la misma leva sirve para varias. Se muestran como están anotadas.
+    """
+    try:
+        maquinas, _, _ = asinfo.maquinas()
+    except asinfo.AsinfoNoDisponible:
+        maquinas = []
+    agujas = store.agujas()
+    filas = [{"maquina": m, "aguja": agujas.get(m["id"])} for m in maquinas
+             if agujas.get(m["id"])]
+    filas.sort(key=lambda f: (f["maquina"]["numero"] is None, f["maquina"]["numero"] or 0))
+    return render_template("repuestos.html", filas=filas, levas=store.levas(),
+                           bandas=store.bandas(), stock=store.banda_stock())
+
+
+# --------------------------------------------------------------------------
+# Cuánto debería dar cada máquina
+# --------------------------------------------------------------------------
+@app.route("/produccion")
+@requiere_login
+def produccion():
+    """El cálculo de la planilla: cuántos kilos da cada máquina en 12 horas.
+
+    No es lo que la máquina tejió — eso lo mide Asinfo y está en Kilos. Es lo
+    que debería dar. Que no coincidan no es un error: uno es el plan y el otro
+    es lo que pasó.
+    """
+    try:
+        maquinas, _, _ = asinfo.maquinas()
+    except asinfo.AsinfoNoDisponible:
+        maquinas = []
+    eficiencias = store.eficiencias()
+    filas = [{"maquina": m, "e": eficiencias[m["id"]]} for m in maquinas
+             if m["id"] in eficiencias]
+    filas.sort(key=lambda f: (f["maquina"]["numero"] is None, f["maquina"]["numero"] or 0))
+
+    nombres = {m["id"]: m for m in maquinas}
+    gramajes = store.gramajes()
+    for g in gramajes:
+        g["maquina"] = nombres.get(g["id_maquina"])
+
+    return render_template("produccion.html", filas=filas,
+                           consumo=store.consumo_hilo(), gramajes=gramajes)
 
 
 @app.route("/healthz")
