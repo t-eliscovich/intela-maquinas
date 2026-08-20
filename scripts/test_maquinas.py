@@ -576,9 +576,22 @@ check("dia mayor que 12 al final se entiende",
       excel.fecha_escrita("01/19/2021", date(2026, 8, 20)) == date(2021, 1, 19))
 check("dia mayor que 12 al principio tambien",
       excel.fecha_escrita("23/12,/2018", date(2026, 8, 20)) == date(2018, 12, 23))
-check("con los dos numeros chicos NO se adivina",
+check("con los dos numeros chicos y sin vecinas NO se adivina",
       excel.fecha_escrita("6/8/2018", date(2026, 8, 20)) is None)
-check("un anio cortado no se completa",
+# El historial está en orden: la fecha tiene que caer entre la de arriba y la
+# de abajo. Con eso, de las dos lecturas posibles sobrevive una sola.
+check("las fechas de arriba y abajo resuelven cual es",
+      excel.fecha_escrita("6/8/2018", date(2026, 8, 20),
+                          antes=date(2018, 7, 1), despues=date(2018, 9, 1))
+      == date(2018, 8, 6))
+check("y si las dos siguen entrando, no se elige",
+      excel.fecha_escrita("6/8/2018", date(2026, 8, 20),
+                          antes=date(2018, 1, 1), despues=date(2018, 12, 1)) is None)
+check("un anio cortado lo completan las vecinas",
+      excel.fecha_escrita("21/4/205", date(2026, 8, 20),
+                          antes=date(2015, 1, 1), despues=date(2015, 12, 1))
+      == date(2015, 4, 21))
+check("un anio cortado sin vecinas no se completa",
       excel.fecha_escrita("21/4/205", date(2026, 8, 20)) is None)
 check("una fecha futura no entra",
       excel.fecha_escrita("10/30/2026", date(2026, 8, 20)) is None)

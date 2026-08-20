@@ -452,39 +452,65 @@ def _ficha_de_hoja(filas, corte):
 _FECHA_A_MANO = re.compile(r"^\s*(\d{1,2})\D+(\d{1,2})\D+(\d{2,4})\s*$")
 
 
-def fecha_escrita(texto, hoy=None):
-    """Una fecha tipeada a mano, sólo cuando NO hay forma de equivocarse.
+def fecha_escrita(texto, hoy=None, antes=None, despues=None):
+    """Una fecha tipeada a mano, resuelta con las fechas de arriba y de abajo.
 
-    La planilla mezcla los dos órdenes: «01/19/2021» es mes primero y
-    «23/12,/2018» es día primero. Cuando uno de los dos números es mayor que
-    12, no hay duda: ése es el día. Cuando los dos son chicos, sí la hay — y
-    elegir uno movería el mantenimiento de mes, que corre los kilos. En ese
-    caso se devuelve None y la fila se muestra aparte para que la corrijan.
+    La planilla mezcla los dos órdenes — «01/19/2021» es mes primero y
+    «23/12,/2018» es día primero — y además tiene años cortados: «205», «220».
+    Por sí solo, «6/8/2018» puede ser el 6 de agosto o el 8 de junio.
 
-    Los años cortados («205», «220») tampoco se completan: no se sabe si son
-    2005 o 2015.
+    Pero el historial está en orden: la fila de arriba es anterior y la de
+    abajo, posterior. Eso alcanza casi siempre para que quede UNA sola opción
+    posible, y no es adivinar — es usar el orden en que está escrita la hoja.
+
+    `antes` y `despues` son las fechas conocidas más cercanas, arriba y abajo.
+    Si con eso siguen quedando dos opciones, se devuelve None: elegir movería
+    el mantenimiento de mes, y con eso se corren los kilos.
     """
     hoy = hoy or date.today()
     m = _FECHA_A_MANO.match(str(texto or ""))
     if not m:
         return None
-    a, b, anio = int(m.group(1)), int(m.group(2)), m.group(3)
-    if len(anio) != 4:
-        return None
-    anio = int(anio)
-    if not (1990 <= anio <= hoy.year):
-        return None
+    a, b, anio_texto = int(m.group(1)), int(m.group(2)), m.group(3)
+
+    # Qué puede ser día y qué mes. Un número mayor que 12 sólo puede ser día.
     if a > 12 and b <= 12:
-        dia, mes = a, b
+        pares = [(a, b)]
     elif b > 12 and a <= 12:
-        dia, mes = b, a
+        pares = [(b, a)]
+    elif a <= 12 and b <= 12:
+        pares = [(a, b), (b, a)]
     else:
-        return None            # los dos pueden ser mes: no se adivina
-    try:
-        f = date(anio, mes, dia)
-    except ValueError:
         return None
-    return f if f <= hoy else None
+
+    # Qué puede ser el año. Con cuatro dígitos no hay duda; con dos, 20xx. Si
+    # está cortado («205»), lo dicen los vecinos: se prueban todos los años del
+    # tramo y sobrevive el que encaja.
+    if len(anio_texto) == 4:
+        anios = [int(anio_texto)]
+    elif len(anio_texto) == 2:
+        anios = [2000 + int(anio_texto)]
+    else:
+        desde = max(1990, antes.year if antes else 1990)
+        hasta = min(hoy.year, despues.year if despues else hoy.year)
+        anios = list(range(desde, hasta + 1))
+
+    posibles = set()
+    for dia, mes in pares:
+        for anio in anios:
+            try:
+                f = date(anio, mes, dia)
+            except ValueError:
+                continue
+            if not (1990 <= f.year and f <= hoy):
+                continue
+            if antes and f < antes:
+                continue
+            if despues and f > despues:
+                continue
+            posibles.add(f)
+
+    return posibles.pop() if len(posibles) == 1 else None
 
 
 def _columnas_historial(fila):
@@ -569,28 +595,46 @@ def leer_historial_por_maquina(ruta, maquinas, tipos, hoy=None):
                 i = mapa.get(campo)
                 return fila[i] if i is not None and i < len(fila) else None
 
+            cuerpo = filas[corte + 1:]
+
+            # Primero las fechas que Excel guardó como fecha. Se necesitan
+            # antes de leer nada, porque son las que ubican en el tiempo a las
+            # que están tipeadas a mano.
+            ciertas = []
+            for fila in cuerpo:
+                f = next((c.date() for c in fila if isinstance(c, datetime)), None)
+                ciertas.append(f if f and 1990 <= f.year and f <= hoy else None)
+
+            def vecina(i, paso):
+                """La fecha conocida más cercana hacia arriba o hacia abajo."""
+                j = i + paso
+                while 0 <= j < len(ciertas):
+                    if ciertas[j]:
+                        return ciertas[j]
+                    j += paso
+                return None
+
             leidas = 0
-            for n, fila in enumerate(filas[corte + 1:], start=1):
-                fecha = next((c.date() for c in fila if isinstance(c, datetime)), None)
-                if fecha and (fecha > hoy or fecha.year < 1990):
-                    fecha = None
+            for n, fila in enumerate(cuerpo, start=1):
+                fecha = ciertas[n - 1]
                 if fecha is None:
-                    # Algunas fechas están tipeadas a mano en una celda de
-                    # texto. Se aceptan sólo las que no dan lugar a duda; el
-                    # resto se avisa, con la fila, para que se corrija la
-                    # planilla en vez de que el programa invente un mes.
+                    # Tipeada a mano. El historial está en orden, así que la
+                    # fecha tiene que caer entre la de arriba y la de abajo:
+                    # con eso casi siempre queda una sola opción posible.
                     for celda_texto in fila[:3]:
                         if not isinstance(celda_texto, str):
                             continue
                         if not _FECHA_A_MANO.match(celda_texto):
                             continue
-                        fecha = fecha_escrita(celda_texto, hoy)
+                        fecha = fecha_escrita(celda_texto, hoy,
+                                              antes=vecina(n - 1, -1),
+                                              despues=vecina(n - 1, +1))
                         if fecha is None:
                             descartes.append({
                                 "donde": f"{nombre_hoja}, fila {n}",
                                 "motivo": f"La fecha «{celda_texto.strip()}» está "
-                                          "escrita a mano y no se entiende: puede "
-                                          "ser día/mes o mes/día"})
+                                          "escrita a mano y ni con las fechas de "
+                                          "arriba y abajo se puede saber cuál es"})
                         break
                 if not fecha:
                     continue
