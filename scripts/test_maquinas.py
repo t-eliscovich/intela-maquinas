@@ -1021,6 +1021,19 @@ check("se puede editar cuanto deberia dar",
 check("el tamaño de rollo con punto son mil cuatrocientas diez vueltas",
       guardado["tamano_rollo"] == 1410)
 
+# La cuenta de la planilla, con los números de la MQ 1 de la hoja de verdad:
+# 1410 vueltas ÷ 25 rpm = 56,4 min; en 12 h entran 12 rollos de 22,5 kg = 270,
+# y en 24 h, 25 rollos de 24,5 = 612,5. Si alguien cambia los pesos en la
+# pantalla, esto se entera.
+minutos = 1410 / 25
+pantalla = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                             "templates", "maquina.html")).read()
+check("la cuenta de cuanto deberia dar es la de la planilla",
+      minutos == 56.4 and int(720 // minutos) == 12 and int(1440 // minutos) == 25
+      and int(720 // minutos) * 22.5 == 270 and int(1440 // minutos) * 24.5 == 612.5)
+check("el peso del rollo es el de la planilla, no uno inventado",
+      "PESO_12 = 22.5" in pantalla and "PESO_24 = 24.5" in pantalla)
+
 # 270 no es 27: los ceros del final no se recortan.
 check("el valor para escribir a mano no pierde los ceros",
       A._editable(270) == "270" and A._editable(22.5) == "22,5"

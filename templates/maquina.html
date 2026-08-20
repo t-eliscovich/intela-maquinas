@@ -172,7 +172,10 @@
 <details id="deberia" {{ 'open' if abrir == 'deberia' }}>
   <summary>Cuánto debería dar</summary>
   <div class="relleno" style="padding:10px 14px">
-    <p class="ayuda" style="margin:0 0 8px">Es el cálculo de la planilla, no lo que tejió.</p>
+    <p class="ayuda" style="margin:0 0 8px">Es el cálculo de la planilla, no lo que
+      tejió. La cuenta: las vueltas del rollo dividido las vueltas por minuto dan
+      los minutos que tarda un rollo, y de ahí cuántos rollos enteros entran en el
+      turno. Los kilos son los rollos por el peso del rollo.</p>
     <form method="POST" id="eficiencia" class="formulario" style="max-width:none">
       <input type="hidden" name="que" value="eficiencia">
       <div><label class="campo" for="rpm">Velocidad (rpm)</label>
@@ -243,11 +246,16 @@
     c.value = t.replace(".", ",");
   }
 
-  // Los kilos por rollo salen de lo que ya estaba cargado. Si no hay nada
-  // cargado no se inventa un peso: los kilos quedan como están.
-  var kgRollo = null;
-  var kg0 = leer("kg_dia"), r0 = leer("rollos_dia");
-  if (kg0 && r0) { kgRollo = kg0 / r0; }
+  // El peso del rollo lo pone la planilla y NO es el mismo en los dos turnos:
+  // 22,5 kg en 12 horas y 24,5 en 24 (las celdas D3 y S3 de la hoja
+  // «Eficiencia producción»). Si la máquina ya tiene kilos cargados, manda lo
+  // que tiene: el peso de la planilla es un promedio de todas.
+  var PESO_12 = 22.5, PESO_24 = 24.5;
+  function pesoDe(kg, rollos, porDefecto) {
+    return (kg && rollos) ? kg / rollos : porDefecto;
+  }
+  var peso12 = pesoDe(leer("kg_dia"), leer("rollos_dia"), PESO_12);
+  var peso24 = pesoDe(leer("kg_dia_24"), leer("rollos_dia_24"), PESO_24);
 
   // Al abrir la pantalla la cuenta sólo se MUESTRA. Pisar los kilos que hay
   // cargados sin que nadie toque nada sería cambiarle el número al mecánico
@@ -265,13 +273,12 @@
     var texto = vueltas.toLocaleString("es") + " vueltas ÷ " + rpm + " rpm = " +
                 minutos.toFixed(1).replace(".", ",") + " minutos por rollo · " +
                 r12 + " rollos en 12 horas · " + r24 + " en 24";
-    if (kgRollo) {
-      if (escribiendo) {
-        escribir("kg_dia", r12 * kgRollo, 0);
-        escribir("kg_dia_24", r24 * kgRollo, 0);
-      }
-      texto += " · cada rollo pesa " + kgRollo.toFixed(1).replace(".", ",") + " kg";
+    if (escribiendo) {
+      escribir("kg_dia", r12 * peso12, 0);
+      escribir("kg_dia_24", r24 * peso24, 0);
     }
+    texto += " · el rollo pesa " + peso12.toFixed(1).replace(".", ",") +
+             " kg en 12 horas y " + peso24.toFixed(1).replace(".", ",") + " en 24";
     salida.textContent = texto;
   }
 
