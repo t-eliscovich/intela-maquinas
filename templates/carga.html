@@ -10,10 +10,20 @@
   <form method="POST" enctype="multipart/form-data" class="formulario">
     <div>
       <label class="campo" for="archivo">Archivo</label>
-      <input type="file" name="archivo" id="archivo" accept=".xlsx,.xlsm" required
+      <input type="file" name="archivo" id="archivo" accept=".xlsx,.xlsm"
              style="padding:10px;height:auto">
     </div>
-    <div><button class="btn" type="submit">Subir y revisar</button></div>
+    <div>
+      <label class="campo" for="pegado">O pegá las filas</label>
+      <textarea name="pegado" id="pegado" rows="8"
+                style="font-family:ui-monospace,monospace;font-size:13px"
+                placeholder="Máquina&#9;Limpieza cada cuántos kg&#10;1&#9;20000&#10;2&#9;20000">{{ pegado or '' }}</textarea>
+      <p class="tenue" style="font-size:13px;margin:6px 0 0">
+        Copiá las celdas en el Excel y pegalas acá, con la fila de títulos. Sirve
+        cuando la planilla está en otra computadora.
+      </p>
+    </div>
+    <div><button class="btn" type="submit">Revisar</button></div>
   </form>
   <p class="tenue" style="font-size:13px;margin:16px 0 0">
     Nada se guarda hasta que lo mires.

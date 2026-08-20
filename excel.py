@@ -18,7 +18,7 @@ import re
 import unicodedata
 from datetime import date, datetime
 
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 
 # Cuántas filas miramos buscando los títulos antes de rendirnos.
 _FILAS_CABECERA = 15
@@ -37,6 +37,39 @@ def hojas(ruta: str) -> list[str]:
         return list(wb.sheetnames)
     finally:
         wb.close()
+
+
+def desde_texto(texto: str, ruta: str) -> None:
+    """Guarda como .xlsx lo que se copió de una planilla y se pegó en pantalla.
+
+    Existe porque no siempre se puede adjuntar el archivo: la planilla está en
+    otra computadora, o el navegador no deja elegirlo. Copiar las celdas y
+    pegarlas siempre se puede.
+
+    Se convierte a un .xlsx de verdad a propósito, para que de acá en adelante
+    haya UN solo camino: el mismo lector, la misma pantalla de revisión y la
+    misma confirmación que un archivo subido. Un segundo camino sería un
+    segundo lugar donde equivocarse.
+    """
+    lineas = [l for l in texto.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+              if l.strip()]
+    if len(lineas) < 2:
+        raise ValueError("Pegá la fila de títulos y al menos una fila de datos.")
+
+    # El separador lo decide la fila de títulos, y vale para todas. Si cada
+    # fila eligiera el suyo, una fila con una coma adentro partiría distinto
+    # que el resto y las columnas quedarían corridas sin que se note.
+    separador = next((s for s in ("\t", ";", ",") if s in lineas[0]), None)
+    if separador is None:
+        raise ValueError(
+            "Cada fila tiene que traer al menos dos columnas. "
+            "Copiá las celdas desde el Excel, no una lista escrita a mano.")
+
+    wb = Workbook()
+    ws = wb.active
+    for linea in lineas:
+        ws.append([c.strip() for c in linea.split(separador)])
+    wb.save(ruta)
 
 
 def leer(ruta: str, hoja: str | None = None) -> tuple[list[str], list[list]]:

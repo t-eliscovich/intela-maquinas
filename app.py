@@ -417,11 +417,11 @@ def tipos_sugeridos():
 # --------------------------------------------------------------------------
 # Subir el Excel de planta
 # --------------------------------------------------------------------------
-def _guardar_temporal(archivo) -> str:
-    """Deja el Excel en disco mientras se revisa, y limpia los viejos.
+def _lugar_nuevo() -> tuple[str, str]:
+    """Un nombre libre donde dejar la planilla, y limpia las viejas.
 
-    Se guarda en vez de mantenerlo en memoria porque la pantalla de revisión
-    se puede recargar varias veces cambiando qué columna es cada cosa.
+    Se guarda en disco en vez de en memoria porque la pantalla de revisión se
+    puede recargar varias veces cambiando qué columna es cada cosa.
     """
     os.makedirs(CARPETA_CARGA, exist_ok=True)
     limite = time.time() - 2 * 3600
@@ -433,7 +433,18 @@ def _guardar_temporal(archivo) -> str:
         except OSError:
             pass
     token = secrets.token_hex(8)
-    archivo.save(os.path.join(CARPETA_CARGA, token + ".xlsx"))
+    return token, os.path.join(CARPETA_CARGA, token + ".xlsx")
+
+
+def _guardar_temporal(archivo) -> str:
+    token, ruta = _lugar_nuevo()
+    archivo.save(ruta)
+    return token
+
+
+def _guardar_pegado(texto: str) -> str:
+    token, ruta = _lugar_nuevo()
+    excel.desde_texto(texto, ruta)
     return token
 
 
@@ -471,9 +482,18 @@ def carga():
     if request.method == "GET":
         return render_template("carga.html", paso="subir", tipos=tipos)
 
+    pegado = (request.form.get("pegado") or "").strip()
+    if pegado:
+        try:
+            token = _guardar_pegado(pegado)
+        except ValueError as exc:
+            flash(str(exc), "error")
+            return render_template("carga.html", paso="subir", tipos=tipos, pegado=pegado)
+        return redirect(url_for("carga_revisar", token=token))
+
     archivo = request.files.get("archivo")
     if not archivo or not archivo.filename.lower().endswith((".xlsx", ".xlsm")):
-        flash("Subí un archivo .xlsx", "error")
+        flash("Elegí un archivo .xlsx, o pegá las filas.", "error")
         return render_template("carga.html", paso="subir", tipos=tipos)
     token = _guardar_temporal(archivo)
     return redirect(url_for("carga_revisar", token=token))

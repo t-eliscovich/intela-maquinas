@@ -276,6 +276,26 @@ check("el tope quedo en kilos de verdad", guardado_lote["topes"][0][2] == 30000)
 r = c.get(f"/carga/{token}")
 check("el archivo se borra despues de guardar", r.status_code == 302)
 
+# Pegar las filas tiene que terminar en la MISMA pantalla de revisión que
+# subir el archivo: si fueran dos caminos, serían dos lugares donde fallar.
+print("Pegar en vez de subir:")
+pegado = "\t".join(titulos) + "\nMQ 1\t12/07/2026\t30.000\tMayer\tMV4\t24\t2015"
+r = c.post("/carga", data={"pegado": pegado})
+check("pegar lleva a la misma revision", r.status_code == 302 and "/carga/" in r.headers["Location"])
+token_p = r.headers["Location"].rsplit("/", 1)[-1]
+cuerpo = c.get(f"/carga/{token_p}").get_data(as_text=True)
+check("lo pegado se lee igual que el archivo", "MQ 1" in cuerpo)
+guardado_lote.clear()
+c.post(f"/carga/{token_p}", data={"boton": "confirmar", "hecho_por": "Mecánico"})
+check("lo pegado guarda el tope", guardado_lote.get("topes", [[None, None, None]])[0][2] == 30000)
+
+r = c.post("/carga", data={"pegado": "solo una linea"}, follow_redirects=True)
+check("una sola linea no pasa", "títulos" in r.get_data(as_text=True))
+r = c.post("/carga", data={"pegado": "titulo\notro"}, follow_redirects=True)
+check("sin separador no pasa", "dos columnas" in r.get_data(as_text=True))
+r = c.post("/carga", data={}, follow_redirects=True)
+check("sin archivo ni pegado avisa", "pegá las filas" in r.get_data(as_text=True))
+
 # --- 8. arranque en lote ---------------------------------------------------
 print("Arranque:")
 store.ultimos_por_maquina_y_tipo = lambda: {}
