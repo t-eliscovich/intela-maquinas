@@ -95,6 +95,11 @@ Correr `2-deploy-maquinas.sh` en CloudShell. Sigue el patrón de las otras apps 
 Scheduled Task como SYSTEM, Waitress, `-ExecutionTimeLimit [TimeSpan]::Zero`, `-RestartCount 3`,
 y un `launch.ps1` que loguea a `C:\maquinas_app\logs\` para que un crash no sea invisible.
 
+**Prender el auto-updater** (una sola vez, en el box):
+`scripts/prender_auto_update.ps1`. Sin eso el server nunca tira del repo: se
+pushea, el CI da verde, y la pantalla sigue vieja sin que nada avise. Pasó el
+19/08/2026.
+
 El último paso (el bloque de Caddy) es a mano **a propósito**: un Caddyfile roto se lleva
 puesto `formulas.intela.com.ec` y Metabase junto con él.
 
