@@ -22,7 +22,27 @@ No hay deploy manual. **El server tira del repo**, no al revés: como el repo es
 público no hace falta ninguna credencial en ningún lado. GitHub Actions sólo
 corre los tests.
 
+## Como se pushea
+
+```bash
+python3 scripts/test_maquinas.py      # ~70 checks, un segundo
+git push                              # el server se actualiza solo en <2 min
+```
+
+El token que sirve para este repo es el de `Programa Core/.gh_pat`. El de
+`formulas_app/.git/gh-credentials` da 403 aca.
+
+**No hace falta CloudShell.** El server tira del repo y el updater se actualiza
+a si mismo. `/healthz` dice que commit esta corriendo.
+
 ## Reglas duras
+
+**Este repo es PUBLICO.** Nunca `git add -A` sin mirar que entra. El 20/08/2026
+se colaron las planillas de planta y hubo que reescribir el historial.
+
+**El semaforo va por KILOS.** Los dias se muestran, no prenden nada.
+
+**Nunca inventar un tope de kilos.** Los define el mecanico.
 
 **Los tests corren antes de cada commit.** Son 13 y tardan un segundo. Cubren lo
 que ya rompió producción: el pool sin inicializar, la inyección en el SQL de
@@ -32,12 +52,12 @@ Asinfo, la aritmética del semáforo, el arranque en lote.
 mockear `store` entero, a propósito. Un test que mockea todo no ve que la app
 levanta pero devuelve 500 en cada pantalla.
 
+**En pantalla se dice "mantenimiento", no "service".** Ver la skill
+`textos-de-pantalla-intela`: castellano simple, una idea por linea.
+
 **Validar los templates.** `py_compile` no ve los `.html`. Un `{% endif %}` de
 menos sólo aparece en runtime, con la pantalla rota en producción. El workflow
 y `deploy.sh` los parsean con Jinja.
-
-**Nunca inventar umbrales.** Los números de cada service los define el mecánico.
-Un semáforo con umbrales inventados pinta rojos falsos y nadie lo mira más.
 
 **Nunca borrar antes de poder reemplazar.** Vale para el auto-updater y para
 cualquier script que toque el server. Armar completo aparte, verificar, y recién
