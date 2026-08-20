@@ -71,7 +71,15 @@ try {
     Rename-Item $app  $viejo   -Force
     Rename-Item $staging $app  -Force
 
-    & 'C:\Python312\python.exe' -m pip install --quiet -r "$app\requirements.txt" 2>&1 | Out-Null
+    # OJO con esto. Con $ErrorActionPreference = "Stop", CUALQUIER cosa que un
+    # programa externo escriba en stderr se convierte en error que aborta, aunque
+    # el programa haya terminado bien. pip escribe avisos ahi todo el tiempo.
+    # El 20/08/2026 la primera actualizacion real (la que agrego openpyxl) murio
+    # justo aca, hizo la vuelta atras, y el server se quedo en la version vieja.
+    # Lo que decide si pip anduvo es su codigo de salida, no si dijo algo.
+    $salidaPip = & 'C:\Python312\python.exe' -m pip install --quiet `
+        --disable-pip-version-check -r "$app\requirements.txt" 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "pip salio con codigo $LASTEXITCODE : $salidaPip" }
     Start-ScheduledTask -TaskName $tarea
     Start-Sleep 12
 
