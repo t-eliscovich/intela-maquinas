@@ -84,6 +84,11 @@ try {
         throw "no encontre launch.ps1 ni en $app ni en $viejo - no toco nada"
     }
 
+    # Que version es esta, adentro de la carpeta. El archivo .commit se escribe
+    # recien al final, DESPUES de que la app arranco: si /healthz lo leyera de
+    # ahi mostraria siempre el deploy anterior.
+    Set-Content -Path "$staging\.version" -Value $sha -Encoding ASCII
+
     # --- 2. Recien ahora, el cambio: renombrar, no borrar ------------------
     # Renombrar es casi instantaneo. Nunca existe un momento con la carpeta
     # vacia. Si algo falla, la version que andaba sigue entera en $viejo.
