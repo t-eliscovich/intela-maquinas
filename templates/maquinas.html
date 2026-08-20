@@ -9,14 +9,15 @@
 
 <div class="bloque">
   <div class="titulo"><h2>{{ filas | length }} máquinas</h2>
-    <p>Tocá una para ver la ficha</p></div>
+    <p>{% if faltan %}A <b>{{ faltan }}</b> les falta algo · tocá una para completarla
+       {% else %}Están todas completas{% endif %}</p></div>
   {% if not filas %}
     <div class="vacio"><h3>No hay máquinas para mostrar</h3></div>
   {% else %}
   <table>
     <thead>
       <tr>
-        <th>Máquina</th><th>Marca</th><th>Modelo</th>
+        <th>Máquina</th><th>Qué le falta</th><th>Marca</th><th>Modelo</th>
         <th class="der">Diám.</th><th class="der">Galga</th>
         <th class="der oculta-chico">Alim.</th><th class="der oculta-chico">Agujas</th>
         <th class="der oculta-chico">Año</th>
@@ -25,12 +26,17 @@
     </thead>
     <tbody>
     {% for f in filas %}
-      <tr>
+      <tr class="{{ 'por_vencer' if f.falta }}">
         {# Sólo «MQ 3»: el nombre de Asinfo es «TEJEDURIA-MQ 003» y repetirlo
            debajo hacía de cada renglón dos. #}
         <td>
           <a href="{{ url_for('maquina_detalle', id_maquina=f.maquina.id) }}"
              class="mq" style="text-decoration:none;color:inherit">{{ f.maquina | mq }}</a>
+        </td>
+        <td>
+          {% if f.falta %}
+            <span class="marca-estado por_vencer">falta {{ f.falta | join(', ') }}</span>
+          {% else %}<span class="marca-estado ok">completa</span>{% endif %}
         </td>
         <td>{{ f.ficha.marca or '—' }}</td>
         <td>{{ f.ficha.modelo or '—' }}</td>

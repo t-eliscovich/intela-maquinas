@@ -167,7 +167,7 @@ for nombre, ruta in [("semaforo", "/"), ("semaforo-vencidas", "/?solo=vencidas")
                      ("arranque", "/arranque"), ("subir-excel", "/carga"),
                      ("maquinas", "/maquinas"), ("ficha-maquina", "/maquina/101"),
                      ("ajustes", "/ajustes"), ("ajustes-por-tela", "/ajustes?tela=PIQUE"),
-                     ("repuestos", "/repuestos"), ("produccion", "/produccion")]:
+                     ("repuestos", "/repuestos")]:
     guardar(nombre, c.get(ruta))
 
 # La pantalla de revisión necesita un Excel: armamos uno parecido al de planta.

@@ -32,8 +32,7 @@
   {% if not filas %}
     <div class="vacio">
       <h3>No hay ningún ajuste cargado</h3>
-      <p>Subí la planilla de control de ajuste en Archivos y tocá «Leer la planilla».</p>
-      <a class="btn" href="{{ url_for('archivos') }}">Ir a Archivos</a>
+      <p>Se cargan desde la planilla de control de ajuste de planta.</p>
     </div>
   {% else %}
   <table>
@@ -94,6 +93,30 @@
   {% if telas | length > 12 %}
     <p class="nota">Se muestran las 12 primeras de {{ telas | length }}. Buscá por nombre arriba.</p>
   {% endif %}
+</div>
+{% endif %}
+
+{% if consumo %}
+{# El consumo de hilo estaba en una pantalla aparte. Es la misma pregunta que
+   los ajustes — cómo se teje una tela — así que va acá, plegado. #}
+<div class="bloque">
+  <details>
+    <summary>Consumo de hilo · {{ consumo | length }} telas</summary>
+    <table>
+      <thead><tr><th>Tela</th><th>Hilo</th><th class="oculta-chico">Código</th>
+                 <th class="der">Rendimiento</th></tr></thead>
+      <tbody>
+      {% for c in consumo %}
+        <tr>
+          <td>{{ c.tela }}</td>
+          <td class="tenue">{{ c.hilo }}</td>
+          <td class="tenue oculta-chico">{{ c.codigo_hilo or '—' }}</td>
+          <td class="der">{{ c.rendimiento | num(4) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </details>
 </div>
 {% endif %}
 

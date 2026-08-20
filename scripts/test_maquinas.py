@@ -520,16 +520,43 @@ check("baja con su nombre", "planilla.xlsx" in r.headers.get("Content-Dispositio
 r = c.post("/archivos/1/borrar")
 check("se puede borrar", guardados.get("borrado") == 1)
 
-# --- 8d. los kilos de cada maquina, todos juntos --------------------------
-print("Kilos por maquina:")
+# --- 8d. los kilos se cargan en la ficha de cada maquina -------------------
+# Antes habia una pantalla aparte con las 43 juntas. El numero es de la
+# maquina, asi que se carga mirandola a ella: un solo lugar, uno que no puede
+# quedar viejo respecto del otro.
+print("Kilos en la ficha:")
 puestos = {}
 store.guardar_tope = lambda m, t, kg: puestos.update({(m, t): kg})
-r = c.post("/kilos", data={"kg_10_1": "250.000", "kg_11_1": "", "kg_12_1": "40000"})
-check("guarda los tres de una vez", r.status_code == 302 and len(puestos) == 3)
-check("250.000 son doscientos cincuenta mil", puestos[(10, 1)] == 250000)
-check("el vacio borra el numero propio", puestos[(11, 1)] is None)
-r = c.post("/kilos", data={"kg_10_1": "-5"})
+store.guardar_ficha = lambda i, d: None
+# Al rechazar un número, la ficha se vuelve a dibujar entera: hay que tener
+# contestado todo lo que pide.
+store.ajustes = lambda id_maquina=None, tela=None, limite=400: []
+store.agujas = lambda: {}
+store.eficiencias = lambda: {}
+store.archivos = lambda id_maquina=None: []
+store.ficha = lambda id_maquina: {c: None for c in store.CAMPOS_FICHA}
+r = c.post("/maquina/10", data={"marca": "Mayer", "tope_1": "250.000"})
+check("guarda el tope de esa maquina", r.status_code == 302 and puestos.get((10, 1)) == 250000)
+puestos.clear()
+c.post("/maquina/10", data={"marca": "Mayer", "tope_1": ""})
+check("el vacio borra el numero propio", puestos.get((10, 1)) is None)
+r = c.post("/maquina/10", data={"marca": "Mayer", "tope_1": "-5"},
+           follow_redirects=True)
 check("rechaza un numero que no es kilos", "mayores que cero" in r.get_data(as_text=True))
+
+# El listado tiene que decir a que maquina le falta algo: es la pantalla desde
+# la que se recorren las 43 completando de a una.
+store.fichas = lambda: {10: {"marca": "Mayer", "modelo": "Relanit", "galga": 24,
+                             "diametro": 32, "alimentadores": 96, "agujas": 2460,
+                             "anio": 2017, "serie": "7", "tipo_agujas": None,
+                             "nota": None}}
+store.topes_por_maquina = lambda: {(10, 1): 50000.0}
+r = c.get("/maquinas")
+cuerpo = r.get_data(as_text=True)
+check("el listado dice que le falta a cada maquina", "Qué le falta" in cuerpo)
+check("la que esta completa se ve completa", "completa" in cuerpo)
+check("la que no tiene nada cargado dice que le falta la ficha",
+      "falta la ficha" in cuerpo)
 
 # --- 8e. la planilla de control de ajuste ---------------------------------
 print("Planilla de control de ajuste:")
@@ -830,8 +857,8 @@ store.fichas = lambda: {10: {"marca": "Mayer", "modelo": "Relanit", "galga": 24,
                             "diametro": 32, "alimentadores": 96, "agujas": 2460,
                             "anio": 2017, "serie": "7", "tipo_agujas": None, "nota": None}}
 for ruta in ("/", "/registrar", "/tipos", "/arranque", "/carga", "/maquina/10",
-             "/maquinas", "/archivos", "/kilos", "/ajustes", "/ajustes?tela=FALSO",
-             "/ajustes?maquina=1", "/repuestos", "/produccion"):
+             "/maquinas", "/archivos", "/ajustes", "/ajustes?tela=FALSO",
+             "/ajustes?maquina=1", "/repuestos"):
     r = c.get(ruta)
     check(f"{ruta} abre", r.status_code == 200)
 r = c.get("/?solo=vencidas")

@@ -723,53 +723,6 @@ def CAMPOS_MAPA(tipos):
 
 
 # --------------------------------------------------------------------------
-# Cada cuántos kilos, máquina por máquina
-# --------------------------------------------------------------------------
-@app.route("/kilos", methods=["GET", "POST"])
-@requiere_login
-def kilos():
-    """Los kilos de cada máquina, todos en una pantalla.
-
-    Es lo último que le falta al semáforo para servir: sin este número las
-    máquinas quedan en «sin kilos puestos». Van todas juntas porque el mecánico
-    los dice de corrido, no de a una.
-    """
-    try:
-        maquinas, _, _ = asinfo.maquinas()
-        error = None
-    except asinfo.AsinfoNoDisponible as exc:
-        maquinas, error = [], str(exc)
-    tipos = store.tipos()
-
-    if request.method == "POST":
-        try:
-            guardados = 0
-            for m in maquinas:
-                for t in tipos:
-                    campo = f"kg_{m['id']}_{t['id']}"
-                    if campo not in request.form:
-                        continue
-                    crudo = (request.form.get(campo) or "").strip()
-                    crudo = crudo.replace(".", "").replace(",", ".")
-                    valor = float(crudo) if crudo else None
-                    if valor is not None and valor <= 0:
-                        raise ValueError(f"{m['nombre']}: los kilos tienen que ser mayores que cero.")
-                    store.guardar_tope(m["id"], t["id"], valor)
-                    guardados += 1
-            flash("Kilos guardados.", "ok") if guardados else flash("No había nada que guardar.", "ok")
-            return redirect(url_for("kilos"))
-        except Exception as exc:  # noqa: BLE001
-            flash(str(exc), "error")
-
-    topes = store.topes_por_maquina()
-    filas = [{"maquina": m,
-              "topes": {t["id"]: topes.get((m["id"], t["id"])) for t in tipos}}
-             for m in maquinas]
-    filas.sort(key=lambda f: (f["maquina"]["numero"] is None, f["maquina"]["numero"] or 0))
-    return render_template("kilos.html", filas=filas, tipos=tipos, error=error)
-
-
-# --------------------------------------------------------------------------
 # Archivos
 # --------------------------------------------------------------------------
 # Un lugar para subir cosas desde el programa: la planilla de planta, el manual
@@ -859,10 +812,12 @@ def archivo_leer(id_archivo):
 @app.route("/maquinas")
 @requiere_login
 def maquinas_lista():
-    """El listado de las máquinas con su ficha. Se entra a cada una desde acá.
+    """Las 43 máquinas, para recorrerlas de a una y completar lo que falte.
 
-    Las máquinas salen de Asinfo; la ficha, de lo que se cargó. Una máquina sin
-    ficha aparece igual: falta el dato, no falta la máquina.
+    Ésta es la pantalla desde la que se va llenando el programa: dice de un
+    vistazo a cuál le falta la ficha, a cuál el tope de kilos y cuál no arrancó
+    a contar todavía. Sin eso hay que entrar a las 43 para descubrir cuáles ya
+    están hechas.
     """
     try:
         maquinas, _, _ = asinfo.maquinas()
@@ -872,17 +827,34 @@ def maquinas_lista():
 
     fichas = store.fichas()
     ultimos = store.ultimos_por_maquina_y_tipo()
+    topes = store.topes_por_maquina()
     tipos = store.tipos()
 
-    filas = [{
-        "maquina": m,
-        "ficha": fichas.get(m["id"], {}),
-        "ultimos": {t["id"]: (ultimos.get((m["id"], t["id"])) or {}).get("fecha")
-                    for t in tipos},
-    } for m in maquinas]
+    filas = []
+    for m in maquinas:
+        ficha = fichas.get(m["id"], {})
+        # El tope sólo se le exige a los mantenimientos que se vencen por
+        # desgaste. El cambio de agujas no lleva tope: lo pide la tela.
+        con_tope = [t for t in tipos if topes.get((m["id"], t["id"])) or t["cada_kg"]]
+        falta = []
+        if not any(ficha.get(c) for c in ("marca", "modelo", "galga", "diametro")):
+            falta.append("la ficha")
+        if not con_tope:
+            falta.append("los kilos")
+        if not any(ultimos.get((m["id"], t["id"])) for t in tipos):
+            falta.append("arrancar")
+        filas.append({
+            "maquina": m,
+            "ficha": ficha,
+            "falta": falta,
+            "topes": {t["id"]: topes.get((m["id"], t["id"])) for t in tipos},
+            "ultimos": {t["id"]: (ultimos.get((m["id"], t["id"])) or {}).get("fecha")
+                        for t in tipos},
+        })
     filas.sort(key=lambda f: (f["maquina"]["numero"] is None, f["maquina"]["numero"] or 0))
 
-    return render_template("maquinas.html", filas=filas, tipos=tipos, error=error)
+    return render_template("maquinas.html", filas=filas, tipos=tipos, error=error,
+                           faltan=sum(1 for f in filas if f["falta"]))
 
 
 # --------------------------------------------------------------------------
@@ -912,7 +884,14 @@ def maquina_detalle(id_maquina):
             # máquina, y el mecánico lo decide mirándola a ella.
             for tipo in tipos:
                 crudo = (request.form.get(f"tope_{tipo['id']}") or "").strip()
-                kg = excel.a_kilos(crudo) if crudo else None
+                # A mano, no con `a_kilos`: ése limpia todo lo que no sea
+                # dígito y se lleva puesto el signo, así que un «-5» entraba
+                # como 5 y la validación no se enteraba.
+                crudo = crudo.replace(".", "").replace(",", ".")
+                try:
+                    kg = float(crudo) if crudo else None
+                except ValueError:
+                    raise ValueError(f"{tipo['nombre']}: eso no es un número de kilos.")
                 if kg is not None and kg <= 0:
                     raise ValueError("Los kilos tienen que ser mayores que cero.")
                 store.guardar_tope(id_maquina, tipo["id"], kg)
@@ -1038,8 +1017,12 @@ def ajustes_view():
     for f in filas:
         f["maquina"] = nombres.get(f["id_maquina"])
 
+    # El consumo de hilo vive acá y no en una pantalla propia: la pregunta es
+    # la misma — cómo se teje una tela — y tenerla partida en dos obligaba a
+    # cambiar de pantalla para contestar media.
     return render_template("ajustes.html", filas=filas, telas=store.telas(),
                            resumen=store.resumen_ajustes(),
+                           consumo=store.consumo_hilo(),
                            escrito=escrito, tela=tela)
 
 
@@ -1067,36 +1050,6 @@ def repuestos():
                            bandas=store.bandas("memminger"),
                            bandas_motor=store.bandas("motor"),
                            stock=store.banda_stock())
-
-
-# --------------------------------------------------------------------------
-# Cuánto debería dar cada máquina
-# --------------------------------------------------------------------------
-@app.route("/produccion")
-@requiere_login
-def produccion():
-    """El cálculo de la planilla: cuántos kilos da cada máquina en 12 horas.
-
-    No es lo que la máquina tejió — eso lo mide Asinfo y está en Kilos. Es lo
-    que debería dar. Que no coincidan no es un error: uno es el plan y el otro
-    es lo que pasó.
-    """
-    try:
-        maquinas, _, _ = asinfo.maquinas()
-    except asinfo.AsinfoNoDisponible:
-        maquinas = []
-    eficiencias = store.eficiencias()
-    filas = [{"maquina": m, "e": eficiencias[m["id"]]} for m in maquinas
-             if m["id"] in eficiencias]
-    filas.sort(key=lambda f: (f["maquina"]["numero"] is None, f["maquina"]["numero"] or 0))
-
-    nombres = {m["id"]: m for m in maquinas}
-    gramajes = store.gramajes()
-    for g in gramajes:
-        g["maquina"] = nombres.get(g["id_maquina"])
-
-    return render_template("produccion.html", filas=filas,
-                           consumo=store.consumo_hilo(), gramajes=gramajes)
 
 
 @app.route("/healthz")

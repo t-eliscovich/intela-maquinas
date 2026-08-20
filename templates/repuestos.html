@@ -8,8 +8,7 @@
   <div class="titulo"><h2>Agujas</h2><p>{{ filas | length }} máquinas</p></div>
   {% if not filas %}
     <div class="vacio"><h3>Todavía no hay agujas cargadas</h3>
-      <p>Subí la planilla de control de ajuste en Archivos y tocá «Leer la planilla».</p>
-      <a class="btn" href="{{ url_for('archivos') }}">Ir a Archivos</a></div>
+      <p>Se cargan desde la planilla de control de ajuste de planta.</p></div>
   {% else %}
   <table>
     <thead><tr><th>Máquina</th><th>Modelo</th><th>Cilindro</th>
