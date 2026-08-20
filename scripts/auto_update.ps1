@@ -62,6 +62,28 @@ try {
     Copy-Item $nuevo.FullName $staging -Recurse -Force
     if (Test-Path "$app\logs") { Copy-Item "$app\logs" $staging -Recurse -Force -EA SilentlyContinue }
 
+    # Lo que vive SOLO en el server y no esta en el repo. Sin esto la carpeta
+    # nueva queda sin launch.ps1 (el archivo que la tarea ejecuta) ni .env (la
+    # base y las claves): la app no arranca, el health falla, se deshace la
+    # actualizacion, y desde afuera parece que el deploy no hace nada. Paso el
+    # 20/08/2026, en bucle, hasta que se miro que habia adentro de la carpeta.
+    #
+    # Se buscan primero en la carpeta que esta andando y, si no estan, en la
+    # copia anterior — que es donde quedan si un intento fallido ya las perdio.
+    foreach ($propio in @("launch.ps1", ".env")) {
+        foreach ($origen in @($app, $viejo)) {
+            if (Test-Path "$origen\$propio") {
+                Copy-Item "$origen\$propio" $staging -Force
+                break
+            }
+        }
+    }
+    # Freno duro: sin launch.ps1 la version nueva no puede arrancar. Mejor no
+    # tocar nada que dejar la app abajo.
+    if (-not (Test-Path "$staging\launch.ps1")) {
+        throw "no encontre launch.ps1 ni en $app ni en $viejo - no toco nada"
+    }
+
     # --- 2. Recien ahora, el cambio: renombrar, no borrar ------------------
     # Renombrar es casi instantaneo. Nunca existe un momento con la carpeta
     # vacia. Si algo falla, la version que andaba sigue entera en $viejo.
