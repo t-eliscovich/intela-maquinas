@@ -56,8 +56,14 @@ def main():
     import asinfo
     import store
 
-    with open(archivo, encoding="utf-8") as f:
-        datos = json.load(f)
+    # .gz porque el archivo suele llegar por un canal donde el tamaño importa.
+    if archivo.endswith(".gz"):
+        import gzip
+        with gzip.open(archivo, "rt", encoding="utf-8") as f:
+            datos = json.load(f)
+    else:
+        with open(archivo, encoding="utf-8") as f:
+            datos = json.load(f)
 
     quien = datos.get("quien") or "Carga inicial"
     store.init_pool()
