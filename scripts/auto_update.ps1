@@ -67,6 +67,23 @@ try {
     # vacia. Si algo falla, la version que andaba sigue entera en $viejo.
     Stop-ScheduledTask -TaskName $tarea -ErrorAction SilentlyContinue
     Start-Sleep 3
+
+    # Matar al que HAYA QUEDADO tomando el puerto. Parar la tarea no siempre
+    # mata al python hijo: el nuevo entonces no puede tomar el puerto, se cae,
+    # el health check falla y la actualizacion se deshace sola. Desde afuera
+    # parece que el deploy "no hace nada". Paso el 20/08/2026.
+    #
+    # SOLO el duenio de ESTE puerto. En el mismo box viven formulas_app (5001),
+    # Programa Core (5002) y Metabase (3000): matar todos los python.exe seria
+    # llevarse puesta media fabrica.
+    foreach ($idProceso in @(Get-NetTCPConnection -LocalPort $puerto -State Listen `
+                             -ErrorAction SilentlyContinue |
+                             Select-Object -ExpandProperty OwningProcess -Unique)) {
+        Escribir "el puerto $puerto seguia tomado por el proceso $idProceso - lo bajo"
+        Stop-Process -Id $idProceso -Force -ErrorAction SilentlyContinue
+    }
+    Start-Sleep 2
+
     if (Test-Path $viejo) { Remove-Item $viejo -Recurse -Force }
     Rename-Item $app  $viejo   -Force
     Rename-Item $staging $app  -Force
@@ -83,8 +100,11 @@ try {
     Start-ScheduledTask -TaskName $tarea
     Start-Sleep 12
 
+    # Hasta ~70 s. Waitress con los imports tarda mas de lo que uno espera, y un
+    # health check impaciente da falso negativo: se deshace una actualizacion
+    # que estaba bien.
     $ok = $false
-    foreach ($i in 1..5) {
+    foreach ($i in 1..10) {
         try {
             if ((Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:$puerto/healthz" -TimeoutSec 10).StatusCode -eq 200) { $ok = $true; break }
         } catch { Start-Sleep 6 }
