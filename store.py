@@ -483,10 +483,16 @@ def guardar_historial(filas: list[dict]) -> dict:
             (SELLO_CARGA_VIEJA,),
         )
         borrados = cur.rowcount or 0
+        # El `WHERE hoja IS NOT NULL` no es de más: el índice único es PARCIAL
+        # (sólo mira las filas que vinieron de una planilla, para no molestar a
+        # las cargadas a mano). Postgres exige que el ON CONFLICT repita esa
+        # condición; sin ella no reconoce el índice y responde "there is no
+        # unique or exclusion constraint matching the ON CONFLICT specification".
         cur.executemany(
             f"""INSERT INTO mantenimiento.service ({columnas})
                 VALUES ({marcas})
-                ON CONFLICT (hoja, orden) DO UPDATE SET {updates}""",
+                ON CONFLICT (hoja, orden) WHERE hoja IS NOT NULL
+                DO UPDATE SET {updates}""",
             [tuple(f.get(c) for c in campos) for f in filas],
         )
         con.commit()
