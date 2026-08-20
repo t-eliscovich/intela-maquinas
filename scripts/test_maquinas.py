@@ -371,12 +371,23 @@ check("baja con su nombre", "planilla.xlsx" in r.headers.get("Content-Dispositio
 r = c.post("/archivos/1/borrar")
 check("se puede borrar", guardados.get("borrado") == 1)
 
+# --- 8d. los kilos de cada maquina, todos juntos --------------------------
+print("Kilos por maquina:")
+puestos = {}
+store.guardar_tope = lambda m, t, kg: puestos.update({(m, t): kg})
+r = c.post("/kilos", data={"kg_10_1": "250.000", "kg_11_1": "", "kg_12_1": "40000"})
+check("guarda los tres de una vez", r.status_code == 302 and len(puestos) == 3)
+check("250.000 son doscientos cincuenta mil", puestos[(10, 1)] == 250000)
+check("el vacio borra el numero propio", puestos[(11, 1)] is None)
+r = c.post("/kilos", data={"kg_10_1": "-5"})
+check("rechaza un numero que no es kilos", "mayores que cero" in r.get_data(as_text=True))
+
 # --- 9. las pantallas abren -----------------------------------------------
 print("Pantallas:")
 store.fichas = lambda: {10: {"marca": "Mayer", "modelo": "Relanit", "galga": 24,
                             "diametro": 32, "alimentadores": 96, "agujas": 2460,
                             "anio": 2017, "serie": "7", "tipo_agujas": None, "nota": None}}
-for ruta in ("/", "/registrar", "/tipos", "/arranque", "/carga", "/maquina/10", "/maquinas", "/archivos"):
+for ruta in ("/", "/registrar", "/tipos", "/arranque", "/carga", "/maquina/10", "/maquinas", "/archivos", "/kilos"):
     r = c.get(ruta)
     check(f"{ruta} abre", r.status_code == 200)
 r = c.get("/?solo=vencidas")

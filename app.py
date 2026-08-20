@@ -595,6 +595,53 @@ def CAMPOS_MAPA(tipos):
 
 
 # --------------------------------------------------------------------------
+# Cada cuántos kilos, máquina por máquina
+# --------------------------------------------------------------------------
+@app.route("/kilos", methods=["GET", "POST"])
+@requiere_login
+def kilos():
+    """Los kilos de cada máquina, todos en una pantalla.
+
+    Es lo último que le falta al semáforo para servir: sin este número las
+    máquinas quedan en «sin kilos puestos». Van todas juntas porque el mecánico
+    los dice de corrido, no de a una.
+    """
+    try:
+        maquinas, _, _ = asinfo.maquinas()
+        error = None
+    except asinfo.AsinfoNoDisponible as exc:
+        maquinas, error = [], str(exc)
+    tipos = store.tipos()
+
+    if request.method == "POST":
+        try:
+            guardados = 0
+            for m in maquinas:
+                for t in tipos:
+                    campo = f"kg_{m['id']}_{t['id']}"
+                    if campo not in request.form:
+                        continue
+                    crudo = (request.form.get(campo) or "").strip()
+                    crudo = crudo.replace(".", "").replace(",", ".")
+                    valor = float(crudo) if crudo else None
+                    if valor is not None and valor <= 0:
+                        raise ValueError(f"{m['nombre']}: los kilos tienen que ser mayores que cero.")
+                    store.guardar_tope(m["id"], t["id"], valor)
+                    guardados += 1
+            flash("Kilos guardados.", "ok") if guardados else flash("No había nada que guardar.", "ok")
+            return redirect(url_for("kilos"))
+        except Exception as exc:  # noqa: BLE001
+            flash(str(exc), "error")
+
+    topes = store.topes_por_maquina()
+    filas = [{"maquina": m,
+              "topes": {t["id"]: topes.get((m["id"], t["id"])) for t in tipos}}
+             for m in maquinas]
+    filas.sort(key=lambda f: (f["maquina"]["numero"] is None, f["maquina"]["numero"] or 0))
+    return render_template("kilos.html", filas=filas, tipos=tipos, error=error)
+
+
+# --------------------------------------------------------------------------
 # Archivos
 # --------------------------------------------------------------------------
 # Un lugar para subir cosas desde el programa: la planilla de planta, el manual
