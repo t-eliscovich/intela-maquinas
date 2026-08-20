@@ -118,6 +118,13 @@ def bootstrap() -> None:
                 ADD COLUMN IF NOT EXISTS serie text;
             ALTER TABLE mantenimiento.maquina_ficha
                 ADD COLUMN IF NOT EXISTS tipo_agujas text;
+
+            -- Que se cambio y cuanto llevo. Lo pidio la dueña el 20/08/2026:
+            -- la planilla de planta ya tenia una columna de repuestos.
+            ALTER TABLE mantenimiento.service
+                ADD COLUMN IF NOT EXISTS repuestos text;
+            ALTER TABLE mantenimiento.service
+                ADD COLUMN IF NOT EXISTS horas numeric(5,2);
             """
         )
         con.commit()
@@ -149,12 +156,15 @@ def editar_tipo(tipo_id, nombre, cada_kg, cada_rollos, cada_dias, activo) -> Non
 
 
 # --- Services hechos -------------------------------------------------------
-def registrar_service(id_maquina, maquina_nombre, tipo_id, fecha, hecho_por, nota) -> None:
+def registrar_service(id_maquina, maquina_nombre, tipo_id, fecha, hecho_por, nota,
+                      repuestos=None, horas=None) -> None:
     _ejecutar(
         """INSERT INTO mantenimiento.service
-               (id_maquina, maquina_nombre, tipo_id, fecha, hecho_por, nota)
-           VALUES (%s, %s, %s, %s, %s, %s)""",
-        (id_maquina, maquina_nombre, tipo_id, fecha, hecho_por.strip(), (nota or "").strip() or None),
+               (id_maquina, maquina_nombre, tipo_id, fecha, hecho_por, nota,
+                repuestos, horas)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+        (id_maquina, maquina_nombre, tipo_id, fecha, hecho_por.strip(),
+         (nota or "").strip() or None, (repuestos or "").strip() or None, horas),
     )
 
 
@@ -235,13 +245,22 @@ def historial(id_maquina: int | None = None, limite: int = 200) -> list[dict]:
     )
 
 
+# Los encargados de mantenimiento de tejeduria. Estan fijos porque son ellos:
+# escribir el nombre a mano cada vez termina en "roberto", "Roberto " y
+# "RObert", y despues no se puede contar quien hizo que.
+ENCARGADOS = ("Roberto", "Darlin", "Humberto")
+
+
 def responsables() -> list[str]:
-    """Nombres ya usados, para autocompletar el campo 'quién lo hizo'."""
+    """Para el campo 'quién lo hizo': los encargados primero, y después
+    cualquier otro nombre que ya se haya usado."""
     filas = _todos(
         """SELECT hecho_por, COUNT(*) n FROM mantenimiento.service
             GROUP BY hecho_por ORDER BY n DESC LIMIT 30"""
     )
-    return [f["hecho_por"] for f in filas]
+    usados = [f["hecho_por"] for f in filas]
+    otros = [u for u in usados if u not in ENCARGADOS]
+    return list(ENCARGADOS) + otros
 
 
 def fecha_service_mas_vieja() -> str | None:

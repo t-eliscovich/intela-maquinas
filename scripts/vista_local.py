@@ -44,20 +44,24 @@ TOPES = {(101, 1): 120000.0, (102, 2): 15000.0}
 
 store.tipos = lambda incluir_inactivos=False: TIPOS
 store.topes_por_maquina = lambda: TOPES
-store.ficha = lambda id_maquina: {"marca": "Mayer", "modelo": "MV4-3.2", "galga": 24,
-                                  "diametro": 30, "alimentadores": 96, "agujas": 2260,
-                                  "anio": 2015, "nota": None}
-store.responsables = lambda: ["Luis", "Marco"]
+FICHA_FALSA = {"marca": "Mayer", "modelo": "MV4-3.2", "galga": 24, "diametro": 30,
+               "alimentadores": 96, "agujas": 2260, "anio": 2015,
+               "serie": "73830", "tipo_agujas": "VO LS 140.50 G0036", "nota": None}
+store.ficha = lambda id_maquina: FICHA_FALSA
+store.fichas = lambda: {m["id"]: FICHA_FALSA for m in MAQS}
+store.responsables = lambda: list(store.ENCARGADOS)
 store.historial = lambda id_maquina=None, limite=200: [
     {"fecha": hoy - timedelta(days=40), "tipo_nombre": "Limpieza",
-     "hecho_por": "Luis", "nota": None, "maquina_nombre": "TEJEDURIA-MQ 001"},
+     "hecho_por": "Roberto", "nota": None, "repuestos": None, "horas": 1.5,
+     "maquina_nombre": "TEJEDURIA-MQ 001"},
     {"fecha": hoy - timedelta(days=300), "tipo_nombre": "Cambio de agujas",
-     "hecho_por": "Marco", "nota": "Se cambiaron 12 agujas rotas",
+     "hecho_por": "Darlin", "nota": "Se cambiaron 12 agujas rotas",
+     "repuestos": "12 agujas de cilindro", "horas": 4,
      "maquina_nombre": "TEJEDURIA-MQ 001"},
 ]
 store.ultimos_por_maquina_y_tipo = lambda: {
     (m["id"], t["id"]): {"fecha": hoy - timedelta(days=30 + (m["id"] % 90)),
-                         "hecho_por": "Luis"}
+                         "hecho_por": "Roberto"}
     for m in MAQS for t in TIPOS if not (m["id"] == 115 and t["id"] == 1)
 }
 asinfo.maquinas = lambda: (MAQS, datetime.utcnow(), True)
@@ -81,7 +85,7 @@ def guardar(nombre, respuesta):
 for nombre, ruta in [("semaforo", "/"), ("semaforo-vencidas", "/?solo=vencidas"),
                      ("registrar", "/registrar"), ("tipos", "/tipos"),
                      ("arranque", "/arranque"), ("subir-excel", "/carga"),
-                     ("ficha-maquina", "/maquina/101")]:
+                     ("maquinas", "/maquinas"), ("ficha-maquina", "/maquina/101")]:
     guardar(nombre, c.get(ruta))
 
 # La pantalla de revisión necesita un Excel: armamos uno parecido al de planta.

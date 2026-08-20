@@ -293,13 +293,29 @@ check("no duplica si ya arrancaron", len(capt["f"]) == antes)
 # --- 8b. cargar uno escribiendo el numero ---------------------------------
 print("Cargar uno:")
 guardado_uno = {}
-store.registrar_service = lambda *a: guardado_uno.update(args=a)
+store.registrar_service = lambda *a, **k: guardado_uno.update(args=a, kw=k)
 for escrito, esperado in (("1", 10), ("MQ 2", 11), ("003", 12)):
     guardado_uno.clear()
     r = c.post("/registrar", data={"maquina": escrito, "tipo_id": "1",
                                    "fecha": hoy.isoformat(), "hecho_por": "Luis"})
     check(f"'{escrito}' es la maquina {esperado}",
           guardado_uno.get("args", [None])[0] == esperado)
+# repuestos, horas y los tres encargados
+guardado_uno.clear()
+c.post("/registrar", data={"maquina": "1", "tipo_id": "1", "fecha": hoy.isoformat(),
+                           "hecho_por": "Roberto", "repuestos": "12 agujas",
+                           "horas": "2,5", "nota": "se trabo el plato"})
+args = guardado_uno.get("args", ())
+kw = guardado_uno.get("kw", {})
+check("guarda quien lo hizo", args[4] == "Roberto")
+check("guarda los repuestos", kw.get("repuestos") == "12 agujas")
+check("2,5 horas se entienden como 2.5", kw.get("horas") == 2.5)
+r = c.post("/registrar", data={"maquina": "1", "tipo_id": "1", "fecha": hoy.isoformat(),
+                               "hecho_por": "Roberto", "horas": "999"})
+check("rechaza horas absurdas", "razonable" in r.get_data(as_text=True))
+check("los tres encargados estan en la lista",
+      tuple(store.ENCARGADOS) == ("Roberto", "Darlin", "Humberto"))
+
 r = c.post("/registrar", data={"maquina": "77", "tipo_id": "1",
                                "fecha": hoy.isoformat(), "hecho_por": "Luis"})
 check("una maquina que no existe se avisa", "No hay ninguna máquina 77" in r.get_data(as_text=True))
@@ -309,11 +325,17 @@ check("sin numero pide el numero", "Poné el número" in r.get_data(as_text=True
 
 # --- 9. las pantallas abren -----------------------------------------------
 print("Pantallas:")
-for ruta in ("/", "/registrar", "/tipos", "/arranque", "/carga", "/maquina/10"):
+store.fichas = lambda: {10: {"marca": "Mayer", "modelo": "Relanit", "galga": 24,
+                            "diametro": 32, "alimentadores": 96, "agujas": 2460,
+                            "anio": 2017, "serie": "7", "tipo_agujas": None, "nota": None}}
+for ruta in ("/", "/registrar", "/tipos", "/arranque", "/carga", "/maquina/10", "/maquinas"):
     r = c.get(ruta)
     check(f"{ruta} abre", r.status_code == 200)
 r = c.get("/?solo=vencidas")
 check("la campanita filtra las vencidas", r.status_code == 200)
+cuerpo = c.get("/maquinas").get_data(as_text=True)
+check("la pestaña de maquinas las lista con su ficha",
+      "MQ 1" in cuerpo and "MQ 3" in cuerpo and "Mayer" in cuerpo)
 
 print()
 if fallos:

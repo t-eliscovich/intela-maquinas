@@ -41,13 +41,16 @@
     <div class="vacio"><h3>Todavía no tiene nada cargado</h3></div>
   {% else %}
   <table>
-    <thead><tr><th>Fecha</th><th>Mantenimiento</th><th>Quién</th><th>Nota</th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Mantenimiento</th><th>Quién</th>
+               <th>Repuestos</th><th class="der">Horas</th><th>Nota</th></tr></thead>
     <tbody>
     {% for h in historial %}
       <tr>
         <td>{{ h.fecha | fecha_es }}</td>
         <td>{{ h.tipo_nombre }}</td>
         <td class="tenue">{{ h.hecho_por }}</td>
+        <td class="tenue">{{ h.repuestos or '—' }}</td>
+        <td class="der tenue">{{ h.horas | num(1) if h.horas else '—' }}</td>
         <td class="tenue">{{ h.nota or '—' }}</td>
       </tr>
     {% endfor %}

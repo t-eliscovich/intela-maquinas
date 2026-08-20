@@ -49,6 +49,17 @@
       </div>
     </div>
 
+    <div class="rejilla">
+      <div>
+        <label class="campo" for="repuestos">Repuestos (opcional)</label>
+        <input name="repuestos" id="repuestos" placeholder="12 agujas de cilindro">
+      </div>
+      <div>
+        <label class="campo" for="horas">Cuánto llevó, en horas (opcional)</label>
+        <input name="horas" id="horas" inputmode="decimal" placeholder="2,5">
+      </div>
+    </div>
+
     <div>
       <label class="campo" for="nota">Nota (opcional)</label>
       <textarea name="nota" id="nota" placeholder="Repuestos cambiados, algo raro que se vio…"></textarea>
@@ -62,7 +73,8 @@
 <div class="bloque">
   <div class="titulo"><h2>Últimos cargados</h2></div>
   <table>
-    <thead><tr><th>Fecha</th><th>Máquina</th><th>Mantenimiento</th><th>Quién</th><th>Nota</th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Máquina</th><th>Mantenimiento</th><th>Quién</th>
+               <th>Repuestos</th><th class="der">Horas</th><th>Nota</th></tr></thead>
     <tbody>
     {% for h in historial %}
       <tr>
@@ -70,6 +82,8 @@
         <td>{{ h.maquina_nombre }}</td>
         <td>{{ h.tipo_nombre }}</td>
         <td>{{ h.hecho_por }}</td>
+        <td class="tenue">{{ h.repuestos or '—' }}</td>
+        <td class="der tenue">{{ h.horas | num(1) if h.horas else '—' }}</td>
         <td class="tenue">{{ h.nota or '—' }}</td>
       </tr>
     {% endfor %}

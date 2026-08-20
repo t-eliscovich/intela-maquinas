@@ -296,11 +296,19 @@ def registrar():
             if datetime.strptime(fecha, "%Y-%m-%d").date() > date.today():
                 raise ValueError("La fecha no puede ser futura.")
 
+            crudo = (request.form.get("horas") or "").strip().replace(",", ".")
+            horas = float(crudo) if crudo else None
+            if horas is not None and not (0 < horas <= 200):
+                raise ValueError("Las horas tienen que ser un número razonable.")
+
             nombre = next(
                 (m["nombre"] for m in maquinas if m["id"] == id_maquina), str(id_maquina)
             )
             store.registrar_service(
-                id_maquina, nombre, tipo_id, fecha, hecho_por, request.form.get("nota")
+                id_maquina, nombre, tipo_id, fecha, hecho_por,
+                request.form.get("nota"),
+                repuestos=request.form.get("repuestos"),
+                horas=horas,
             )
             flash(f"Cargado en {nombre}. Los kilos vuelven a cero.", "ok")
             return redirect(url_for("semaforo"))
@@ -564,6 +572,38 @@ def CAMPOS_MAPA(tipos):
         ("agujas", "Agujas"), ("anio", "Año"), ("nota", "Nota"),
     ]
     return campos
+
+
+# --------------------------------------------------------------------------
+# Todas las máquinas
+# --------------------------------------------------------------------------
+@app.route("/maquinas")
+@requiere_login
+def maquinas_lista():
+    """El listado de las máquinas con su ficha. Se entra a cada una desde acá.
+
+    Las máquinas salen de Asinfo; la ficha, de lo que se cargó. Una máquina sin
+    ficha aparece igual: falta el dato, no falta la máquina.
+    """
+    try:
+        maquinas, _, _ = asinfo.maquinas()
+        error = None
+    except asinfo.AsinfoNoDisponible as exc:
+        maquinas, error = [], str(exc)
+
+    fichas = store.fichas()
+    ultimos = store.ultimos_por_maquina_y_tipo()
+    tipos = store.tipos()
+
+    filas = [{
+        "maquina": m,
+        "ficha": fichas.get(m["id"], {}),
+        "ultimos": {t["id"]: (ultimos.get((m["id"], t["id"])) or {}).get("fecha")
+                    for t in tipos},
+    } for m in maquinas]
+    filas.sort(key=lambda f: (f["maquina"]["numero"] is None, f["maquina"]["numero"] or 0))
+
+    return render_template("maquinas.html", filas=filas, tipos=tipos, error=error)
 
 
 # --------------------------------------------------------------------------
