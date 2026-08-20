@@ -7,3 +7,9 @@ logs/
 *.log
 .DS_Store
 vista/
+
+# Planillas de planta. Son datos de la fabrica y este repo es PUBLICO.
+MANTENIMIENTO/
+CONTROL DE AGJUSTE/
+*.xlsx
+~$*
