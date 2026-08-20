@@ -488,11 +488,25 @@ def carga_revisar(token):
         return redirect(url_for("carga"))
 
     nombres_hojas = excel.hojas(ruta)
-    hoja = request.form.get("hoja") or nombres_hojas[0]
-    titulos, filas = excel.leer(ruta, hoja)
-    detectado = excel.detectar(titulos, tipos)
-    mapa = _mapa_del_form(request.form, titulos, tipos, detectado)
-    listas, descartes = excel.armar(titulos, filas, mapa, maquinas, tipos)
+
+    # Dos formas de planilla, y se reconoce sola cuál es:
+    #
+    #   * La de planta: UNA HOJA POR MÁQUINA, con la ficha arriba y el
+    #     historial abajo. No hay nada que mapear.
+    #   * Una tabla comun: una fila por maquina. Ahi si hay que decir que
+    #     columna es cada cosa.
+    por_maquina, descartes_pm = excel.leer_por_maquina(ruta, maquinas, tipos)
+    es_por_maquina = len(por_maquina) >= 3
+
+    if es_por_maquina:
+        listas, descartes = por_maquina, descartes_pm
+        hoja, titulos, mapa = None, [], {}
+    else:
+        hoja = request.form.get("hoja") or nombres_hojas[0]
+        titulos, filas = excel.leer(ruta, hoja)
+        detectado = excel.detectar(titulos, tipos)
+        mapa = _mapa_del_form(request.form, titulos, tipos, detectado)
+        listas, descartes = excel.armar(titulos, filas, mapa, maquinas, tipos)
 
     if request.method == "POST" and request.form.get("boton") == "confirmar":
         try:
@@ -508,8 +522,10 @@ def carga_revisar(token):
                                           mant["fecha"], quien, "Cargado desde el Excel"))
                     if mant["cada_kg"]:
                         topes.append((m["id"], mant["tipo"]["id"], mant["cada_kg"]))
+                # .get: no todos los lectores traen todos los campos, y un
+                # campo que no vino es NULL, no un error.
                 if any(v is not None for v in item["ficha"].values()):
-                    fichas.append((m["id"], *[item["ficha"][c] for c in store.CAMPOS_FICHA]))
+                    fichas.append((m["id"], *[item["ficha"].get(c) for c in store.CAMPOS_FICHA]))
 
             hecho = store.cargar_lote(servicios, topes, fichas)
             os.remove(ruta)
@@ -523,6 +539,7 @@ def carga_revisar(token):
     return render_template(
         "carga.html",
         paso="revisar",
+        formato="por_maquina" if es_por_maquina else "tabla",
         token=token,
         tipos=tipos,
         hojas=nombres_hojas,

@@ -26,6 +26,9 @@
 
 <form method="POST" action="{{ url_for('carga_revisar', token=token) }}">
 
+<input type="hidden" name="formato" value="{{ formato }}">
+
+{% if formato == 'tabla' %}
 <div class="bloque">
   <div class="titulo"><h2>Qué columna es cada cosa</h2></div>
   <div class="relleno">
@@ -57,6 +60,12 @@
   </div>
   </div>
 </div>
+{% else %}
+<div class="bloque">
+  <div class="titulo"><h2>Una hoja por máquina</h2>
+    <p>{{ hojas | length }} hojas · la ficha de arriba y la última fecha de cada mantenimiento</p></div>
+</div>
+{% endif %}
 
 <div class="bloque">
   <div class="titulo"><h2>Va a entrar</h2><p>{{ listas | length }} máquinas</p></div>
@@ -88,7 +97,12 @@
         {% endfor %}
         <td class="tenue">
           {% set f = item.ficha %}
-          {{ [f.marca, f.modelo, f.galga and ('galga ' ~ f.galga), f.diametro and (f.diametro | num(0) ~ '"'), f.anio] | select | join(' · ') or '—' }}
+          {{ [f.marca, f.modelo,
+              f.diametro and ('D' ~ (f.diametro | num(0))),
+              f.galga and ('G' ~ f.galga),
+              f.agujas and ((f.agujas | num(0)) ~ ' agujas'),
+              f.alimentadores and (f.alimentadores ~ ' alim'),
+              f.anio] | select | join(' · ') or '—' }}
         </td>
         <td>
           {% for a in item.avisos %}

@@ -106,9 +106,18 @@ def bootstrap() -> None:
                 alimentadores  integer,
                 agujas         integer,
                 anio           integer,
+                serie          text,
+                tipo_agujas    text,
                 nota           text,
                 editado_en     timestamptz NOT NULL DEFAULT now()
             );
+
+            -- La tabla se crea con CREATE IF NOT EXISTS, asi que una columna
+            -- agregada despues no llega sola a una base que ya existia.
+            ALTER TABLE mantenimiento.maquina_ficha
+                ADD COLUMN IF NOT EXISTS serie text;
+            ALTER TABLE mantenimiento.maquina_ficha
+                ADD COLUMN IF NOT EXISTS tipo_agujas text;
             """
         )
         con.commit()
@@ -273,7 +282,7 @@ def guardar_tope(id_maquina: int, tipo_id: int, cada_kg) -> None:
 
 # --- Ficha de la máquina ---------------------------------------------------
 CAMPOS_FICHA = ("marca", "modelo", "galga", "diametro", "alimentadores",
-                "agujas", "anio", "nota")
+                "agujas", "anio", "serie", "tipo_agujas", "nota")
 
 
 def fichas() -> dict[int, dict]:

@@ -179,6 +179,9 @@ def a_fecha(valor) -> date | None:
 
 def _texto(valor) -> str | None:
     s = str(valor).strip() if valor not in (None, "") else ""
+    s = re.sub(r"\s+", " ", s)
+    # Las celdas de planta traen el año pegado al final ("PILOTELLI 2013").
+    s = re.sub(r"\s+(19|20)\d{2}$", "", s)
     return s or None
 
 
@@ -257,5 +260,233 @@ def armar(titulos, filas, mapa, maquinas, tipos, hoy=None):
     for item in listas:
         if veces[item["maquina"]["id"]] > 1:
             item["avisos"].append("Esta máquina aparece más de una vez en el Excel")
+
+    return listas, descartes
+
+
+# --------------------------------------------------------------------------
+# La planilla que usan en planta: UNA HOJA POR MÁQUINA
+# --------------------------------------------------------------------------
+# Arriba la ficha de la máquina, abajo el historial desde 2018. Ninguna hoja
+# está armada igual que la otra: los mismos datos aparecen en filas distintas,
+# con nombres distintos ("AGUJAS" y "Cantidad de agujas"), y el diámetro y la
+# galga a veces van juntos en una celda ("D 32   G24") y a veces separados
+# bajo el título "DIAMETRO/ GG" ("32 / 24").
+#
+# Por eso no se lee por posición: se busca cada dato por su nombre, y lo que
+# no aparece queda vacío. Vacío es correcto; inventado no.
+
+# RELANIT y JVCE no van: son modelos, no marcas.
+_MARCAS = ("MAYER", "TERROT", "FUKUHARA", "PAILUNG", "JIUNN LONG", "ORIZIO",
+           "MONARCH", "UNITEX", "SANTONI", "WELLKNIT", "KEUMYONG")
+
+# Con "aguja" adentro es cambio de agujas; todo lo demás es limpieza. Es la
+# unica division que la planilla banca: el tipo no esta en una columna, esta
+# escrito a mano adentro del texto de la actividad.
+_ES_AGUJAS = re.compile(r"aguja", re.IGNORECASE)
+
+
+def _celdas(filas, hasta):
+    """El bloque de arriba como lista de (fila, columna, texto)."""
+    salida = []
+    for i, fila in enumerate(filas[:hasta]):
+        for j, celda in enumerate(fila):
+            if celda not in (None, ""):
+                salida.append((i, j, celda))
+    return salida
+
+
+def _valor_de(bloque, etiquetas, filas, salteo=(), preferir="abajo"):
+    """El valor que acompaña a una etiqueta: abajo o a la derecha.
+
+    Se saltean las celdas que son otra etiqueta — si no, "Responsable:" se
+    lleva el titulo de al lado en vez del nombre.
+    """
+    etiquetas = tuple(_limpio(e) for e in etiquetas)
+    todas = tuple(_limpio(s) for s in salteo)
+    for i, j, celda in bloque:
+        if not isinstance(celda, str):
+            continue
+        texto = _limpio(celda)
+        if not any(texto == e or texto.startswith(e) for e in etiquetas):
+            continue
+        abajo, derecha = [], []
+        for di in (1, 2, 3):
+            if i + di < len(filas) and j < len(filas[i + di]):
+                abajo.append(filas[i + di][j])
+        for dj in (1, 2, 3):
+            if j + dj < len(filas[i]):
+                derecha.append(filas[i][j + dj])
+        candidatas = derecha + abajo if preferir == "derecha" else abajo + derecha
+        for c in candidatas:
+            if c in (None, ""):
+                continue
+            if isinstance(c, str):
+                limpio = _limpio(c)
+                if not limpio or limpio in todas or any(limpio.startswith(e) for e in etiquetas):
+                    continue
+            return c
+    return None
+
+
+def _fila_de_titulos(filas):
+    """Dónde arranca el historial: la fila que dice «Fecha»."""
+    for i, fila in enumerate(filas):
+        for celda in fila:
+            if isinstance(celda, str) and _limpio(celda) == "fecha":
+                return i
+    return None
+
+
+def _ficha_de_hoja(filas, corte):
+    bloque = _celdas(filas, corte)
+    etiquetas = ("equipo", "modelo", "numero", "responsable", "tipo de aguja",
+                 "tipo de agujas", "cantidad de agujas", "agujas",
+                 "año de fabricacion", "diametro gg", "fecha", "observaciones",
+                 "repuestos", "actividad realizada", "tipo de mantenimiento")
+
+    texto_todo = " ".join(str(c) for _, _, c in bloque)
+
+    # La marca esta al lado de "CIRCULAR": asi esta armada la planilla. Buscarla
+    # suelta en todo el encabezado se equivoca, porque los nombres aparecen
+    # tambien adentro de los codigos de aguja.
+    # A la derecha, no abajo: abajo de "CIRCULAR" hay un codigo interno.
+    marca = _valor_de(bloque, ("circular",), filas, etiquetas, preferir="derecha")
+    if not isinstance(marca, str) or _limpio(marca) in ("", "circular"):
+        marca = next((m for m in _MARCAS if m.lower() in texto_todo.lower()), None)
+    modelo = _valor_de(bloque, ("modelo",), filas, etiquetas)
+    serie = _valor_de(bloque, ("numero", "n de serie", "serie"), filas, etiquetas)
+    responsable = _valor_de(bloque, ("responsable",), filas, etiquetas)
+    anio = a_numero(_valor_de(bloque, ("año de fabricacion", "ano de fabricacion"),
+                              filas, etiquetas))
+    if anio is not None and not (1970 <= anio <= 2035):
+        anio = None
+    if anio is None:
+        # Muchas hojas ponen el año suelto, sin etiqueta. Un numero entre 1990
+        # y hoy es un año; la cantidad de agujas (2460, 3168) queda afuera del
+        # rango, y el numero de serie tiene cinco cifras.
+        for _, _, celda in bloque:
+            if isinstance(celda, int) and 1990 <= celda <= date.today().year:
+                anio = celda
+                break
+
+    # Diámetro y galga: juntos ("D 32  G24") o bajo "DIAMETRO/ GG" ("32 / 24").
+    diametro = galga = None
+    junto = re.search(r"D\s*(\d{2})\s*[/xX]?\s*G+\s*(\d{1,2})", texto_todo)
+    if junto:
+        diametro, galga = int(junto.group(1)), int(junto.group(2))
+    else:
+        crudo = _valor_de(bloque, ("diametro gg", "diametro"), filas, etiquetas)
+        partido = re.findall(r"\d{1,2}", str(crudo or ""))
+        if len(partido) >= 2:
+            diametro, galga = int(partido[0]), int(partido[1])
+
+    alimentadores = None
+    ali = re.search(r"(\d{2,3})\s*ALIMENTADORES", texto_todo, re.IGNORECASE)
+    if ali:
+        alimentadores = int(ali.group(1))
+
+    # Agujas: el numero grande que acompaña a "agujas".
+    agujas = None
+    for etiqueta in ("cantidad de agujas", "agujas", "n agujas"):
+        agujas = a_numero(_valor_de(bloque, (etiqueta,), filas, etiquetas))
+        if agujas and 500 <= agujas <= 20000:
+            break
+        agujas = None
+
+    tipo_agujas = _valor_de(bloque, ("tipo de agujas", "tipo de aguja"), filas, etiquetas)
+
+    return {
+        "marca": _texto(marca),
+        "modelo": _texto(modelo),
+        "galga": galga,
+        "diametro": diametro,
+        "alimentadores": alimentadores,
+        "agujas": agujas,
+        "anio": anio,
+        "serie": _texto(serie),
+        "tipo_agujas": _texto(tipo_agujas),
+        "nota": _texto(responsable) and f"Responsable: {_texto(responsable)}",
+    }
+
+
+def leer_por_maquina(ruta, maquinas, tipos, hoy=None):
+    """Lee la planilla de planta: una hoja por máquina.
+
+    De cada hoja saca la ficha y la ÚLTIMA fecha de cada tipo de mantenimiento.
+    Devuelve (listas, descartes), igual que `armar`, para que la pantalla de
+    revisión sea la misma.
+    """
+    hoy = hoy or date.today()
+    por_numero = {m["numero"]: m for m in maquinas if m.get("numero") is not None}
+    tipo_agujas = next((t for t in tipos if "aguja" in t["nombre"].lower()), None)
+    tipo_limpieza = next((t for t in tipos if t is not tipo_agujas), None)
+
+    wb = load_workbook(ruta, read_only=True, data_only=True)
+    listas, descartes = [], []
+    try:
+        for nombre_hoja in wb.sheetnames:
+            numero = a_numero(nombre_hoja)
+            if numero is None:
+                descartes.append({"fila": nombre_hoja, "texto": "",
+                                  "motivo": "La hoja no dice de qué máquina es"})
+                continue
+            maquina = por_numero.get(numero)
+            if not maquina:
+                descartes.append({"fila": nombre_hoja, "texto": f"MQ {numero}",
+                                  "motivo": f"La máquina {numero} no está en Asinfo"})
+                continue
+
+            filas = [list(f) for f in wb[nombre_hoja].iter_rows(values_only=True)]
+            corte = _fila_de_titulos(filas)
+            if corte is None:
+                descartes.append({"fila": nombre_hoja, "texto": f"MQ {numero}",
+                                  "motivo": "La hoja está vacía"})
+                continue
+
+            ficha = _ficha_de_hoja(filas, corte)
+
+            # Última fecha de cada tipo. El tipo no está en una columna: está
+            # escrito adentro del texto, así que se decide por lo que dice.
+            ultimas: dict[int, date] = {}
+            cuantas = 0
+            for fila in filas[corte + 1:]:
+                fecha = next((c.date() for c in fila if isinstance(c, datetime)), None)
+                if not fecha or fecha > hoy:
+                    continue
+                cuantas += 1
+                texto = " ".join(str(c) for c in fila if isinstance(c, str))
+                tipo = tipo_agujas if (_ES_AGUJAS.search(texto) and tipo_agujas) else tipo_limpieza
+                if not tipo:
+                    continue
+                if fecha > ultimas.get(tipo["id"], date.min):
+                    ultimas[tipo["id"]] = fecha
+
+            if not ultimas:
+                descartes.append({"fila": nombre_hoja, "texto": f"MQ {numero}",
+                                  "motivo": "La hoja no tiene ninguna fecha cargada"})
+                continue
+
+            item = {
+                "fila": nombre_hoja,
+                "maquina": maquina,
+                "ficha": ficha,
+                "mantenimientos": [],
+                "avisos": [],
+            }
+            for tipo in tipos:
+                fecha = ultimas.get(tipo["id"])
+                if not fecha:
+                    continue
+                item["mantenimientos"].append(
+                    {"tipo": tipo, "fecha": fecha, "cada_kg": None})
+                meses = (hoy - fecha).days // 30
+                if meses >= 4:
+                    item["avisos"].append(
+                        f"{tipo['nombre']}: el último anotado es de hace {meses} meses")
+            item["avisos"].append(f"{cuantas} registros en la hoja")
+            listas.append(item)
+    finally:
+        wb.close()
 
     return listas, descartes

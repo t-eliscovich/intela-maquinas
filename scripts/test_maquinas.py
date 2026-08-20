@@ -179,6 +179,64 @@ repetida, _ = excel.armar(titulos,
 check("avisa la maquina repetida",
       all(any("más de una vez" in a for a in r["avisos"]) for r in repetida))
 
+# --- 6b. la planilla de planta: una hoja por maquina ----------------------
+print("Planilla por maquina:")
+from openpyxl import Workbook as _WB
+wb2 = _WB()
+h1 = wb2.active; h1.title = "MAQ 1"
+h1.append(["R01-Registro de Mantenimiento"])
+h1.append([])
+h1.append([])
+h1.append(["Equipo:", "", "Cantidad de agujas", "MODELO", "Responsable", "NUMERO"])
+h1.append(["CIRCULAR", "MAYER", 2460, "Relanit 3.2 HS", "", 73830])
+h1.append(["17////1", "", "", "D 32   G24"])
+h1.append(["", "", "", "", "ANGEL PONCE"])
+h1.append(["Año de fabricación:", "", "", 2017])
+h1.append(["Fecha", "", "Fecha", "Tipo de mantenimiento", "Actividad realizada"])
+h1.append([datetime(2024, 5, 3), "", "", "limpiesa de cilindro", ""])
+h1.append([datetime(2026, 7, 17), "", "", "limpieza de cilindro", ""])
+h1.append([datetime(2026, 2, 1), "", "", "cambio de agujas del cilindro", ""])
+h2 = wb2.create_sheet("MQ 2"); h2.append(["Registro"])   # hoja vacia
+h3 = wb2.create_sheet("MAQ.3")
+h3.append(["Equipo:", "", "AGUJAS", "MODELO", "DIAMETRO/ GG", "NUMERO"])
+h3.append(["CIRCULAR", "JIUNN LONG", 3168, "JLD-T", "36  /  28", 230502])
+h3.append(["", "", "100 ALIMENTADORES", "", "", ""])
+h3.append(["Fecha", "Tipo de mantenimiento"])
+h3.append([datetime(2026, 3, 5), "limpiesa de memminger"])
+h4 = wb2.create_sheet("MQ 99")                            # no esta en Asinfo
+h4.append(["Fecha", "x"]); h4.append([datetime(2026, 1, 1), "limpieza"])
+import io as _io
+buf2 = _io.BytesIO(); wb2.save(buf2); buf2.seek(0)
+import tempfile as _tmp, os as _os
+ruta2 = _os.path.join(_tmp.gettempdir(), "planilla_test.xlsx")
+open(ruta2, "wb").write(buf2.getvalue())
+
+TIPOS2 = [{"id": 1, "nombre": "Cambio de agujas", "cada_kg": None, "activo": True},
+          {"id": 2, "nombre": "Limpieza", "cada_kg": None, "activo": True}]
+pm, pd_ = excel.leer_por_maquina(ruta2, MAQS, TIPOS2, hoy=date(2026, 8, 20))
+porn = {i["maquina"]["numero"]: i for i in pm}
+check("lee una hoja por maquina", len(pm) == 2)
+f1 = porn[1]["ficha"]
+check("marca de al lado de CIRCULAR", f1["marca"] == "MAYER")
+check("modelo", f1["modelo"] == "Relanit 3.2 HS")
+check("diametro y galga de 'D 32  G24'", (f1["diametro"], f1["galga"]) == (32, 24))
+check("agujas", f1["agujas"] == 2460)
+check("anio", f1["anio"] == 2017)
+check("numero de serie", str(f1["serie"]) == "73830")
+m1 = {x["tipo"]["nombre"]: x["fecha"] for x in porn[1]["mantenimientos"]}
+check("ultima limpieza", m1["Limpieza"] == date(2026, 7, 17))
+check("el cambio de agujas se separa por el texto",
+      m1["Cambio de agujas"] == date(2026, 2, 1))
+f3 = porn[3]["ficha"]
+check("diametro y galga de '36 / 28'", (f3["diametro"], f3["galga"]) == (36, 28))
+check("alimentadores", f3["alimentadores"] == 100)
+check("avisa el mantenimiento viejo",
+      any("meses" in a for a in porn[3]["avisos"]))
+check("la hoja vacia queda afuera con motivo",
+      any(d["fila"] == "MQ 2" and "vacía" in d["motivo"] for d in pd_))
+check("la maquina que no esta en Asinfo queda afuera",
+      any("99" in str(d["texto"]) for d in pd_))
+
 # --- 7. la carga entera, de punta a punta ---------------------------------
 print("Carga del Excel:")
 import io

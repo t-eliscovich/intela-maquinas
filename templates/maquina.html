@@ -23,6 +23,10 @@
           <input name="agujas" id="agujas" value="{{ ficha.agujas or '' }}"></div>
         <div><label class="campo" for="anio">Año</label>
           <input name="anio" id="anio" value="{{ ficha.anio or '' }}"></div>
+        <div><label class="campo" for="serie">N° de serie</label>
+          <input name="serie" id="serie" value="{{ ficha.serie or '' }}"></div>
+        <div style="grid-column:span 2"><label class="campo" for="tipo_agujas">Tipo de agujas</label>
+          <input name="tipo_agujas" id="tipo_agujas" value="{{ ficha.tipo_agujas or '' }}"></div>
       </div>
       <div><label class="campo" for="nota">Nota</label>
         <textarea name="nota" id="nota">{{ ficha.nota or '' }}</textarea></div>
