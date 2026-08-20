@@ -39,6 +39,21 @@ app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024  # un Excel de planta es chic
 # Cuánto antes del tope se pone amarillo.
 AVISO = 0.80
 
+# Qué commit está corriendo. Lo escribe el auto-updater al reemplazar la
+# carpeta; si el archivo no está, decimos que no se sabe en vez de inventar.
+def _version():
+    for ruta in (os.path.join(os.path.dirname(os.path.abspath(__file__)), ".version"),
+                 r"C:\maquinas_update\.commit"):
+        try:
+            with open(ruta) as f:
+                return f.read().strip()[:7] or "?"
+        except OSError:
+            continue
+    return "?"
+
+
+VERSION = _version()
+
 # Dónde se guarda el Excel mientras se revisa antes de confirmar.
 CARPETA_CARGA = os.path.join(tempfile.gettempdir(), "maquinas_carga")
 _TOKEN = re.compile(r"^[0-9a-f]{16}$")
@@ -581,6 +596,10 @@ def healthz():
         "ok": ERROR_ARRANQUE is None,
         "base": "error" if ERROR_ARRANQUE else "ok",
         "asinfo_configurado": asinfo.configurado(),
+        # Qué versión está corriendo de verdad. Sin esto no hay forma de saber
+        # si el server se actualizó: se pushea, pasa el CI, y uno se queda
+        # mirando la pantalla vieja sin entender por qué.
+        "version": VERSION,
     }
     if ERROR_ARRANQUE:
         estado["error_arranque"] = ERROR_ARRANQUE
