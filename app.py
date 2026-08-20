@@ -193,7 +193,15 @@ def armar_semaforo():
         if not por_tipo:
             continue
         # El peor de los que se vencen por kilos manda el color de la fila.
-        principal = max(con_tope, key=lambda i: i["pct"] or 0) if con_tope else None
+        if con_tope:
+            principal = max(con_tope, key=lambda i: i["pct"] or 0)
+        else:
+            # Sin tope no hay semáforo, pero el dato sirve igual: se muestra
+            # cuántos kilos lleva desde la última vez que se le hizo. Un guión
+            # no dice nada; el número deja decidir a ojo hasta que el mecánico
+            # ponga el tope.
+            hechos = [i for i in por_tipo.values() if i.get("desde")]
+            principal = (max(hechos, key=lambda i: i["desde"]) if hechos else None)
         filas.append({
             "maquina": maquina,
             "principal": principal,

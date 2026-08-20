@@ -119,8 +119,14 @@ check("los dias no prenden nada", por_maquina[12]["principal"]["dias"] == 30
 TIPOS[0]["cada_kg"] = None
 filas, _, _, _ = A.armar_semaforo()
 check("sin tope no pinta nada",
-      all(f["principal"] is None and f["por_tipo"][1]["estado"] == "sin_tope"
-          for f in filas))
+      all(f["estado"] == "sin_tope" and f["pct"] is None for f in filas))
+# Pero el dato se muestra igual: cuántos kilos lleva desde la última vez. Un
+# guión no dice nada; el número deja decidir a ojo hasta que haya tope.
+por_maquina = {f["maquina"]["id"]: f for f in filas}
+check("sin tope igual dice cuanto lleva desde la ultima vez",
+      por_maquina[10]["principal"]["kg"] == 80000.0
+      and por_maquina[10]["principal"]["tope"] is None
+      and por_maquina[10]["principal"]["falta"] is None)
 TIPOS[0]["cada_kg"] = 50000
 
 # --- 3b. un tipo sin tope de kilos NO prende el semáforo -------------------

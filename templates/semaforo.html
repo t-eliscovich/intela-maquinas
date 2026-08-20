@@ -40,7 +40,7 @@
     <b style="font-size:17px;color:var(--verde)">{{ resumen.ok }}</b><small>En regla</small></div>
   {% if resumen.sin_tope %}
   <div class="cifra" style="padding:5px 12px">
-    <b class="tenue" style="font-size:17px">{{ resumen.sin_tope }}</b><small>Sin kilos puestos</small></div>
+    <b class="tenue" style="font-size:17px">{{ resumen.sin_tope }}</b><small>Sin tope puesto</small></div>
   {% endif %}
   {% if resumen.sin_arrancar %}
   <div class="cifra" style="padding:5px 12px">
@@ -90,13 +90,17 @@
             {% elif f.estado == 'por_vencer' %}Falta poco
             {% elif f.estado == 'ok' %}En regla
             {% elif f.estado == 'sin_arrancar' %}Sin arrancar
-            {% else %}Sin kilos{% endif %}
+            {% else %}Sin tope{% endif %}
           </span>
           {% if p %}<span class="tenue" style="font-size:11px">{{ p.tipo.nombre }}</span>{% endif %}
         </td>
+        {# Sin tope no hay barra ni «le falta», pero los kilos se muestran
+           igual: es lo que lleva desde la última vez, y sirve para decidir a
+           ojo hasta que el mecánico ponga el número. #}
         <td class="der" style="min-width:125px">
           {% if p and p.desde %}
-            <b>{{ p.kg | num(0) }}</b>{% if p.tope %} <span class="tenue">de {{ p.tope | num(0) }}</span>{% endif %}
+            <b>{{ p.kg | num(0) }}</b>
+            {% if p.tope %} <span class="tenue">de {{ p.tope | num(0) }}</span>{% endif %}
             {% if p.pct is not none %}
               {% set ancho = (p.pct * 100) if p.pct < 1 else 100 %}
               {% set color = 'var(--rojo)' if p.pct >= 1 else ('var(--ambar)' if p.pct >= 0.8 else 'var(--verde)') %}
@@ -105,7 +109,8 @@
           {% else %}<span class="tenue">—</span>{% endif %}
         </td>
         <td class="der">
-          {% if not p or p.falta is none %}<span class="tenue">—</span>
+          {% if not p or p.desde is none %}<span class="tenue">—</span>
+          {% elif p.falta is none %}<span class="tenue">sin tope</span>
           {% elif p.falta > 0 %}{{ p.falta | num(0) }} kg
           {% else %}<span style="color:var(--rojo);font-weight:700">+{{ (-p.falta) | num(0) }} kg</span>
           {% endif %}
