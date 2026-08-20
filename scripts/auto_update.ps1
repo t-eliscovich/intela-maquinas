@@ -139,6 +139,23 @@ try {
     if (-not $ok) { throw "la version nueva no contesta /healthz" }
 
     Set-Content -Path $marca -Value $sha -Encoding ASCII
+
+    # El updater se actualiza a si mismo. Sin esto, un arreglo A ESTE script
+    # se pushea, llega a la carpeta de la app... y nunca se usa, porque el que
+    # corre es la copia vieja de C:\maquinas_update. Cada arreglo del updater
+    # obligaba a entrar al server a mano. PowerShell lee el archivo entero
+    # antes de ejecutarlo, asi que pisarlo ahora no rompe esta corrida.
+    $mio = Join-Path $PSScriptRoot "auto_update.ps1"
+    $nuevoUpdater = Join-Path $app "scripts\auto_update.ps1"
+    if ((Test-Path $nuevoUpdater) -and (Test-Path $mio)) {
+        $a = (Get-FileHash $nuevoUpdater).Hash
+        $b = (Get-FileHash $mio).Hash
+        if ($a -ne $b) {
+            Copy-Item $nuevoUpdater $mio -Force
+            Escribir "el updater se actualizo a si mismo"
+        }
+    }
+
     Escribir "OK - actualizado a $($sha.Substring(0,8)) y contestando"
 } catch {
     Escribir "FALLO: $($_ | Out-String)"
