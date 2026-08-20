@@ -20,8 +20,13 @@ $repo    = "https://raw.githubusercontent.com/t-eliscovich/intela-maquinas/main/
 if (-not (Test-Path $carpeta)) { New-Item -ItemType Directory -Path $carpeta -Force | Out-Null }
 
 # 2. Bajar la ultima version del updater desde GitHub.
+#    OJO: raw.githubusercontent.com cachea hasta 5 minutos. Sin romper el
+#    cache, uno pushea el arreglo, corre esto, y el server se baja igual la
+#    version vieja — y el error que acabas de arreglar vuelve a aparecer.
+#    Paso el 20/08/2026, dos veces seguidas.
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-Invoke-WebRequest -UseBasicParsing -Uri $repo -OutFile $script
+$sinCache = $repo + "?cb=" + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+Invoke-WebRequest -UseBasicParsing -Uri $sinCache -OutFile $script -Headers @{ 'Cache-Control' = 'no-cache' }
 Write-Output "updater bajado en $script"
 
 # 3. Registrar la tarea: cada 2 minutos, como SYSTEM, sin limite de tiempo.
