@@ -27,7 +27,9 @@ jobs:
         run: pip install --quiet -r requirements.txt
 
       - name: Sintaxis de Python
-        run: python -m py_compile app.py store.py asinfo.py config.py
+        # excel.py y ajustes.py son los que leen las planillas y son los
+        # mas largos: quedaban afuera de este control.
+        run: python -m py_compile app.py store.py asinfo.py config.py excel.py ajustes.py scripts/*.py
 
       - name: Sintaxis de los templates
         # py_compile no ve los .html: un {% endif %} de menos sólo se descubre

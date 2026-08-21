@@ -14,6 +14,7 @@ tela cruda con la máquina que lo tejió.
 from __future__ import annotations
 
 import logging
+import math
 import os
 import re
 import secrets
@@ -139,6 +140,32 @@ def _tipo_elegido(escrito, tipos):
     if not any(t["id"] == tipo_id for t in tipos):
         raise ValueError("Ese mantenimiento no existe.")
     return tipo_id
+
+
+def _kilos_escritos(crudo, que):
+    """Un tope de kilos escrito a mano. Vacío es None: esa máquina no tiene
+    número propio y cae al del tipo.
+
+    A mano y no con `a_kilos`: ése limpia todo lo que no sea dígito y se lleva
+    puesto el signo, así que un «-5» entraba como 5.
+
+    Y no con `float()` pelado: `float("nan")` no falla y `nan <= 0` es FALSO,
+    así que un «nan» pasaba la validación y quedaba guardado como tope. Después
+    ninguna comparación contra nan es verdadera y esa máquina decía «En regla»
+    para siempre. Un «inf» hace lo mismo por el otro lado: los kilos divididos
+    por infinito dan cero. Un falso verde es exactamente lo que este programa
+    existe para evitar, así que los dos se rechazan acá.
+    """
+    crudo = (crudo or "").strip().replace(".", "").replace(",", ".")
+    if not crudo:
+        return None
+    try:
+        kg = float(crudo)
+    except ValueError:
+        raise ValueError(f"{que}: eso no es un número de kilos.")
+    if not math.isfinite(kg) or kg <= 0:
+        raise ValueError(f"{que}: los kilos tienen que ser mayores que cero.")
+    return kg
 
 
 def _adonde_iba():
@@ -371,7 +398,13 @@ def _buscar_maquina(escrito, maquinas):
     encontrados = _re.findall(r"\d+", str(escrito or ""))
     if not encontrados:
         raise ValueError("Poné el número de la máquina. Por ejemplo: 1")
-    numero = int(encontrados[-1])
+    # Se tomaba el último número escrito: «12,5» cargaba en la MQ 5 y
+    # «MQ 12 galga 28» en la 28, sin que nada lo dijera. Con dos números
+    # distintos no se elige — se pregunta.
+    numeros = {int(n) for n in encontrados}
+    if len(numeros) > 1:
+        raise ValueError("Poné un solo número de máquina. Por ejemplo: 1")
+    numero = numeros.pop()
     for m in maquinas:
         if m.get("numero") == numero:
             return m["id"]
@@ -446,8 +479,7 @@ def tipos_view():
             nombre = request.form.get("nombre", "").strip()
             if not nombre:
                 raise ValueError("Ponele un nombre.")
-            crudo = (request.form.get("cada_kg") or "").strip()
-            cada_kg = float(crudo.replace(".", "").replace(",", ".")) if crudo else None
+            cada_kg = _kilos_escritos(request.form.get("cada_kg"), nombre)
 
             tipo_id = request.form.get("tipo_id")
             if tipo_id:
@@ -1028,17 +1060,8 @@ def maquina_detalle(id_maquina):
             # el mecánico se iba creyendo que no se había guardado nada.
             nuevos_topes = []
             for tipo in tipos:
-                crudo = (request.form.get(f"tope_{tipo['id']}") or "").strip()
-                # A mano, no con `a_kilos`: ése limpia todo lo que no sea
-                # dígito y se lleva puesto el signo, así que un «-5» entraba
-                # como 5 y la validación no se enteraba.
-                crudo = crudo.replace(".", "").replace(",", ".")
-                try:
-                    kg = float(crudo) if crudo else None
-                except ValueError:
-                    raise ValueError(f"{tipo['nombre']}: eso no es un número de kilos.")
-                if kg is not None and kg <= 0:
-                    raise ValueError("Los kilos tienen que ser mayores que cero.")
+                kg = _kilos_escritos(request.form.get(f"tope_{tipo['id']}"),
+                                     tipo["nombre"])
                 nuevos_topes.append((tipo["id"], kg))
 
             store.guardar_ficha(id_maquina, datos)
