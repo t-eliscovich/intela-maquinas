@@ -44,12 +44,12 @@
   <div class="cifra" style="padding:5px 12px">
     <b style="font-size:17px;color:var(--verde)">{{ resumen.ok }}</b><small>En regla</small></div>
   {% if resumen.sin_tope %}
-  <div class="cifra" style="padding:5px 12px">
-    <b class="tenue" style="font-size:17px">{{ resumen.sin_tope }}</b><small>Sin tope puesto</small></div>
+  <a class="cifra" style="padding:5px 12px" href="{{ url_for('falta') }}">
+    <b class="tenue" style="font-size:17px">{{ resumen.sin_tope }}</b><small>Sin tope puesto</small></a>
   {% endif %}
   {% if resumen.sin_arrancar %}
-  <div class="cifra" style="padding:5px 12px">
-    <b class="tenue" style="font-size:17px">{{ resumen.sin_arrancar }}</b><small>Sin arrancar</small></div>
+  <a class="cifra" style="padding:5px 12px" href="{{ url_for('falta') }}">
+    <b class="tenue" style="font-size:17px">{{ resumen.sin_arrancar }}</b><small>Sin arrancar</small></a>
   {% endif %}
 </div>
 

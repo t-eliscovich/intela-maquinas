@@ -108,6 +108,11 @@ store.telas = lambda: [
 store.resumen_ajustes = lambda: {"filas": 1153, "maquinas": 42, "con_fecha": 931,
                                  "desde": date(2021, 5, 31), "hasta": hoy}
 store.cuantos_de_la_carga_vieja = lambda: 66
+store.descartes = lambda: [
+    {"id": 1, "planilla": "Control de ajuste", "donde": "MAQ 52",
+     "motivo": "La hoja no tiene títulos: se leyeron 21 filas por posición."},
+    {"id": 2, "planilla": "Mantenimiento", "donde": "MAQ.9, fila 3",
+     "motivo": "La fecha «6/8//2018» está escrita a mano"}]
 store.guardar_historial = lambda filas: {"mantenimientos": len(filas), "borrados": 66}
 AGUJA_FALSA = {"id_maquina": 101, "descripcion": "MAYER", "plato": None,
                "cilindro": "VO LS-140,50 G00 36 · VO LS-140,50 G00 37",
@@ -202,7 +207,8 @@ for nombre, ruta in [("semaforo", "/"), ("semaforo-vencidas", "/?solo=vencidas")
                      ("ajustes", "/ajustes"), ("ajustes-por-tela", "/ajustes?tela=PIQUE"),
                      ("repuestos", "/repuestos"),
                      ("repuestos-levas", "/repuestos?ver=levas"),
-                     ("repuestos-editando", "/repuestos?ver=levas&editar=1")]:
+                     ("repuestos-editando", "/repuestos?ver=levas&editar=1"),
+                     ("falta", "/falta")]:
     guardar(nombre, c.get(ruta))
 
 # La pantalla de revisión necesita un Excel: armamos uno parecido al de planta.

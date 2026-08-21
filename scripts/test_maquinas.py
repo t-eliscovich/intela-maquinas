@@ -1180,6 +1180,40 @@ _r8 = c.post("/carga", data={"archivo": (_buf9, "otra.xlsx")},
              content_type="multipart/form-data")
 check("si no se puede guardar, la carga sigue igual", _r8.status_code == 302)
 
+# --- 8e-octies. la pantalla de lo que falta -------------------------------
+# Estaba repartida: los topes en el semáforo, las fichas en Máquinas, y lo que
+# no entró de la planilla se veía UNA vez al cargarla y después desaparecía.
+print("Qué falta:")
+_guardados_desc = {}
+store.guardar_descartes = lambda planilla, filas: (
+    _guardados_desc.update({planilla: filas}), len(filas))[1]
+store.descartes = lambda: [
+    {"id": 1, "planilla": "Control de ajuste", "donde": "MAQ 52",
+     "motivo": "La hoja no tiene títulos"}]
+store.topes_por_maquina = lambda: {(10, 1): 50000.0}
+store.ultimos_por_maquina_y_tipo = lambda: {
+    (10, 1): {"fecha": hoy, "hecho_por": "x"}}
+store.fichas = lambda: {10: {"marca": "Mayer", "modelo": "Relanit", "galga": 24,
+                             "diametro": 32, "alimentadores": 96, "agujas": 2460,
+                             "anio": 2017, "serie": "7", "tipo_agujas": None,
+                             "nota": None}}
+TIPOS[0]["cada_kg"] = None
+cuerpo = c.get("/falta").get_data(as_text=True)
+check("la pantalla de lo que falta abre", "Qué falta cargar" in cuerpo)
+check("dice a que maquinas les falta el tope",
+      "Sin tope de kilos" in cuerpo and "MQ 2" in cuerpo)
+check("y cuales no arrancaron", "Sin arrancar" in cuerpo)
+check("y que dato le falta a cada ficha",
+      "Fichas a medias" in cuerpo and "marca" in cuerpo)
+# Lo que no entró de la planilla queda anotado y se ve acá.
+check("y lo que la planilla no pudo entrar",
+      "La hoja no tiene títulos" in cuerpo and "MAQ 52" in cuerpo)
+TIPOS[0]["cada_kg"] = 50000
+store.topes_por_maquina = lambda: {}
+store.ultimos_por_maquina_y_tipo = lambda: {
+    (m["id"], t["id"]): {"fecha": hoy - timedelta(days=30), "hecho_por": "x"}
+    for m in MAQS for t in TIPOS}
+
 # --- 8f. el historial de una máquina, agrupado por día --------------------
 print("Los dias de una maquina:")
 HISTORIAL = [

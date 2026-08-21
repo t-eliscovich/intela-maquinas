@@ -805,6 +805,7 @@ def _revisar_historial(token, ruta, maquinas, tipos, nombres_hojas):
                 store.cargar_lote([], [], [
                     (m["id"], *[f.get(c) for c in store.CAMPOS_FICHA])
                     for m, f in fichas if any(v is not None for v in f.values())])
+            _anotar_lo_que_no_entro("Mantenimiento", descartes)
             os.remove(ruta)
             aviso = f"Listo. {hecho['mantenimientos']} mantenimientos y {len(fichas)} fichas."
             if hecho["borrados"]:
@@ -845,6 +846,18 @@ def _revisar_historial(token, ruta, maquinas, tipos, nombres_hojas):
     )
 
 
+def _anotar_lo_que_no_entro(planilla, descartes):
+    """Deja anotado lo que la planilla tiene y el programa no pudo leer.
+
+    Sin esto se ve una sola vez, en la pantalla de revisión, y después no queda
+    en ningún lado: es la lista de lo que hay que corregir en el Excel.
+    """
+    try:
+        store.guardar_descartes(planilla, descartes or [])
+    except Exception as exc:  # noqa: BLE001
+        logging.warning("No se pudo anotar lo que no entró: %s", exc)
+
+
 def _revisar_planilla_ajuste(token, ruta, maquinas, nombres_hojas):
     """Mostrar qué entendió de la planilla de ajuste, y guardar."""
     bloques, descartes = ajustes_excel.leer(ruta, maquinas)
@@ -875,10 +888,12 @@ def _revisar_planilla_ajuste(token, ruta, maquinas, nombres_hojas):
                 if store.completar_ficha_vacia(cambio["id_maquina"], datos):
                     fichas += 1
             os.remove(ruta)
+            _anotar_lo_que_no_entro("Control de ajuste", descartes)
             listo = ", ".join(f"{n} {ajustes_excel.NOMBRES[k].lower()}"
                               for k, n in hecho.items() if n)
             if fichas:
-                listo += f", y se completaron {fichas} fichas"
+                listo += (f", y se completaron {fichas} fichas" if fichas > 1
+                          else ", y se completó una ficha")
             flash("Listo. " + listo + ".", "ok")
             return redirect(url_for("ajustes_view"))
         except Exception as exc:  # noqa: BLE001
@@ -1317,6 +1332,64 @@ def _guardar_ajuste_nuevo(maquinas):
     except Exception as exc:  # noqa: BLE001
         flash(str(exc), "error")
         return redirect(url_for("ajustes_view", nuevo="1"))
+
+
+# --------------------------------------------------------------------------
+# Qué falta: todo lo que el programa sabe que le falta
+# --------------------------------------------------------------------------
+@app.route("/falta")
+@requiere_login
+def falta():
+    """La lista de lo que hay que completar, junta en una pantalla.
+
+    Estaba repartida: los topes en el semáforo, las fichas en Máquinas, y lo
+    que no entró de la planilla se veía UNA vez, al cargarla, y después
+    desaparecía. Junta, es la lista de trabajo del mecánico.
+    """
+    try:
+        maquinas, _, _ = asinfo.maquinas()
+    except asinfo.AsinfoNoDisponible:
+        maquinas = []
+    tipos = store.tipos()
+    topes = store.topes_por_maquina()
+    ultimos = store.ultimos_por_maquina_y_tipo()
+    fichas = store.fichas()
+
+    # Qué mantenimientos llevan tope: los que alguna máquina ya tiene puesto.
+    prenden = {tipo_id for (_, tipo_id) in topes}
+    prenden |= {t["id"] for t in tipos if t["cada_kg"]}
+
+    sin_tope, sin_arrancar, ficha_a_medias = [], [], []
+    for m in maquinas:
+        if not any(topes.get((m["id"], t)) for t in prenden):
+            sin_tope.append(m)
+        if not any(ultimos.get((m["id"], t["id"])) for t in tipos):
+            sin_arrancar.append(m)
+        ficha = fichas.get(m["id"], {})
+        faltan = [c for c in ("marca", "modelo", "diametro", "galga",
+                              "alimentadores", "agujas", "anio", "serie")
+                  if not ficha.get(c)]
+        if faltan:
+            ficha_a_medias.append({"maquina": m, "campos": faltan})
+
+    for lista in (sin_tope, sin_arrancar):
+        lista.sort(key=lambda m: (m["numero"] is None, m["numero"] or 0))
+    ficha_a_medias.sort(key=lambda f: (f["maquina"]["numero"] is None,
+                                       f["maquina"]["numero"] or 0))
+
+    try:
+        no_entro = store.descartes()
+    except Exception:  # noqa: BLE001
+        no_entro = []
+    por_planilla = {}
+    for d in no_entro:
+        por_planilla.setdefault(d["planilla"], []).append(d)
+
+    return render_template("falta.html", sin_tope=sin_tope,
+                           sin_arrancar=sin_arrancar,
+                           ficha_a_medias=ficha_a_medias,
+                           no_entro=por_planilla,
+                           cuantos=len(no_entro))
 
 
 # --------------------------------------------------------------------------

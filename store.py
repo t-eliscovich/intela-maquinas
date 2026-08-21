@@ -293,6 +293,18 @@ ESQUEMA = """
             ALTER TABLE mantenimiento.consumo_hilo
                 ADD COLUMN IF NOT EXISTS porcentaje numeric(6,2);
 
+            -- Lo que la planilla tiene y el programa no pudo leer. Se
+            -- guarda al confirmar la carga porque si no se ve UNA vez, en la
+            -- pantalla de revisión, y después no queda en ningún lado: es la
+            -- lista de lo que hay que arreglar en el Excel.
+            CREATE TABLE IF NOT EXISTS mantenimiento.descarte (
+                id        serial PRIMARY KEY,
+                planilla  text NOT NULL,
+                donde     text,
+                motivo    text NOT NULL,
+                creado_en timestamptz NOT NULL DEFAULT now()
+            );
+
             -- Qué aguja lleva cada máquina. Una fila por máquina.
             CREATE TABLE IF NOT EXISTS mantenimiento.aguja_maquina (
                 id_maquina   integer PRIMARY KEY,
@@ -718,6 +730,31 @@ def ficha(id_maquina: int) -> dict:
         "SELECT * FROM mantenimiento.maquina_ficha WHERE id_maquina=%s", (id_maquina,)
     )
     return filas[0] if filas else {}
+
+
+def guardar_descartes(planilla: str, filas: list[dict]) -> int:
+    """Lo que no entró de una planilla. Reemplaza lo de la carga anterior.
+
+    Se borra lo viejo de esa misma planilla: si el Excel se corrigió, lo que ya
+    no falla no tiene que seguir figurando.
+    """
+    with _conn() as con, con.cursor() as cur:
+        cur.execute("DELETE FROM mantenimiento.descarte WHERE planilla = %s",
+                    (planilla,))
+        if filas:
+            cur.executemany(
+                """INSERT INTO mantenimiento.descarte (planilla, donde, motivo)
+                   VALUES (%s, %s, %s)""",
+                [(planilla, str(f.get("donde") or f.get("fila") or "")[:200],
+                  str(f.get("motivo") or "")[:500]) for f in filas],
+            )
+        con.commit()
+    return len(filas)
+
+
+def descartes() -> list[dict]:
+    return _todos("""SELECT * FROM mantenimiento.descarte
+                      ORDER BY planilla, donde, id""")
 
 
 def completar_ficha_vacia(id_maquina: int, datos: dict) -> bool:

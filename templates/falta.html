@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block titulo %}Qué falta{% endblock %}
+{% block contenido %}
+
+<h1>Qué falta cargar
+  <small>Todo junto, para no ir pantalla por pantalla</small></h1>
+
+{% if not sin_tope and not sin_arrancar and not ficha_a_medias and not no_entro %}
+  <div class="bloque"><div class="vacio">
+    <h3>No falta nada</h3>
+    <p>Las máquinas tienen su tope, su ficha y sus mantenimientos, y las
+      planillas entraron enteras.</p>
+  </div></div>
+{% endif %}
+
+{% if sin_tope %}
+{# Es lo primero porque es lo único que hace andar el semáforo: una máquina sin
+   tope cuenta kilos y no se prende nunca. #}
+<div class="bloque">
+  <div class="titulo"><h2>Sin tope de kilos · {{ sin_tope | length }}</h2>
+    <p>Cuentan los kilos pero no se prenden: falta decir cada cuántos</p></div>
+  <div class="relleno" style="padding:10px 14px">
+    {% for m in sin_tope %}
+      <a class="btn chico suave" style="margin:0 4px 4px 0"
+         href="{{ url_for('maquina_detalle', id_maquina=m.id) }}#editar">{{ m | mq }}</a>
+    {% endfor %}
+  </div>
+  <p class="nota">El número lo pone el mecánico, en la ficha de cada máquina.
+    Es de esa máquina: la más cargada teje veinte veces más que la más chica.</p>
+</div>
+{% endif %}
+
+{% if sin_arrancar %}
+<div class="bloque">
+  <div class="titulo"><h2>Sin arrancar · {{ sin_arrancar | length }}</h2>
+    <p>No tienen ningún mantenimiento anotado, así que no cuentan kilos</p></div>
+  <div class="relleno" style="padding:10px 14px">
+    {% for m in sin_arrancar %}
+      <a class="btn chico suave" style="margin:0 4px 4px 0"
+         href="{{ url_for('registrar') }}?numero={{ m.numero }}">{{ m | mq }}</a>
+    {% endfor %}
+  </div>
+  <p class="nota">Si no se sabe cuándo fue el último, se pone hoy. Nunca una
+    fecha vieja estimada: pinta un rojo que no existe.</p>
+</div>
+{% endif %}
+
+{% if ficha_a_medias %}
+<div class="bloque">
+  <div class="titulo"><h2>Fichas a medias · {{ ficha_a_medias | length }}</h2>
+    <p>Qué dato le falta a cada una</p></div>
+  <table class="ordenable">
+    <thead><tr>
+      <th class="ordena" data-orden="numero">Máquina</th>
+      <th class="ordena" data-orden="texto">Lo que falta</th>
+    </tr></thead>
+    <tbody>
+    {% for f in ficha_a_medias %}
+      <tr>
+        <td><a href="{{ url_for('maquina_detalle', id_maquina=f.maquina.id) }}#editar"
+               class="mq" style="text-decoration:none">{{ f.maquina | mq }}</a></td>
+        <td class="tenue">{{ f.campos | join(', ') }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if no_entro %}
+{# Lo que la planilla tiene y el programa no pudo leer. Antes se veía una sola
+   vez, al cargarla, y después no quedaba en ningún lado. #}
+<div class="bloque">
+  <div class="titulo"><h2>Lo que la planilla no pudo entrar · {{ cuantos }}</h2>
+    <p>Se arregla en el Excel y se vuelve a leer</p></div>
+  <table>
+    <thead><tr><th>Planilla</th><th>Dónde</th><th>Por qué no entra</th></tr></thead>
+    <tbody>
+    {% for planilla, filas in no_entro.items() %}
+      {% for d in filas %}
+        <tr>
+          <td>{% if loop.first %}<b>{{ planilla }}</b>{% endif %}</td>
+          <td class="tenue">{{ d.donde or '—' }}</td>
+          <td class="tenue">{{ d.motivo }}</td>
+        </tr>
+      {% endfor %}
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% include "_ordenar.html" %}
+{% endblock %}
