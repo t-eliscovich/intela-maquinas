@@ -11,7 +11,8 @@
        todavía no les calcularon los kilos, y sumar un vacío rompe la pantalla. #}
     <p><b>{{ filas | map(attribute='e.kg_dia') | select | sum | num(0) }} kg</b>
        en 12 horas ·
-       {{ filas | map(attribute='e.kg_dia_24') | select | sum | num(0) }} kg en 24</p></div>
+       {{ filas | map(attribute='e.kg_dia_24') | select | sum | num(0) }} kg en 24 ·
+       dieron <b>{{ filas | map(attribute='e.real_kg_dia') | select | sum | num(0) }} kg</b></p></div>
   {% if not filas %}
     <div class="vacio"><h3>Todavía no hay nada cargado</h3>
       <p>Sale de la planilla de control de ajuste.</p>
@@ -23,11 +24,13 @@
       <th class="der ordena" data-orden="numero">Velocidad</th>
       <th class="der oculta-chico ordena" data-orden="numero">Sistemas</th>
       <th class="der ordena" data-orden="numero">Diámetro</th>
-      <th class="der oculta-chico ordena" data-orden="numero">Alimentadores</th>
+      <th class="der oculta-chico ordena" data-orden="numero">Galga</th>
       <th class="der oculta-chico ordena" data-orden="numero">Rollo</th>
       <th class="der oculta-chico ordena" data-orden="numero">Minutos por rollo</th>
       <th class="der ordena" data-orden="numero">Rollos 12 h</th>
       <th class="der ordena" data-orden="numero">Kilos 12 h</th>
+      <th class="der ordena" data-orden="numero">Dio de verdad</th>
+      <th class="der ordena" data-orden="numero">Rinde</th>
       <th class="der oculta-chico ordena" data-orden="numero">Kilos 24 h</th>
     </tr></thead>
     <tbody>
@@ -38,11 +41,21 @@
         <td class="der">{{ f.e.rpm | num(1) }}</td>
         <td class="der tenue oculta-chico">{{ f.e.sistemas or '—' }}</td>
         <td class="der">{{ f.e.diametro | num(0) }}{{ '"' if f.e.diametro }}</td>
-        <td class="der oculta-chico">{{ f.e.alimentadores | num(0) }}</td>
+        <td class="der oculta-chico">{{ f.e.galga | num(0) }}</td>
         <td class="der tenue oculta-chico">{{ f.e.tamano_rollo | num(0) }}</td>
         <td class="der tenue oculta-chico">{{ f.e.minutos_rollo | num(1) }}</td>
         <td class="der">{{ f.e.rollos_dia | num(0) }}</td>
         <td class="der"><b>{{ f.e.kg_dia | num(0) }}</b></td>
+        {# Lo que dio de verdad, al lado de lo que debería dar. Estaba en la
+           planilla desde el principio y no se traía. #}
+        <td class="der">{{ f.e.real_kg_dia | num(0) }}</td>
+        <td class="der">
+          {% if f.e.real_kg_dia and f.e.kg_dia %}
+            {% set rinde = (f.e.real_kg_dia / f.e.kg_dia * 100) | round %}
+            <span class="marca-estado {{ 'vencido' if rinde < 70 else ('por_vencer' if rinde < 85 else 'ok') }}"
+                  style="font-size:13px">{{ rinde | int }}%</span>
+          {% else %}<span class="tenue">—</span>{% endif %}
+        </td>
         <td class="der tenue oculta-chico">{{ f.e.kg_dia_24 | num(0) }}</td>
       </tr>
     {% endfor %}
