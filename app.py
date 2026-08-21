@@ -945,10 +945,16 @@ def maquinas_lista():
             falta.append("los kilos")
         if not any(ultimos.get((m["id"], t["id"])) for t in tipos):
             falta.append("arrancar")
+        # El tope que se muestra en la lista: el del mantenimiento que prende el
+        # semáforo. Es UNO en la práctica —la limpieza—, y es el número que hace
+        # que la máquina se pinte de algún color.
+        tope_visible = next((topes.get((m["id"], t["id"])) or t["cada_kg"]
+                             for t in con_tope), None)
         filas.append({
             "maquina": m,
             "ficha": ficha,
             "falta": falta,
+            "tope": tope_visible,
             "topes": {t["id"]: topes.get((m["id"], t["id"])) for t in tipos},
             "ultimos": {t["id"]: (ultimos.get((m["id"], t["id"])) or {}).get("fecha")
                         for t in tipos},
@@ -1230,24 +1236,24 @@ def _guardar_ajuste_nuevo(maquinas):
 # `store.CUADROS`; acá va sólo cómo se llaman y cómo se escriben. Un test
 # chequea que las dos listas hablen de las mismas columnas.
 CUADROS_REPUESTOS = [
-    {"clave": "agujas", "titulo": "Agujas",
-     "bajada": "Qué aguja lleva cada máquina",
+    {"clave": "agujas", "titulo": "Qué aguja lleva cada máquina",
+     "bajada": "Para buscarla parado al lado de la máquina",
      "columnas": [
          {"campo": "id_maquina", "titulo": "Máquina", "tipo": "maquina"},
          {"campo": "descripcion", "titulo": "Modelo", "tipo": "texto"},
-         {"campo": "cilindro", "titulo": "Cilindro", "tipo": "texto"},
-         {"campo": "plato", "titulo": "Plato", "tipo": "texto"},
-         {"campo": "platinas", "titulo": "Platinas", "tipo": "texto"},
+         {"campo": "cilindro", "titulo": "Cilindro", "tipo": "lineas"},
+         {"campo": "plato", "titulo": "Plato", "tipo": "lineas"},
+         {"campo": "platinas", "titulo": "Platinas", "tipo": "lineas"},
          {"campo": "nota", "titulo": "Nota", "tipo": "texto"},
      ]},
-    {"clave": "modelos", "titulo": "Agujas por modelo",
-     "bajada": "Lo mismo agrupado, con la marca",
+    {"clave": "modelos", "titulo": "Cómo se piden",
+     "bajada": "Por modelo, con la marca: es lo que se le pasa al proveedor",
      "columnas": [
-         {"campo": "modelo", "titulo": "Modelo", "tipo": "texto"},
+         {"campo": "modelo", "titulo": "Modelo y máquinas", "tipo": "texto"},
          {"campo": "marca_aguja", "titulo": "Marca", "tipo": "texto"},
-         {"campo": "codigos", "titulo": "Códigos", "tipo": "texto"},
+         {"campo": "codigos", "titulo": "Códigos", "tipo": "lineas"},
          {"campo": "donde", "titulo": "Dónde va", "tipo": "texto"},
-         {"campo": "platinas", "titulo": "Platinas", "tipo": "texto"},
+         {"campo": "platinas", "titulo": "Platinas", "tipo": "lineas"},
          {"campo": "marca_platina", "titulo": "Marca de la platina", "tipo": "texto"},
          {"campo": "nota", "titulo": "Nota", "tipo": "texto"},
      ]},
@@ -1260,8 +1266,25 @@ CUADROS_REPUESTOS = [
          {"campo": "ubicacion", "titulo": "Dónde va", "tipo": "texto"},
          {"campo": "accionamiento", "titulo": "Para qué", "tipo": "texto"},
      ]},
-    {"clave": "bandas", "titulo": "Bandas",
-     "bajada": "Las Memminger, por modelo y diámetro",
+    # Memminger-IRO hace los alimentadores de hilo: su banda es la correa
+    # dentada que los mueve a todos juntos, arriba de la máquina. Por eso hay
+    # tres medidas por máquina — 1/2, 3/4 y la de lycra.
+    # La segunda tabla de la hoja INVENTARIO LEVAS: no es el inventario, es
+    # cómo se arma la máquina para tejer cada tela.
+    {"clave": "levas_tela", "titulo": "Cuántas levas lleva cada tela",
+     "bajada": "De trabajo, de retenido y de anulación",
+     "columnas": [
+         {"campo": "tela", "titulo": "Tela", "tipo": "texto"},
+         {"campo": "marca", "titulo": "Máquina", "tipo": "texto"},
+         {"campo": "diametro", "titulo": "Diámetro", "tipo": "texto"},
+         {"campo": "alimentadores", "titulo": "Alimentadores", "tipo": "texto"},
+         {"campo": "trabajo", "titulo": "De trabajo", "tipo": "texto"},
+         {"campo": "retenido", "titulo": "De retenido", "tipo": "texto"},
+         {"campo": "anulacion", "titulo": "De anulación", "tipo": "texto"},
+         {"campo": "nota", "titulo": "Nota", "tipo": "texto"},
+     ]},
+    {"clave": "bandas", "titulo": "Bandas Memminger",
+     "bajada": "La correa que mueve los alimentadores de hilo",
      "columnas": [
          {"campo": "maquinas", "titulo": "Máquinas", "tipo": "texto"},
          {"campo": "cantidad_maquinas", "titulo": "Cantidad", "tipo": "entero"},
@@ -1271,7 +1294,7 @@ CUADROS_REPUESTOS = [
          {"campo": "lycra", "titulo": "Lycra", "tipo": "texto"},
      ]},
     {"clave": "motor", "titulo": "Bandas de motor",
-     "bajada": "Por modelo y diámetro",
+     "bajada": "La que va del motor a la máquina, y la del cobrador",
      "columnas": [
          {"campo": "maquinas", "titulo": "Máquinas", "tipo": "texto"},
          {"campo": "cantidad_maquinas", "titulo": "Cantidad", "tipo": "entero"},
@@ -1280,11 +1303,16 @@ CUADROS_REPUESTOS = [
          {"campo": "cobrador", "titulo": "Cobrador", "tipo": "texto"},
          {"campo": "nota", "titulo": "Nota", "tipo": "texto"},
      ]},
-    {"clave": "stock", "titulo": "Bandas en stock",
-     "bajada": "Cuántas hay de cada medida",
+    # Las columnas «CODIGO | CANTIDAD» de la hoja BANDAS: no es un código de
+    # repuesto, es la MEDIDA de la banda (6,6 · 7,2 · 8,8), las mismas que salen
+    # en las columnas de 1/2, 3/4 y lycra. Y la cantidad es cuántas hay
+    # guardadas de esa medida.
+    {"clave": "stock", "titulo": "Cuántas bandas hay en bodega",
+     "bajada": "De cada medida, contadas",
      "columnas": [
-         {"campo": "medida", "titulo": "Medida", "tipo": "decimal", "decimales": 1},
-         {"campo": "cantidad", "titulo": "Cantidad", "tipo": "entero"},
+         {"campo": "medida", "titulo": "Medida de la banda", "tipo": "decimal",
+          "decimales": 1},
+         {"campo": "cantidad", "titulo": "Cuántas hay", "tipo": "entero"},
      ]},
 ]
 
@@ -1313,52 +1341,88 @@ def _en_criollo(exc):
     return str(exc)
 
 
+# Tres pestañas, no seis. La planilla tiene una hoja por cada cosa, pero de esas
+# seis hojas hay dos que hablan de lo mismo y tres que hablan de bandas:
+#
+#   * «AGUJAS» es POR MÁQUINA: la usa el mecánico parado al lado de la máquina.
+#   * «CODIGO DE AGUJAS» es POR MODELO y trae lo que la otra no tiene —la marca
+#     de la aguja, dónde va, la marca de la platina—: es la lista con la que se
+#     COMPRA. No son dos datos, es el mismo dato para dos usos, así que van en
+#     la misma pestaña: la de usar arriba y la de comprar abajo, plegada.
+#   * Las Memminger, las de motor y el stock son las tres bandas: una pestaña.
+PESTANAS_REPUESTOS = [
+    {"clave": "agujas", "titulo": "Agujas", "cuadros": ["agujas", "modelos"]},
+    {"clave": "levas", "titulo": "Levas", "cuadros": ["levas", "levas_tela"]},
+    {"clave": "bandas", "titulo": "Bandas", "cuadros": ["bandas", "motor", "stock"]},
+]
+
+
+def _pestana_de(clave_cuadro):
+    """En qué pestaña vive un cuadro, para volver ahí después de guardar."""
+    for pestana in PESTANAS_REPUESTOS:
+        if clave_cuadro in pestana["cuadros"]:
+            return pestana["clave"]
+    return PESTANAS_REPUESTOS[0]["clave"]
+
+
 @app.route("/repuestos", methods=["GET", "POST"])
 @requiere_login
 def repuestos():
     """Qué repuesto lleva cada máquina y cuánto hay.
 
-    Un cuadro por pestaña: antes venían los seis uno abajo del otro y para
-    mirar las bandas había que pasar por todas las agujas. Cada fila se edita
-    con el lapicito, y abajo de la tabla hay una fila en blanco para agregar.
+    Cada fila se edita con el lapicito, y abajo de cada tabla hay una fila en
+    blanco para agregar.
     """
     ver = request.values.get("ver") or "agujas"
-    cuadro = next((c for c in CUADROS_REPUESTOS if c["clave"] == ver), None)
-    if cuadro is None:
-        cuadro, ver = CUADROS_REPUESTOS[0], CUADROS_REPUESTOS[0]["clave"]
+    pestana = next((p for p in PESTANAS_REPUESTOS if p["clave"] == ver), None)
+    if pestana is None:
+        pestana, ver = PESTANAS_REPUESTOS[0], PESTANAS_REPUESTOS[0]["clave"]
     try:
         maquinas, _, _ = asinfo.maquinas()
     except asinfo.AsinfoNoDisponible:
         maquinas = []
 
     if request.method == "POST":
+        # `cuadro` dice qué tabla se tocó; `ver`, a qué pestaña volver.
+        clave_cuadro = request.form.get("cuadro") or ver
+        cuadro = next((c for c in CUADROS_REPUESTOS if c["clave"] == clave_cuadro), None)
         clave = (request.form.get("clave") or "").strip() or None
         try:
+            if cuadro is None:
+                raise ValueError("No se sabe qué cuadro se está editando.")
             if request.form.get("accion") == "borrar":
                 if not clave:
                     raise ValueError("No se sabe qué fila borrar.")
-                store.borrar_repuesto(ver, clave)
+                store.borrar_repuesto(clave_cuadro, clave)
                 flash("Fila borrada.", "ok")
             else:
                 datos = {c["campo"]: _valor_de_columna(c, request.form.get(c["campo"]),
                                                        maquinas)
                          for c in cuadro["columnas"]}
-                store.guardar_repuesto(ver, clave, datos)
+                store.guardar_repuesto(clave_cuadro, clave, datos)
                 flash("Guardado." if clave else "Fila agregada.", "ok")
         except Exception as exc:  # noqa: BLE001
             flash(_en_criollo(exc), "error")
-        return redirect(url_for("repuestos", ver=ver))
+        return redirect(url_for("repuestos", ver=_pestana_de(clave_cuadro)))
 
     por_id = {m["id"]: m for m in maquinas}
-    filas = store.filas_de(ver)
-    if ver == "agujas":
-        filas.sort(key=lambda f: (por_id.get(f["id_maquina"], {}).get("numero") is None,
-                                  por_id.get(f["id_maquina"], {}).get("numero") or 0))
-    return render_template("repuestos.html", cuadros=CUADROS_REPUESTOS,
-                           cuadro=cuadro, ver=ver, filas=filas,
-                           clave=store.CUADROS[ver]["clave"],
+    cuadros = []
+    for clave_cuadro in pestana["cuadros"]:
+        cuadro = next(c for c in CUADROS_REPUESTOS if c["clave"] == clave_cuadro)
+        filas = store.filas_de(clave_cuadro)
+        if clave_cuadro == "agujas":
+            # Por número de máquina, no por el id de Asinfo: la MQ 30 tiene el
+            # id 804 y quedaba en el medio de las de cincuenta y pico.
+            filas.sort(key=lambda f: (por_id.get(f["id_maquina"], {}).get("numero") is None,
+                                      por_id.get(f["id_maquina"], {}).get("numero") or 0))
+        cuadros.append({**cuadro, "filas": filas,
+                        "clave_fila": store.CUADROS[clave_cuadro]["clave"]})
+
+    return render_template("repuestos.html", pestanas=PESTANAS_REPUESTOS,
+                           pestana=pestana, ver=ver, cuadros=cuadros,
                            maquinas_por_id=por_id,
-                           editar=(request.args.get("editar") or "").strip())
+                           editando=(request.args.get("editar") or "").strip(),
+                           cuadro_editando=(request.args.get("cuadro") or "").strip())
 
 
 @app.route("/healthz")

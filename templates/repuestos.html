@@ -5,9 +5,9 @@
 <h1>Repuestos <small>Agujas, levas y bandas</small></h1>
 
 <div class="pestanas">
-  {% for c in cuadros %}
-    <a href="{{ url_for('repuestos', ver=c.clave) }}"
-       class="{{ 'activa' if c.clave == ver }}">{{ c.titulo }}</a>
+  {% for p in pestanas %}
+    <a href="{{ url_for('repuestos', ver=p.clave) }}"
+       class="{{ 'activa' if p.clave == ver }}">{{ p.titulo }}</a>
   {% endfor %}
 </div>
 
@@ -20,6 +20,14 @@
        class="mq" style="text-decoration:none">{{ m | mq }}</a>
   {% elif c.tipo in ('entero', 'decimal') %}
     {{ f[c.campo] | num(c.decimales or 0) }}{{ c.sufijo if f[c.campo] is not none }}
+  {% elif c.tipo == 'lineas' %}
+    {# Cuatro códigos de aguja pegados con un punto son un renglón ilegible.
+       Van uno abajo del otro, como están en la planilla. #}
+    {% if f[c.campo] %}
+      {% for parte in f[c.campo].split('·') %}
+        <div class="codigo">{{ parte.strip() }}</div>
+      {% endfor %}
+    {% else %}—{% endif %}
   {% else %}
     {{ f[c.campo] or '—' }}
   {% endif %}
@@ -37,25 +45,29 @@
   {% endif %}
 {%- endmacro %}
 
+{% for cuadro in cuadros %}
+{% set editar = editando if cuadro_editando == cuadro.clave else '' %}
 <div class="bloque">
   <div class="titulo"><h2>{{ cuadro.titulo }}</h2>
-    <p>{{ cuadro.bajada }} · {{ filas | length }}
-       {{ 'fila' if filas | length == 1 else 'filas' }}</p></div>
+    <p>{{ cuadro.bajada }} · {{ cuadro.filas | length }}
+       {{ 'fila' if cuadro.filas | length == 1 else 'filas' }}</p></div>
 
   {# Los campos viven adentro de la tabla y se enganchan con `form=`: un
      formulario no puede envolver una fila sin romper la tabla. #}
-  <form id="editar-fila" method="POST" action="{{ url_for('repuestos') }}">
+  <form id="editar-{{ cuadro.clave }}" method="POST" action="{{ url_for('repuestos') }}">
     <input type="hidden" name="ver" value="{{ ver }}">
+    <input type="hidden" name="cuadro" value="{{ cuadro.clave }}">
     <input type="hidden" name="clave" value="{{ editar }}">
   </form>
-  <form id="fila-nueva" method="POST" action="{{ url_for('repuestos') }}">
+  <form id="nueva-{{ cuadro.clave }}" method="POST" action="{{ url_for('repuestos') }}">
     <input type="hidden" name="ver" value="{{ ver }}">
+    <input type="hidden" name="cuadro" value="{{ cuadro.clave }}">
   </form>
 
   {# Se ordena tocando el título de la columna. La lista viene ordenada por
      máquina, que es como se busca casi siempre, pero para pedir bandas hace
      falta verla por diámetro y para contar levas, por cantidad. #}
-  <table id="cuadro-repuestos">
+  <table class="ordenable">
     <thead><tr>
       {% for c in cuadro.columnas %}
         <th class="ordena {{ 'der' if c.tipo in ('entero','decimal') }}
@@ -66,17 +78,18 @@
       <th></th>
     </tr></thead>
     <tbody>
-    {% for f in filas %}
-      {% if editar and f[clave] | string == editar %}
+    {% for f in cuadro.filas %}
+      {% if editar and f[cuadro.clave_fila] | string == editar %}
         <tr class="editando">
           {% for c in cuadro.columnas %}
-            <td class="{{ 'oculta-chico' if loop.index > 3 }}">{{ campo(f, c, 'editar-fila') }}</td>
+            <td class="{{ 'oculta-chico' if loop.index > 3 }}">
+              {{ campo(f, c, 'editar-' ~ cuadro.clave) }}</td>
           {% endfor %}
           <td>
             <div class="acciones">
-              <button class="btn chico" form="editar-fila" type="submit">Guardar</button>
+              <button class="btn chico" form="editar-{{ cuadro.clave }}" type="submit">Guardar</button>
               <a class="btn chico suave" href="{{ url_for('repuestos', ver=ver) }}">Salir sin guardar</a>
-              <button class="btn chico suave" form="editar-fila" type="submit"
+              <button class="btn chico suave" form="editar-{{ cuadro.clave }}" type="submit"
                       name="accion" value="borrar"
                       onclick="return confirm('¿Borrar esta fila?')">Borrar</button>
             </div>
@@ -91,7 +104,8 @@
           {% endfor %}
           <td class="der">
             <a class="lapiz" title="Editar esta fila"
-               href="{{ url_for('repuestos', ver=ver, editar=f[clave]) }}">✏️</a>
+               href="{{ url_for('repuestos', ver=ver, cuadro=cuadro.clave,
+                                editar=f[cuadro.clave_fila]) }}">✏️</a>
           </td>
         </tr>
       {% endif %}
@@ -101,27 +115,28 @@
        nuevo no tiene que empezar por buscar un botón. #}
       <tr class="nueva">
         {% for c in cuadro.columnas %}
-          <td class="{{ 'oculta-chico' if loop.index > 3 }}">{{ campo(None, c, 'fila-nueva') }}</td>
+          <td class="{{ 'oculta-chico' if loop.index > 3 }}">
+            {{ campo(None, c, 'nueva-' ~ cuadro.clave) }}</td>
         {% endfor %}
         <td><div class="acciones">
-          <button class="btn chico" form="fila-nueva" type="submit">Agregar</button>
+          <button class="btn chico" form="nueva-{{ cuadro.clave }}" type="submit">Agregar</button>
         </div></td>
       </tr>
     </tbody>
   </table>
 
-  {% if not filas %}
-    <p class="nota">Todavía no hay nada cargado en este cuadro. Se llena acá, o
+  {% if not cuadro.filas %}
+    <p class="nota">Todavía no hay nada cargado acá. Se llena en esta misma tabla, o
       <a href="{{ url_for('archivos') }}">subiendo la planilla de ajustes</a>.</p>
   {% endif %}
 </div>
+{% endfor %}
 
 {# Ordenar tocando el título. La fila en blanco de abajo no se mueve nunca: es
    para agregar, no es un dato. #}
 <script>
-(function () {
-  var tabla = document.getElementById("cuadro-repuestos");
-  if (!tabla || !tabla.tBodies.length) { return; }
+document.querySelectorAll("table.ordenable").forEach(function (tabla) {
+  if (!tabla.tBodies.length) { return; }
   var cuerpo = tabla.tBodies[0];
 
   function numero(texto) {
@@ -165,7 +180,7 @@
       if (nueva) { cuerpo.appendChild(nueva); }
     });
   });
-})();
+});
 </script>
 
 {% endblock %}

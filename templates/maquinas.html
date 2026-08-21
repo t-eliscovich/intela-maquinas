@@ -18,7 +18,7 @@
   <table>
     <thead>
       <tr>
-        <th>Máquina</th><th>Datos que faltan</th><th>Marca</th><th>Modelo</th>
+        <th>Máquina</th><th class="der">Tope kg</th><th>Marca</th><th>Modelo</th>
         <th class="der">Diámetro</th><th class="der">Galga</th>
         <th class="der oculta-chico">Alimentadores</th><th class="der oculta-chico">Agujas</th>
         <th class="der oculta-chico">Año</th>
@@ -37,10 +37,11 @@
           <a href="{{ url_for('maquina_detalle', id_maquina=f.maquina.id) }}"
              class="mq" style="text-decoration:none;color:inherit">{{ f.maquina | mq }}</a>
         </td>
-        <td>
-          {% if f.falta %}
-            <span class="marca-estado sin_tope">sin cargar: {{ f.falta | join(', ') }}</span>
-          {% else %}<span class="marca-estado ok">completa</span>{% endif %}
+        {# Cada cuántos kilos hay que limpiarla. Es el número que hace andar
+           el semáforo: sin él la máquina cuenta kilos y no prende nunca. #}
+        <td class="der">
+          {% if f.tope %}{{ f.tope | num(0) }}
+          {% else %}<span class="marca-estado sin_tope">falta</span>{% endif %}
         </td>
         <td>{{ f.ficha.marca or '—' }}</td>
         <td>{{ f.ficha.modelo or '—' }}</td>

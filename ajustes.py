@@ -473,14 +473,24 @@ def leer_agujas(wb, maquinas) -> tuple[list[dict], list[dict]]:
             "nota": None,
         }
         if not any((item["cilindro"], item["plato"], item["platinas"])):
-            continue
-        if maquina["id"] in vistas:
-            # La MQ 12 aparece dos veces, con la galga de cada juego. Se
-            # guarda una sola fila y se avisa: elegir una en silencio sería
-            # decidir por el mecánico.
+            # La MQ 14 dice «VACIO EL LUGAR»: la máquina no tiene agujas
+            # puestas. No es un error de lectura, pero tiene que verse.
             descartes.append({
                 "donde": f"{hoja}, MQ {numero}",
-                "motivo": "La máquina aparece más de una vez; se guarda la primera"})
+                "motivo": "La planilla no le pone agujas a esta máquina"})
+            continue
+        if maquina["id"] in vistas:
+            # La MQ 12 aparece dos veces: tiene un juego para galga 24 y otro
+            # para galga 28. Los dos son de esa máquina, así que se guardan los
+            # dos juntos; quedarse con uno sería perder la mitad de la ficha.
+            previo = next(x for x in salida if x["id_maquina"] == maquina["id"])
+            for campo in ("cilindro", "plato", "platinas"):
+                partes = [p for p in (previo[campo], item[campo]) if p]
+                previo[campo] = " · ".join(partes) or None
+            previo["nota"] = "La planilla le pone dos juegos, uno por galga"
+            descartes.append({
+                "donde": f"{hoja}, MQ {numero}",
+                "motivo": "La máquina aparece dos veces: los dos juegos se guardan juntos"})
             continue
         vistas.add(maquina["id"])
         salida.append(item)
@@ -574,6 +584,76 @@ def leer_levas(wb) -> tuple[list[dict], list[dict]]:
             "accionamiento": accionamiento,
         })
     return salida, descartes
+
+
+def leer_levas_tela(wb) -> tuple[list[dict], list[dict]]:
+    """Cuántas levas lleva cada TELA. La segunda tabla de «INVENTARIO LEVAS».
+
+    Está pegada a la derecha del inventario, con su propio título («CANTIDAD DE
+    LEVAS POR TELA») y sin fila de encabezados: cada celda dice qué es adentro
+    del texto —«levas de trabajo 432»—, así que se lee por posición desde donde
+    arranca el título. Eran cuarenta renglones que no entraban a ningún lado.
+
+    El número se deja pegado a su texto: varias filas dicen «192 cilindro» o
+    «16 cilindro», y separar el número perdería dónde van.
+    """
+    hoja = next((n for n in wb.sheetnames if _apretado(n) == "inventario levas"), None)
+    if not hoja:
+        return [], []
+    filas = _filas_de(wb[hoja])
+
+    # Dónde empieza la tabla de la derecha: la celda que la titula.
+    inicio = None
+    for fila in filas[:6]:
+        for j, celda in enumerate(fila):
+            if isinstance(celda, str) and "levas por tela" in _apretado(celda):
+                inicio = j
+                break
+        if inicio is not None:
+            break
+    if inicio is None:
+        return [], []
+
+    def _sin_etiqueta(valor):
+        """«levas de trabajo 432» → «432». Lo que no es la etiqueta queda."""
+        texto = _texto(valor)
+        if not texto:
+            return None
+        limpio = re.sub(r"^\s*levas?\s+de\s+\w+\s*", "", texto, flags=re.IGNORECASE)
+        return limpio.strip() or texto
+
+    salida, vistas = [], set()
+    for fila in filas:
+        def col(desplazo):
+            i = inicio + desplazo
+            return fila[i] if i < len(fila) else None
+
+        marca = _texto(col(0))
+        if not marca or "levas por tela" in _apretado(marca):
+            continue
+        tela = _texto(col(3))
+        # Una fila con la marca y nada más es un renglón empezado.
+        if not any(_texto(col(d)) for d in (1, 2, 3, 4)):
+            continue
+        item = {
+            "marca": marca,
+            "diametro": _texto(col(1)),
+            "alimentadores": _texto(col(2)),
+            "tela": tela,
+            "trabajo": _sin_etiqueta(col(4)),
+            "retenido": _sin_etiqueta(col(5)),
+            "anulacion": _sin_etiqueta(col(6)),
+            # Lo que sigue a la derecha son aclaraciones sueltas: la fila de la
+            # JIUNN LONG de 38 trae once celdas con el detalle de cada leva.
+            "nota": _juntar(_celdas(fila, range(inicio + 7, len(fila)))),
+        }
+        clave = (item["marca"], item["diametro"], item["alimentadores"],
+                 item["tela"], item["trabajo"])
+        if clave in vistas:
+            continue
+        vistas.add(clave)
+        salida.append(item)
+    return salida, []
 
 
 def leer_bandas(wb) -> tuple[list[dict], list[dict], list[dict]]:
@@ -850,6 +930,7 @@ NOMBRES = {
     "agujas": "Agujas por máquina",
     "agujas_modelo": "Agujas por modelo",
     "levas": "Levas",
+    "levas_tela": "Cuántas levas lleva cada tela",
     "bandas": "Bandas",
     "banda_stock": "Bandas en stock",
     "eficiencia": "Producción por máquina",
@@ -871,6 +952,7 @@ def leer(ruta: str, maquinas: list[dict], hoy=None) -> tuple[dict, list[dict]]:
         agujas_, d2 = leer_agujas(wb, maquinas)
         modelos_, d9 = leer_agujas_modelo(wb)
         levas_, d3 = leer_levas(wb)
+        levas_tela_, d10 = leer_levas_tela(wb)
         bandas_, stock_, d4 = leer_bandas(wb)
         eficiencia_, d5 = leer_eficiencia(wb, maquinas)
         consumo_, d6 = leer_consumo_hilo(wb)
@@ -894,10 +976,11 @@ def leer(ruta: str, maquinas: list[dict], hoy=None) -> tuple[dict, list[dict]]:
         "agujas": agujas_,
         "agujas_modelo": modelos_,
         "levas": levas_,
+        "levas_tela": levas_tela_,
         "bandas": bandas_,
         "banda_stock": stock_,
         "eficiencia": eficiencia_,
         "consumo_hilo": consumo_,
         "gramajes": gramajes_,
     }
-    return bloques, d1 + d8 + d2 + d9 + d3 + d4 + d5 + d6 + d7
+    return bloques, d1 + d8 + d2 + d9 + d3 + d10 + d4 + d5 + d6 + d7

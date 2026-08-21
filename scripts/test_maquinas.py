@@ -704,13 +704,15 @@ store.fichas = lambda: {10: {"marca": "Mayer", "modelo": "Relanit", "galga": 24,
                              "diametro": 32, "alimentadores": 96, "agujas": 2460,
                              "anio": 2017, "serie": "7", "tipo_agujas": None,
                              "nota": None}}
+# El tope va por máquina: sólo la 10 lo tiene puesto, las otras dos no.
+TIPOS[0]["cada_kg"] = None
 store.topes_por_maquina = lambda: {(10, 1): 50000.0}
 r = c.get("/maquinas")
 cuerpo = r.get_data(as_text=True)
-check("el listado dice que le falta a cada maquina", "Datos que faltan" in cuerpo)
-check("la que esta completa se ve completa", "completa" in cuerpo)
-check("la que no tiene nada cargado dice que le falta la ficha",
-      "sin cargar: la ficha" in cuerpo)
+check("el listado muestra el tope de kilos de cada maquina", "Tope kg" in cuerpo)
+check("y el numero de la que lo tiene", "50.000" in cuerpo)
+check("la que no lo tiene puesto dice que falta", ">falta<" in cuerpo)
+TIPOS[0]["cada_kg"] = 50000
 
 # --- 8d-bis. las fechas tipeadas a mano -----------------------------------
 # En la planilla hay doce fechas escritas en una celda de texto, con los dos
@@ -982,6 +984,43 @@ r = c.post("/ajustes", data={"maquina": "1", "tela": "PIQUE",
                              "gramaje_crudo": "un poco"})
 check("un gramaje que no es numero no entra", not _ajuste)
 
+# --- 8e-ter. la segunda tabla de INVENTARIO LEVAS -------------------------
+# La hoja tiene DOS tablas al lado: el inventario de levas y, pegada a la
+# derecha, cuántas levas lleva cada tela. Esa segunda eran cuarenta renglones
+# que no entraban a ningún lado.
+print("Levas por tela:")
+from openpyxl import Workbook as _WB3
+wb5 = _WB3()
+h5 = wb5.active; h5.title = "INVENTARIO LEVAS"
+h5.append([None] * 14 + ["CANTIDAD DE LEVAS POR TELA"])
+h5.append(["MAQUINA", "CODIGO", "CANTIDAD", "UBICACION", "ACCIONAMIENTO"])
+h5.append(["MAYER (1 )", "30-32 385953,0", 208, "cilindro", "TRABAJO",
+           None, None, None, None, None, None, None, None, None,
+           "JUNN LONG", "DIAMETRO 36", "alimentadores 108", "JERSEY",
+           "levas de trabajo    432", "levas de retenido   0",
+           "levas de anulacion  0"])
+h5.append([None] * 14 + ["MAYER", "DIAMETRO 30", "alimentadores 96", "ROMA",
+                         "levas de trabajo 192 cilindro",
+                         "levas de retenido 16 cilindro",
+                         "levas de anulacion 176 cilindro", "desprende mallas"])
+buf5 = _io.BytesIO(); wb5.save(buf5); buf5.seek(0)
+ruta5 = _os.path.join(_tmp.gettempdir(), "levas_tela.xlsx")
+open(ruta5, "wb").write(buf5.getvalue())
+from openpyxl import load_workbook as _lw
+wb5b = _lw(ruta5, data_only=True)
+lt, _ = AJ.leer_levas_tela(wb5b)
+wb5b.close()
+check("lee la tabla de la derecha", len(lt) == 2)
+check("la tela es la tela", [x["tela"] for x in lt] == ["JERSEY", "ROMA"])
+# «levas de trabajo 432» → «432». El texto que sigue al número queda: varias
+# filas dicen «192 cilindro» y separar el número perdería dónde van.
+check("saca la etiqueta y deja el numero", lt[0]["trabajo"] == "432")
+check("y lo que aclara donde va, tambien queda",
+      lt[1]["trabajo"] == "192 cilindro" and lt[1]["retenido"] == "16 cilindro")
+check("lo que sobra a la derecha queda de nota", lt[1]["nota"] == "desprende mallas")
+check("el inventario de la izquierda no se mezcla",
+      all("30-32" not in str(x) for x in lt))
+
 # --- 8f. el historial de una máquina, agrupado por día --------------------
 print("Los dias de una maquina:")
 HISTORIAL = [
@@ -1079,6 +1118,10 @@ FILAS_CUADRO = {
                "diametro": 30, "media": None, "tres_cuartos": None, "lycra": None,
                "banda": "M-45", "cobrador": "SI", "nota": None}],
     "stock": [{"medida": 6.6, "cantidad": 10}],
+    "levas_tela": [{"id": 1, "marca": "MAYER", "diametro": "DIAMETRO 34",
+                    "alimentadores": "alimentadores 108", "tela": "JERSEY",
+                    "trabajo": "432", "retenido": "0", "anulacion": "0",
+                    "nota": None}],
 }
 store.filas_de = lambda cuadro: list(FILAS_CUADRO[cuadro])
 # La 11 está anotada en la planilla pero sin números: pasa de verdad, y sumar
@@ -1178,12 +1221,27 @@ store.borrar_repuesto("levas", "7")
 check("borrar es un DELETE por su id",
       corridas[-1][0] == "DELETE FROM mantenimiento.leva WHERE id = %s")
 
-cuerpo = c.get("/repuestos?ver=levas&editar=1").get_data(as_text=True)
+cuerpo = c.get("/repuestos?ver=levas&cuadro=levas&editar=1").get_data(as_text=True)
 check("el lapicito abre la fila como campos",
-      'name="codigo"' in cuerpo and 'form="editar-fila"' in cuerpo)
-check("siempre hay una fila en blanco para agregar", 'form="fila-nueva"' in cuerpo)
-check("las pestañas llevan a los seis cuadros",
-      all(f"ver={cu['clave']}" in cuerpo for cu in A.CUADROS_REPUESTOS))
+      'name="codigo"' in cuerpo and 'form="editar-levas"' in cuerpo)
+check("siempre hay una fila en blanco para agregar", 'form="nueva-levas"' in cuerpo)
+# Tres pestañas y no seis: de las seis hojas de la planilla, dos hablan de lo
+# mismo (la aguja por máquina y la misma aguja por modelo, que es como se pide)
+# y tres son bandas.
+check("las pestañas son tres", len(A.PESTANAS_REPUESTOS) == 3)
+check("y llevan a las tres",
+      all(f"ver={p['clave']}" in cuerpo for p in A.PESTANAS_REPUESTOS))
+check("cada cuadro vive en una pestaña",
+      sorted(cu["clave"] for cu in A.CUADROS_REPUESTOS)
+      == sorted(c2 for p in A.PESTANAS_REPUESTOS for c2 in p["cuadros"]))
+# Las bandas son tres cuadros en UNA pantalla.
+cuerpo = c.get("/repuestos?ver=bandas").get_data(as_text=True)
+check("las tres tablas de bandas van juntas",
+      all(x in cuerpo for x in ("Bandas Memminger", "Bandas de motor",
+                                "Cuántas bandas hay en bodega")))
+# Cuatro códigos de aguja pegados con un punto son un renglón ilegible.
+check("los codigos de aguja van uno por renglon",
+      'class="codigo"' in c.get("/repuestos?ver=agujas").get_data(as_text=True))
 
 # --- 11. la ficha: los ultimos 5 y cuanto deberia dar ----------------------
 print("Ficha:")

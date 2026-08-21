@@ -139,6 +139,14 @@ store.filas_de = lambda cuadro: {
     "bandas": store.bandas("memminger"),
     "motor": store.bandas("motor"),
     "stock": store.banda_stock(),
+    "levas_tela": [
+        {"id": 1, "marca": "MAYER", "diametro": "DIAMETRO 34",
+         "alimentadores": "alimentadores 108", "tela": "JERSEY",
+         "trabajo": "432", "retenido": "0", "anulacion": "0", "nota": None},
+        {"id": 2, "marca": "JUNN LONG", "diametro": "DIAMETRO 30",
+         "alimentadores": "alimentadores 96", "tela": "ROMA",
+         "trabajo": "192 cilindro", "retenido": "16 cilindro",
+         "anulacion": "176 cilindro", "nota": "levas desprende mallas"}],
 }[cuadro]
 store.banda_stock = lambda: [{"medida": 6.6, "cantidad": 10},
                              {"medida": 7.2, "cantidad": 20},

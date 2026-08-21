@@ -121,6 +121,11 @@
   .btn.suave:hover{background:#f7f9fc}
   .btn.chico{height:30px;padding:0 12px;font-size:13px}
 
+  /* Los códigos de aguja: uno por renglón. Pegados con un punto son una sopa
+     de letras, y son cuatro por máquina. */
+  .codigo{font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1.35}
+  .codigo + .codigo{margin-top:1px}
+
   /* ---------- ordenar una tabla tocando el título ---------- */
   th.ordena{cursor:pointer;-webkit-user-select:none;user-select:none}
   th.ordena:hover{color:var(--azul)}

@@ -88,6 +88,21 @@ de la izquierda le borraron los títulos se leen con los de la copia
 **Un número escrito a mano va con `a_decimal_es`, no con `a_decimal`.** Acá el
 punto es de miles: `a_decimal("1.410")` devuelve 1,41 y guardaba mal las rpm.
 
+**Varias hojas de la planilla de ajuste tienen DOS tablas al lado.**
+«INVENTARIO LEVAS» trae el inventario a la izquierda y, pegada a la derecha,
+cuántas levas lleva cada tela — cuarenta renglones que no entraban a ningún
+lado. «BANDAS» trae tres. Antes de dar una hoja por leída, mirar qué hay a la
+derecha.
+
+**Repuestos son TRES pestañas, no seis.** «AGUJAS» es por máquina (la de usar) y
+«CODIGO DE AGUJAS» es por modelo con la marca (la de comprar): el mismo dato
+para dos usos, así que van juntas. Las Memminger, las de motor y el stock son
+las tres bandas.
+
+**La MQ 12 tiene dos juegos de agujas**, uno por galga, y los dos son suyos: se
+guardan juntos en la misma fila. La MQ 14 dice «VACIO EL LUGAR» y sale en los
+descartes, no en silencio.
+
 **Importar la app como la importa Waitress.** Los tests hacen `import app` sin
 mockear `store` entero, a propósito. Un test que mockea todo no ve que la app
 levanta pero devuelve 500 en cada pantalla.

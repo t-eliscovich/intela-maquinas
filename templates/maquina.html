@@ -32,9 +32,20 @@
       <p><span>Agujas:</span> {{ ficha.agujas | num(0) }}</p>
     </div>
     <div>
-      <p><span>Tipo de agujas:</span>
-         {{ ficha.tipo_agujas or (aguja.cilindro if aguja else None) or '—' }}
-         {% if aguja and aguja.platinas %}· platinas {{ aguja.platinas }}{% endif %}</p>
+      {# Los códigos de aguja van uno por renglón: son cuatro o cinco y
+         pegados con un punto no se lee ninguno. #}
+      <p><span>Tipo de agujas:</span></p>
+      {% set codigos = ficha.tipo_agujas or (aguja.cilindro if aguja else None) %}
+      {% if codigos %}
+        {% for parte in codigos.split('·') %}
+          <div class="codigo">{{ parte.strip() }}</div>
+        {% endfor %}
+      {% else %}<div class="codigo tenue">—</div>{% endif %}
+      {% if aguja and aguja.platinas %}
+        {% for parte in aguja.platinas.split('·') %}
+          <div class="codigo">platina {{ parte.strip() }}</div>
+        {% endfor %}
+      {% endif %}
       <p><span>N° de serie:</span> {{ ficha.serie or '—' }}</p>
       <p><span>Año:</span> {{ ficha.anio or '—' }}</p>
     </div>

@@ -273,6 +273,29 @@ ESQUEMA = """
                 ON mantenimiento.leva
                    (maquinas, codigo, coalesce(accionamiento, ''));
 
+            -- Cuántas levas lleva cada TELA. Es la segunda tabla de la hoja
+            -- «INVENTARIO LEVAS», pegada a la derecha: cuarenta renglones que
+            -- no entraban a ningún lado y se perdían enteros. No es el
+            -- inventario —eso es `leva`—: es cómo se arma la máquina para tejer
+            -- esa tela, cuántas levas de trabajo, de retenido y de anulación.
+            CREATE TABLE IF NOT EXISTS mantenimiento.leva_tela (
+                id            serial PRIMARY KEY,
+                marca         text,
+                diametro      text,
+                alimentadores text,
+                tela          text,
+                trabajo       text,
+                retenido      text,
+                anulacion     text,
+                nota          text,
+                creado_en     timestamptz NOT NULL DEFAULT now()
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS leva_tela_idx
+                ON mantenimiento.leva_tela
+                   (coalesce(marca, ''), coalesce(diametro, ''),
+                    coalesce(alimentadores, ''), coalesce(tela, ''),
+                    coalesce(trabajo, ''));
+
             -- Qué aguja lleva cada MODELO de máquina, con la marca. Es la hoja
             -- «CODIGO DE AGUJAS»: la misma información que `aguja_maquina`
             -- pero agrupada, y con un dato que la otra no tiene — de quién es
@@ -894,6 +917,8 @@ def _lote(cur, tabla: str, campos: tuple, conflicto: str, filas: list[dict]):
 
 CAMPOS_AGUJA = ("id_maquina", "descripcion", "cilindro", "plato", "platinas", "nota")
 CAMPOS_LEVA = ("maquinas", "codigo", "cantidad", "ubicacion", "accionamiento")
+CAMPOS_LEVA_TELA = ("marca", "diametro", "alimentadores", "tela", "trabajo",
+                    "retenido", "anulacion", "nota")
 CAMPOS_BANDA = ("clase", "maquinas", "cantidad_maquinas", "diametro", "media",
                 "tres_cuartos", "lycra", "banda", "cobrador", "nota")
 CAMPOS_AGUJA_MODELO = ("modelo", "marca_aguja", "codigos", "donde", "platinas",
@@ -921,6 +946,9 @@ CUADROS: dict[str, dict] = {
     "levas": {"tabla": "mantenimiento.leva", "clave": "id",
               "campos": CAMPOS_LEVA, "fijos": {},
               "orden": "maquinas, accionamiento, codigo"},
+    "levas_tela": {"tabla": "mantenimiento.leva_tela", "clave": "id",
+                   "campos": CAMPOS_LEVA_TELA, "fijos": {},
+                   "orden": "marca, diametro, tela"},
     "bandas": {"tabla": "mantenimiento.banda", "clave": "id",
                "campos": tuple(c for c in CAMPOS_BANDA if c != "clase"),
                "fijos": {"clase": "memminger"}, "orden": "maquinas, diametro"},
@@ -1029,6 +1057,11 @@ def guardar_planilla_ajuste(datos: dict) -> dict:
         _lote(cur, "mantenimiento.leva", CAMPOS_LEVA,
               "maquinas, codigo, coalesce(accionamiento, '')",
               datos.get("levas") or [])
+        _lote(cur, "mantenimiento.leva_tela", CAMPOS_LEVA_TELA,
+              "coalesce(marca, ''), coalesce(diametro, ''), "
+              "coalesce(alimentadores, ''), coalesce(tela, ''), "
+              "coalesce(trabajo, '')",
+              datos.get("levas_tela") or [])
         _lote(cur, "mantenimiento.aguja_modelo", CAMPOS_AGUJA_MODELO,
               "modelo", datos.get("agujas_modelo") or [])
         _lote(cur, "mantenimiento.banda", CAMPOS_BANDA,
