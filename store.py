@@ -246,6 +246,45 @@ ESQUEMA = """
             CREATE INDEX IF NOT EXISTS ajuste_maquina_idx
                 ON mantenimiento.ajuste (id_maquina, fecha DESC NULLS LAST, orden);
 
+            -- El gramaje del CRUDO y el del TERMINADO son dos columnas de la
+            -- planilla que se llaman casi igual. La del terminado no entraba
+            -- nunca: el título «G/m2» se lo llevaba el crudo.
+            ALTER TABLE mantenimiento.ajuste
+                ADD COLUMN IF NOT EXISTS gramaje_terminado numeric(10,2);
+
+            -- Cuántas máquinas usan esa medida de banda y cuántas hacen falta.
+            -- Se guarda también la frase tal cual («4 de 6.600»): en una fila
+            -- contradice a la columna de al lado, y guardar la frase entera
+            -- deja ver el conflicto en vez de taparlo.
+            ALTER TABLE mantenimiento.banda
+                ADD COLUMN IF NOT EXISTS maquinas_con_medida text;
+            ALTER TABLE mantenimiento.banda
+                ADD COLUMN IF NOT EXISTS requerida_media integer;
+            ALTER TABLE mantenimiento.banda
+                ADD COLUMN IF NOT EXISTS requerida_media_texto text;
+            ALTER TABLE mantenimiento.banda
+                ADD COLUMN IF NOT EXISTS requerida_tres_cuartos integer;
+            ALTER TABLE mantenimiento.banda
+                ADD COLUMN IF NOT EXISTS requerida_tres_cuartos_texto text;
+
+            -- Qué bandas hay que pedir. El stock de acá NO es el de
+            -- `banda_stock`: son dos conteos a mano que no cuadran (146 contra
+            -- 55). Se guardan los dos y elige el mecánico.
+            CREATE TABLE IF NOT EXISTS mantenimiento.banda_pedido (
+                medida     numeric(6,2) PRIMARY KEY,
+                requeridas integer,
+                stock      integer,
+                pedir      integer,
+                metros     numeric(10,2),
+                editado_en timestamptz NOT NULL DEFAULT now()
+            );
+
+            -- El porcentaje escrito adentro del nombre del hilo. Va aparte del
+            -- rendimiento: 71 % y 0,71 son la misma idea en dos unidades, y
+            -- mezclarlas en una columna borra cuál escribió el mecánico.
+            ALTER TABLE mantenimiento.consumo_hilo
+                ADD COLUMN IF NOT EXISTS porcentaje numeric(6,2);
+
             -- Qué aguja lleva cada máquina. Una fila por máquina.
             CREATE TABLE IF NOT EXISTS mantenimiento.aguja_maquina (
                 id_maquina   integer PRIMARY KEY,
@@ -776,8 +815,8 @@ def borrar_archivo(id_archivo: int) -> None:
 # --------------------------------------------------------------------------
 CAMPOS_AJUSTE = ("id_maquina", "maquina_nombre", "fecha", "tipo_maquina",
                  "cilindro", "poleas", "ajuste_agujas", "estiraje", "tela",
-                 "hilos", "gramaje_crudo", "malla_manual", "malla",
-                 "rendimiento", "kg_m", "hoja", "orden")
+                 "hilos", "gramaje_crudo", "gramaje_terminado", "malla_manual",
+                 "malla", "rendimiento", "kg_m", "hoja", "orden")
 
 
 def ajustes(id_maquina: int | None = None, tela: str | None = None,
@@ -937,8 +976,12 @@ CAMPOS_AGUJA = ("id_maquina", "descripcion", "cilindro", "plato", "platinas", "n
 CAMPOS_LEVA = ("maquinas", "codigo", "cantidad", "ubicacion", "accionamiento")
 CAMPOS_LEVA_TELA = ("marca", "diametro", "alimentadores", "tela", "trabajo",
                     "retenido", "anulacion", "nota")
-CAMPOS_BANDA = ("clase", "maquinas", "cantidad_maquinas", "diametro", "media",
-                "tres_cuartos", "lycra", "banda", "cobrador", "nota")
+CAMPOS_BANDA = ("clase", "maquinas", "cantidad_maquinas", "maquinas_con_medida",
+                "diametro", "media", "tres_cuartos", "lycra",
+                "requerida_media", "requerida_media_texto",
+                "requerida_tres_cuartos", "requerida_tres_cuartos_texto",
+                "banda", "cobrador", "nota")
+CAMPOS_BANDA_PEDIDO = ("medida", "requeridas", "stock", "pedir", "metros")
 CAMPOS_AGUJA_MODELO = ("modelo", "marca_aguja", "codigos", "donde", "platinas",
                        "marca_platina", "nota")
 CAMPOS_EFICIENCIA = ("id_maquina", "rpm", "sistemas", "diametro", "galga",
@@ -946,7 +989,7 @@ CAMPOS_EFICIENCIA = ("id_maquina", "rpm", "sistemas", "diametro", "galga",
                      "rollos_dia_24", "kg_dia_24",
                      "real_rollos_dia", "real_kg_dia",
                      "real_rollos_24", "real_kg_24")
-CAMPOS_CONSUMO = ("tela", "hilo", "codigo_hilo", "rendimiento")
+CAMPOS_CONSUMO = ("tela", "hilo", "codigo_hilo", "rendimiento", "porcentaje")
 CAMPOS_GRAMAJE = ("id_maquina", "fecha", "tela", "hilos", "peso", "orden")
 
 
@@ -977,6 +1020,8 @@ CUADROS: dict[str, dict] = {
               "fijos": {"clase": "motor"}, "orden": "maquinas, diametro"},
     "stock": {"tabla": "mantenimiento.banda_stock", "clave": "medida",
               "campos": ("medida", "cantidad"), "fijos": {}, "orden": "medida"},
+    "pedido": {"tabla": "mantenimiento.banda_pedido", "clave": "medida",
+               "campos": CAMPOS_BANDA_PEDIDO, "fijos": {}, "orden": "medida"},
 }
 
 
@@ -1088,6 +1133,8 @@ def guardar_planilla_ajuste(datos: dict) -> dict:
               "clase, maquinas, coalesce(diametro, -1)", datos.get("bandas") or [])
         _lote(cur, "mantenimiento.banda_stock", ("medida", "cantidad"),
               "medida", datos.get("banda_stock") or [])
+        _lote(cur, "mantenimiento.banda_pedido", CAMPOS_BANDA_PEDIDO,
+              "medida", datos.get("banda_pedido") or [])
         _lote(cur, "mantenimiento.eficiencia", CAMPOS_EFICIENCIA,
               "id_maquina", datos.get("eficiencia") or [])
         _lote(cur, "mantenimiento.consumo_hilo", CAMPOS_CONSUMO,

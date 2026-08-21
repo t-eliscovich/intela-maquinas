@@ -88,6 +88,50 @@ def _decimal(valor) -> float | None:
     return float(s) if re.fullmatch(r"-?\d+(\.\d+)?", s) else None
 
 
+# Una medida escrita a mano: el número primero y detrás su unidad. La unidad
+# sólo puede estar hecha con las letras de gramos, kilos y metros —g, gr, kg,
+# m, m2— más barras, asteriscos, puntos, comas y espacios. Ni una letra más:
+# la «L» de «28,2 LM» es lo único que hace falta para que las longitudes de
+# malla que alguien escribió en la columna del gramaje se queden afuera.
+_MEDIDA = re.compile(
+    r"""^\s*(-?\d+(?:[.,]\d+)?)               # el número, y va primero
+         (?:[\s/*.,]*(?:[mM]2|[gGrRkKmM]))*     # la unidad, con sus separadores
+         [\s/*.,]*$""",
+    re.VERBOSE,
+)
+
+
+def _medida(valor) -> float | None:
+    """El número de una celda que trae la unidad pegada: «1,80 kg/m», «138 g».
+
+    En tres columnas —gramaje crudo, gramaje terminado y kg/m— casi nadie
+    escribió el número solo. Hay «2,48 kg/m», «4,40 *KG», «165 gr», «183G».
+    Con `_decimal` entraba una celda de cada quince: el resto se perdía por
+    tener al lado la unidad, que es justo lo que confirma que eso ES una medida.
+
+    Pero la misma columna se usó también para otra cosa: «spander 108»,
+    «V 955», «plegado», «guia aguja [4]» y, sobre todo, cuarenta longitudes de
+    malla («30 LM dibujo», «28,2 LM»). Ninguna de ésas es un gramaje.
+
+    La regla que separa las dos cosas, mirando la planilla: **la celda es el
+    número y su unidad, y nada más**. El número va adelante —eso ya deja afuera
+    «spander 108» y «V 955»— y atrás sólo puede venir una unidad escrita con
+    las letras de gramos, kilos y metros. La «L» de LM alcanza para que las
+    longitudes de malla no entren. Un segundo número tampoco pasa: «1,20*3,20»
+    son dos medidas de un cilindro y «12/23/2019» es una fecha.
+
+    El número se guarda tal como está escrito. No se convierte nada: la misma
+    columna trae «3,50 kg/m» y «3,50 m/kg», que son unidades inversas, y elegir
+    cuál quiso decir el que la escribió sería inventar el dato.
+    """
+    if isinstance(valor, bool) or valor in (None, ""):
+        return None
+    if isinstance(valor, (int, float)):
+        return float(valor)
+    hallado = _MEDIDA.match(str(valor).strip())
+    return float(hallado.group(1).replace(",", ".")) if hallado else None
+
+
 def _fecha(valor, hoy: date) -> date | None:
     if isinstance(valor, datetime):
         f = valor.date()
@@ -153,7 +197,14 @@ def es_planilla_ajuste(ruta: str) -> bool:
 _TITULOS_AJUSTE = [
     ("malla_manual",  ("longitud de malla manual", "malla manual")),
     ("malla",         ("longitud de malla", "malla")),
-    ("gramaje_crudo", ("g m2 crudo", "gr m2 crudo", "g m2", "gr m2")),
+    # Crudo y terminado son dos columnas distintas y se llaman casi igual. El
+    # crudo va PRIMERO y con su etiqueta completa: al revés, «g m2 crudo»
+    # entraría por el startswith de «g m2» y el crudo se cargaría en la columna
+    # del terminado. La que dice sólo «G/m2» es la del terminado: en las 42
+    # hojas va siempre después de «rendimiento crudo», que es donde las cuatro
+    # hojas que sí lo escribieron dicen «G/m2 terminado».
+    ("gramaje_crudo", ("g m2 crudo", "gr m2 crudo")),
+    ("gramaje_terminado", ("g m2 terminado", "gr m2 terminado", "g m2", "gr m2")),
     ("rendimiento",   ("rendimiento crudo", "rendimiento")),
     ("kg_m",          ("kg m terminado", "kg m")),
     ("tipo_maquina",  ("tipo de mq", "tipo de maquina")),
@@ -214,7 +265,7 @@ _ORDEN_SUPLENTE = {
     "tipo_maquina": [1], "fecha": [2], "cilindro": [3], "poleas": [4, 5, 6],
     "ajuste_agujas": [7], "estiraje": [8], "tela": [9], "hilos": [10, 11, 12],
     "gramaje_crudo": [13], "malla_manual": [14], "malla": [15],
-    "rendimiento": [16], "kg_m": [18],
+    "rendimiento": [16], "gramaje_terminado": [17], "kg_m": [18],
 }
 
 
@@ -300,18 +351,22 @@ def leer_ajustes(wb, maquinas, hoy=None) -> tuple[list[dict], list[dict]]:
                 "estiraje": _texto(_una(fila, mapa, "estiraje")),
                 "tela": _texto(_una(fila, mapa, "tela")),
                 "hilos": _juntar(_celdas(fila, mapa.get("hilos", []))),
-                "gramaje_crudo": _decimal(_una(fila, mapa, "gramaje_crudo")),
+                # Con `_medida` y no con `_decimal`: casi nadie escribió el
+                # número solo, y «138 g» es un gramaje igual que 138.
+                "gramaje_crudo": _medida(_una(fila, mapa, "gramaje_crudo")),
+                "gramaje_terminado": _medida(_una(fila, mapa, "gramaje_terminado")),
                 "malla_manual": _texto(_una(fila, mapa, "malla_manual")),
                 "malla": _texto(_una(fila, mapa, "malla")),
                 "rendimiento": _decimal(_una(fila, mapa, "rendimiento")),
-                "kg_m": _decimal(_una(fila, mapa, "kg_m")),
+                "kg_m": _medida(_una(fila, mapa, "kg_m")),
                 "hoja": nombre_hoja,
                 "orden": n,
             }
             # Una fila que sólo trae el número y el modelo de la máquina no es
             # un ajuste: es una fila que quedó empezada.
             util = ("cilindro", "poleas", "ajuste_agujas", "estiraje", "tela",
-                    "hilos", "gramaje_crudo", "malla_manual", "malla")
+                    "hilos", "gramaje_crudo", "gramaje_terminado",
+                    "malla_manual", "malla")
             if not fecha and not any(item[c] for c in util):
                 continue
             salida.append(item)
@@ -374,16 +429,18 @@ def leer_agustes(wb, maquinas, hoy=None) -> tuple[list[dict], list[dict]]:
             "estiraje": _texto(_una(fila, mapa, "estiraje")),
             "tela": _texto(_una(fila, mapa, "tela")),
             "hilos": _juntar(_celdas(fila, mapa.get("hilos", []))),
-            "gramaje_crudo": _decimal(_una(fila, mapa, "gramaje_crudo")),
+            "gramaje_crudo": _medida(_una(fila, mapa, "gramaje_crudo")),
+            "gramaje_terminado": _medida(_una(fila, mapa, "gramaje_terminado")),
             "malla_manual": _texto(_una(fila, mapa, "malla_manual")),
             "malla": _texto(_una(fila, mapa, "malla")),
             "rendimiento": _decimal(_una(fila, mapa, "rendimiento")),
-            "kg_m": _decimal(_una(fila, mapa, "kg_m")),
+            "kg_m": _medida(_una(fila, mapa, "kg_m")),
             "hoja": hoja,
             "orden": n,
         }
         util = ("cilindro", "poleas", "ajuste_agujas", "estiraje", "tela",
-                "hilos", "gramaje_crudo", "malla_manual", "malla")
+                "hilos", "gramaje_crudo", "gramaje_terminado",
+                    "malla_manual", "malla")
         if not fecha and not any(item[c] for c in util):
             continue
         salida.append(item)
@@ -656,13 +713,28 @@ def leer_levas_tela(wb) -> tuple[list[dict], list[dict]]:
     return salida, []
 
 
-def leer_bandas(wb) -> tuple[list[dict], list[dict], list[dict]]:
-    """Las bandas Memminger y el stock por medida.
+# «4 de 6.600» = cuatro bandas de esa medida. Sólo se lee el número de
+# adelante: el de atrás es la medida, ya está en su propia columna, y encima
+# está escrita de dos formas distintas («6.600» y «6,600») en la misma tabla.
+_CUANTAS_BANDAS = re.compile(r"^\s*(\d+)\s*(?:de\b|$)", re.I)
 
-    La hoja tiene tres tablas al lado de la otra. Se leen las dos que dicen
-    algo estable: las bandas por modelo y cuántas hay de cada medida. La
-    tercera (bandas de motor) queda afuera y se avisa: son otro repuesto, con
-    otras columnas, y meterlas en la misma tabla las mezclaría.
+
+def _cuantas_bandas(texto) -> int | None:
+    t = _texto(texto)
+    hallado = _CUANTAS_BANDAS.match(t) if t else None
+    return int(hallado.group(1)) if hallado else None
+
+
+def leer_bandas(wb) -> tuple[list[dict], list[dict], list[dict]]:
+    """Las bandas Memminger y de motor, y el stock por medida.
+
+    La hoja tiene cuatro tablas: las Memminger (izquierda), el stock por medida
+    (al medio), las de motor (derecha) y, más abajo, el cuadro de lo que hay
+    que pedir — ése lo lee `leer_bandas_pedido`.
+
+    De la tabla de la izquierda se leen también las dos columnas que antes se
+    tiraban: cuántas máquinas usan esa medida y cuántas bandas hacen falta. Son
+    el único lugar donde está escrito para qué alcanza el stock.
     """
     hoja = next((n for n in wb.sheetnames if _apretado(n) == "bandas"), None)
     if not hoja:
@@ -673,6 +745,8 @@ def leer_bandas(wb) -> tuple[list[dict], list[dict], list[dict]]:
         "diametro": ("diametro",), "media": ("banda 1 2",),
         "tres_cuartos": ("banda 3 4",), "lycra": ("banda lycra",),
         "medida": ("codigo",),
+        "con_medida": ("cantidada de maquinas con", "cantidad de maquinas con"),
+        "requerida": ("cantidad requerida",),
     })
     if corte is None:
         return [], [], [{"donde": hoja, "motivo": "No se encontraron los títulos"}]
@@ -685,6 +759,15 @@ def leer_bandas(wb) -> tuple[list[dict], list[dict], list[dict]]:
     col_medida = mapa.get("medida")
     col_stock = col_medida + 1 if col_medida is not None else None
 
+    # «CANTIDAD REQUERIDA» es un título combinado sobre DOS columnas: la de la
+    # banda 1/2 y la de la 3/4. Excel deja el título sólo en la primera, así
+    # que la segunda se toma por posición: no tiene título propio.
+    col_req = mapa.get("requerida")
+    col_req2 = col_req + 1 if col_req is not None else None
+
+    def _celda(fila, col):
+        return fila[col] if col is not None and col < len(fila) else None
+
     bandas, stock, descartes, vistas = [], [], [], set()
     for fila in filas[corte + 1:]:
         if _vacia(fila):
@@ -693,16 +776,26 @@ def leer_bandas(wb) -> tuple[list[dict], list[dict], list[dict]]:
         diametro = _decimal(fila[mapa["diametro"]]) if "diametro" in mapa else None
         medidas = {c: (_texto(fila[mapa[c]]) if c in mapa else None)
                    for c in ("media", "tres_cuartos", "lycra")}
-        # Un nombre de modelo suelto, sin ninguna medida, es una fila que quedó
-        # empezada en el Excel.
-        if maquinas and any(medidas.values()) and (maquinas, diametro) not in vistas:
+        requerida = _texto(_celda(fila, col_req))
+        requerida2 = _texto(_celda(fila, col_req2))
+        # Un nombre de modelo suelto, sin ninguna medida y sin cuántas bandas
+        # lleva, es una fila que quedó empezada. La máquina de 42 pulgadas
+        # tiene las medidas en blanco pero sí dice cuántas necesita: antes se
+        # caía por eso.
+        entra = maquinas and (any(medidas.values()) or requerida or requerida2)
+        if entra and (maquinas, diametro) not in vistas:
             vistas.add((maquinas, diametro))
             bandas.append({
                 "clase": "memminger",
                 "maquinas": maquinas,
                 "cantidad_maquinas": _numero(fila[mapa["cantidad_maquinas"]])
                                      if "cantidad_maquinas" in mapa else None,
+                "maquinas_con_medida": _texto(_celda(fila, mapa.get("con_medida"))),
                 "diametro": diametro,
+                "requerida_media": _cuantas_bandas(requerida),
+                "requerida_media_texto": requerida,
+                "requerida_tres_cuartos": _cuantas_bandas(requerida2),
+                "requerida_tres_cuartos_texto": requerida2,
                 "banda": None, "cobrador": None, "nota": None,
                 **medidas,
             })
@@ -739,7 +832,10 @@ def leer_bandas(wb) -> tuple[list[dict], list[dict], list[dict]]:
                 "maquinas": maquinas,
                 "cantidad_maquinas": _numero(fila[mapa2["cantidad_maquinas"]])
                                      if "cantidad_maquinas" in mapa2 else None,
+                "maquinas_con_medida": None,
                 "diametro": diametro,
+                "requerida_media": None, "requerida_media_texto": None,
+                "requerida_tres_cuartos": None, "requerida_tres_cuartos_texto": None,
                 "media": None, "tres_cuartos": None, "lycra": None,
                 "banda": banda,
                 "cobrador": _texto(fila[col_cob]),
@@ -749,6 +845,101 @@ def leer_bandas(wb) -> tuple[list[dict], list[dict], list[dict]]:
         descartes.append({"donde": hoja,
                           "motivo": "No se encontró la tabla de bandas de motor"})
     return bandas, stock, descartes
+
+
+def _titulos_de_una_fila(fila, etiquetas) -> dict[str, int]:
+    """{campo: columna} mirando UNA fila sola."""
+    mapa = {}
+    limpias = [_apretado(c) for c in fila]
+    for campo, pistas in etiquetas.items():
+        for j, t in enumerate(limpias):
+            if t and any(t == p or t.startswith(p) for p in pistas):
+                mapa[campo] = j
+                break
+    return mapa
+
+
+def leer_bandas_pedido(wb) -> tuple[list[dict], list[dict]]:
+    """Cuántas bandas hacen falta, cuántas hay y cuántas hay que pedir.
+
+    Es el cuadro del fondo de la hoja BANDAS, debajo de las otras tres tablas,
+    y hasta ahora no lo leía nadie: es el único lugar de toda la planilla donde
+    está escrito qué hay que comprar. Una medida por fila.
+
+    Tres cosas de la hoja obligan a leerlo así:
+
+      * **Los títulos están en la fila 26, no arriba.** `_buscar_titulos` mira
+        sólo las primeras filas, que son de las otras tablas. Acá la fila se
+        busca por «pedir», el único título que no se repite en la hoja:
+        «codigo» y «stok» también los tiene la tabla de stock de más arriba.
+      * **La última fila trae el total pegado en la columna de la cantidad.**
+        En el Excel es un SUM que quedó encima de la fila de la medida 13 y
+        dice 132 donde tendría que decir cuántas bandas de 13 hacen falta. Se
+        reconoce porque es exactamente la suma de las de arriba: se descarta
+        esa celda —no la fila, que trae stock de verdad— y se avisa.
+      * **La fila de totales del pie tiene una celda de plata sin título.** No
+        se guarda: un precio sin nombre no es un dato.
+
+    Ojo con los números: este cuadro NO cuadra con la tabla de stock de arriba
+    ni con la de la izquierda. Son tres cuentas de lo mismo, escritas a mano en
+    momentos distintos. Se cargan las tres como están; cuál manda lo dice el
+    mecánico, no el programa.
+    """
+    hoja = next((n for n in wb.sheetnames if _apretado(n) == "bandas"), None)
+    if not hoja:
+        return [], []
+    filas = _filas_de(wb[hoja])
+
+    corte, mapa = None, {}
+    for i, fila in enumerate(filas):
+        posible = _titulos_de_una_fila(fila, {
+            "requeridas": ("cantidad",), "medida": ("codigo",),
+            "stock": ("stok", "stock"), "pedir": ("pedir",),
+            "metros": ("metros",)})
+        if "pedir" in posible and "medida" in posible:
+            corte, mapa = i, posible
+            break
+    if corte is None:
+        return [], [{"donde": hoja,
+                     "motivo": "No se encontró el cuadro de bandas para pedir"}]
+
+    salida, descartes, vistas, suma = [], [], set(), 0
+    for n, fila in enumerate(filas[corte + 1:], start=corte + 2):
+        if _vacia(fila):
+            continue
+        col_medida = mapa["medida"]
+        medida = _decimal(fila[col_medida]) if col_medida < len(fila) else None
+        # Sin medida no hay fila: así quedan afuera solas la fila de totales
+        # del pie y cualquier renglón empezado.
+        if medida is None:
+            continue
+        if medida in vistas:
+            descartes.append({"donde": f"{hoja}, fila {n}",
+                              "motivo": f"La medida {medida} está dos veces en "
+                                        "el cuadro de pedido"})
+            continue
+        vistas.add(medida)
+
+        def valor(campo, como=_numero):
+            col = mapa.get(campo)
+            return como(fila[col]) if col is not None and col < len(fila) else None
+
+        requeridas = valor("requeridas")
+        if requeridas is not None and suma and requeridas == suma:
+            descartes.append({
+                "donde": f"{hoja}, fila {n}",
+                "motivo": f"En la medida {medida} la columna «cantidad» trae el "
+                          f"total del cuadro ({requeridas}), no cuántas bandas "
+                          "hacen falta. Queda vacía."})
+            requeridas = None
+        elif requeridas is not None:
+            suma += requeridas
+
+        salida.append({"medida": medida, "requeridas": requeridas,
+                       "stock": valor("stock"), "pedir": valor("pedir"),
+                       "metros": valor("metros", _decimal)})
+
+    return salida, descartes
 
 
 def leer_eficiencia(wb, maquinas) -> tuple[list[dict], list[dict]]:
@@ -862,39 +1053,123 @@ def leer_eficiencia(wb, maquinas) -> tuple[list[dict], list[dict]]:
     return salida, descartes
 
 
+# El porcentaje escrito al final del nombre del hilo: «HILO 22/1  71 %».
+# Anclado al FINAL a propósito: un «65/35» del medio es la mezcla del hilo, no
+# cuánto lleva la tela.
+_PORCENTAJE_HILO = re.compile(r"(\d+(?:[.,]\d+)?)\s*%\s*$")
+
+
+def _en_blanco(fila) -> bool:
+    """Una fila con celdas de sólo espacios está vacía.
+
+    En «consumo de hilo» hay una fila con tres espacios en una columna del
+    fondo. Para el ojo separa dos telas; si no cuenta como vacía, los dos
+    bloques quedan pegados y la tela de abajo hereda la de arriba.
+    """
+    return all(c in (None, "") or (isinstance(c, str) and not c.strip())
+               for c in fila)
+
+
+def _nombre_de_tela(fila) -> str | None:
+    t = _texto(fila[0] if fila else None)
+    return t if t and _apretado(t) != "tela" else None
+
+
+def _bloques_de_hilo(filas, desde: int):
+    """Las filas agrupadas por bloque: lo que hay entre dos filas vacías."""
+    bloque = []
+    for i, fila in enumerate(filas[desde:], start=desde):
+        if _en_blanco(fila):
+            if bloque:
+                yield bloque
+            bloque = []
+        else:
+            bloque.append((i, fila))
+    if bloque:
+        yield bloque
+
+
 def leer_consumo_hilo(wb) -> tuple[list[dict], list[dict]]:
     """Cuánto hilo lleva cada tela.
 
-    La tela se escribe una sola vez y abajo van los hilos que la componen. Se
-    arrastra hacia abajo hasta que aparece otra tela: así está escrita la hoja.
+    La tela se escribe una sola vez y abajo van los hilos que la componen.
+
+    Tres cosas que la hoja hace y antes se perdían enteras y en silencio:
+
+      * **Las últimas ocho telas tienen el porcentaje adentro del nombre del
+        hilo** («HILO 22/1  71 %») en vez de en la columna de rendimiento. Como
+        el lector exigía esa columna, FALSO LYCRA, FALSO FLEECE 102, FALSO
+        FLEECE 96, VITOR, FLEECEC 200, FRANELA, STEFI y BOXER NUEVO no entraban
+        ni salían en los descartes: desaparecían. Ahora el número se lee donde
+        está y va a `porcentaje`, NO a `rendimiento`: son la misma idea en dos
+        unidades, y pasar 71 % a 0,71 sería corregir la planilla. El que mira
+        la pantalla tiene que ver cuál de las dos le escribieron.
+      * **Una tela tiene el nombre escrito en la segunda línea de su bloque**
+        (FLEECEC 200, galga 22). Arrastrando sólo hacia abajo, su primer hilo
+        —el 82 %— se caía. Cuando en un bloque hay una sola tela nombrada, esa
+        tela vale para todo el bloque, esté escrita arriba o al medio.
+      * **Cuatro renglones traen el rendimiento sin el nombre del hilo**: son
+        las telas que tienen los hilos escritos a lo ancho (tres columnas) y
+        los rendimientos a lo largo. No se puede saber qué número va con qué
+        hilo sin adivinar, así que van a descartes y los muestra la pantalla.
+
+    Devuelve (filas, descartes).
     """
-    hoja = next((n for n in wb.sheetnames if _apretado(n) == "consumo de hilo"), None)
+    hoja = next((n for n in wb.sheetnames if _apretado(n) == "consumo de hilo"),
+                None)
     if not hoja:
         return [], []
     filas = _filas_de(wb[hoja])
+
+    # La fila de títulos se saltea a mano porque está corrida: dice
+    # «rendimiento» arriba de una columna y el dato vive dos más a la
+    # izquierda. Leída por título, la hoja entera saldría vacía.
+    inicio = 0
+    for i, fila in enumerate(filas[:_FILAS_CABECERA]):
+        if _apretado(fila[0] if fila else None) == "tela":
+            inicio = i + 1
+            break
+
     salida, descartes, vistas = [], [], set()
-    tela = None
-    for fila in filas:
-        if _vacia(fila):
-            tela = None
-            continue
-        posible = _texto(fila[0] if fila else None)
-        if posible and _apretado(posible) != "tela":
-            tela = posible
-        if not tela:
-            continue
-        hilo = _juntar(_celdas(fila, (1, 2, 3)))
-        rendimiento = _decimal(fila[4] if len(fila) > 4 else None)
-        codigo = _texto(fila[5] if len(fila) > 5 else None)
-        if not hilo or rendimiento is None:
-            continue
-        if (tela, hilo) in vistas:
-            descartes.append({"donde": f"{hoja} · {tela}",
-                              "motivo": f"«{hilo}» aparece dos veces en la misma tela"})
-            continue
-        vistas.add((tela, hilo))
-        salida.append({"tela": tela, "hilo": hilo, "codigo_hilo": codigo,
-                       "rendimiento": rendimiento})
+    for bloque in _bloques_de_hilo(filas, inicio):
+        nombradas = [n for _, f in bloque if (n := _nombre_de_tela(f))]
+        unica = nombradas[0] if len(nombradas) == 1 else None
+        tela = unica
+        for n, fila in bloque:
+            if not unica and (nombre := _nombre_de_tela(fila)):
+                tela = nombre
+            hilo = _juntar(_celdas(fila, (1, 2, 3)))
+            rendimiento = _decimal(fila[4] if len(fila) > 4 else None)
+            if not hilo:
+                if rendimiento is not None:
+                    descartes.append({
+                        "donde": f"{hoja} · {tela or 'sin tela'}, fila {n + 1}",
+                        "motivo": f"Hay un rendimiento ({rendimiento}) sin el "
+                                  "nombre del hilo: la tela tiene los hilos "
+                                  "escritos a lo ancho"})
+                continue
+            if not tela:
+                descartes.append({"donde": f"{hoja}, fila {n + 1}",
+                                  "motivo": f"«{hilo}» no dice de qué tela es"})
+                continue
+            codigo = _texto(fila[5] if len(fila) > 5 else None)
+            porcentaje = None
+            hallado = _PORCENTAJE_HILO.search(hilo)
+            if hallado is not None:
+                porcentaje = _decimal(hallado.group(1))
+                hilo = hilo[:hallado.start()].strip() or hilo
+            if rendimiento is None and porcentaje is None:
+                descartes.append({"donde": f"{hoja} · {tela}",
+                                  "motivo": f"«{hilo}» no dice cuánto lleva"})
+                continue
+            if (tela, hilo) in vistas:
+                descartes.append({"donde": f"{hoja} · {tela}",
+                                  "motivo": f"«{hilo}» aparece dos veces en la "
+                                            "misma tela"})
+                continue
+            vistas.add((tela, hilo))
+            salida.append({"tela": tela, "hilo": hilo, "codigo_hilo": codigo,
+                           "rendimiento": rendimiento, "porcentaje": porcentaje})
     return salida, descartes
 
 
@@ -950,6 +1225,7 @@ NOMBRES = {
     "levas_tela": "Cuántas levas lleva cada tela",
     "bandas": "Bandas",
     "banda_stock": "Bandas en stock",
+    "banda_pedido": "Bandas que hay que pedir",
     "eficiencia": "Producción por máquina",
     "consumo_hilo": "Consumo de hilo",
     "gramajes": "Gramajes medidos",
@@ -971,6 +1247,7 @@ def leer(ruta: str, maquinas: list[dict], hoy=None) -> tuple[dict, list[dict]]:
         levas_, d3 = leer_levas(wb)
         levas_tela_, d10 = leer_levas_tela(wb)
         bandas_, stock_, d4 = leer_bandas(wb)
+        pedido_, d11 = leer_bandas_pedido(wb)
         eficiencia_, d5 = leer_eficiencia(wb, maquinas)
         consumo_, d6 = leer_consumo_hilo(wb)
         gramajes_, d7 = leer_gramajes(wb, maquinas, hoy)
@@ -996,8 +1273,9 @@ def leer(ruta: str, maquinas: list[dict], hoy=None) -> tuple[dict, list[dict]]:
         "levas_tela": levas_tela_,
         "bandas": bandas_,
         "banda_stock": stock_,
+        "banda_pedido": pedido_,
         "eficiencia": eficiencia_,
         "consumo_hilo": consumo_,
         "gramajes": gramajes_,
     }
-    return bloques, d1 + d8 + d2 + d9 + d3 + d10 + d4 + d5 + d6 + d7
+    return bloques, d1 + d8 + d2 + d9 + d3 + d10 + d4 + d11 + d5 + d6 + d7

@@ -139,6 +139,8 @@ store.filas_de = lambda cuadro: {
     "bandas": store.bandas("memminger"),
     "motor": store.bandas("motor"),
     "stock": store.banda_stock(),
+    "pedido": [{"medida": 6.6, "requeridas": 10, "stock": 5, "pedir": 6,
+                "metros": 39.6}],
     "levas_tela": [
         {"id": 1, "marca": "MAYER", "diametro": "DIAMETRO 34",
          "alimentadores": "alimentadores 108", "tela": "JERSEY",

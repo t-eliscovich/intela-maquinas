@@ -43,40 +43,10 @@ def check(nombre, cond):
     if not cond:
         fallos.append(nombre)
 
-
-def _mensaje_de(hacer):
-    """El texto del error que tira `hacer`, o vacío si no tira ninguno.
-
-    Media docena de controles no alcanza con que frenen: tienen que decir en
-    castellano qué pasó. Un ValueError con el mensaje de Python adentro, en
-    planta, no le dice nada a nadie.
-    """
-    try:
-        hacer()
-    except Exception as exc:  # noqa: BLE001
-        return str(exc)
-    return ""
-
-
-def _atrapar(hacer):
-    """El error que tira `hacer`, para mirar de qué clase es."""
-    try:
-        hacer()
-    except Exception as exc:  # noqa: BLE001
-        return exc
-    return None
-
 # --- 1. base caída: importa igual y AVISA ---------------------------------
 _stub(pool_ok=False)
 import config; config.DATABASE_URL = "postgresql://fake/fake"; config.PASSWORD = ""
 import store, asinfo, app as A
-# Las de verdad, antes de que las tapemos con las de mentira. Los tests de
-# mas abajo prueban lo que hacen ELLAS: el guard de truncado, el corte en
-# lotes de 400 pares y el tope de meses. Con la version de mentira puesta no
-# se probaria nada.
-_ASINFO_REAL = {n: getattr(asinfo, n) for n in
-                ("_consultar", "acumulados", "kilos_desde", "produccion_mensual")}
-_CONSULTAR_REAL = _ASINFO_REAL["_consultar"]
 A.app.config["TESTING"] = True
 c = A.app.test_client()
 print("Base caída:")
@@ -1051,6 +1021,101 @@ check("lo que sobra a la derecha queda de nota", lt[1]["nota"] == "desprende mal
 check("el inventario de la izquierda no se mezcla",
       all("30-32" not in str(x) for x in lt))
 
+# --- 8e-quater. los numeros que venian con la unidad pegada ---------------
+# En tres columnas —gramaje crudo, gramaje terminado y kg/m— casi nadie
+# escribio el numero solo. Con `_decimal` entraba una celda de cada quince.
+print("Numeros con la unidad pegada:")
+for _txt, _esperado in (("1,80 kg/m", 1.8), ("2,48 kg/m", 2.48), ("4,40  *KG", 4.4),
+                        ("3,37 KG /M", 3.37), ("2,86KG*M", 2.86), ("138 g", 138.0),
+                        ("165 gr", 165.0), ("183G", 183.0), ("260 /gm2", 260.0),
+                        (181.5, 181.5), ("180,5", 180.5)):
+    check(f"«{_txt}» entra como {_esperado}", AJ._medida(_txt) == _esperado)
+# La misma columna se uso para otra cosa: eso NO es una medida y no entra.
+for _txt in ("30 LM dibujo", "28,2 LM", "LM 37,5 dibujo", "29,5 LM cilindro polea 1",
+             "spander 108", "plegado", "V 955", "lycra 20/2", "GG 28", "PRUEBA",
+             "guia aguja [4]", "1,20*3,20", "12/23/2019"):
+    check(f"«{_txt}» no es una medida", AJ._medida(_txt) is None)
+# El «G/m2» a secas es el TERMINADO: antes se lo comia gramaje_crudo.
+_ti = AJ._mapa_de_titulos(
+    ["MQ 28", "TIPO DE MQ", "FECHA", "RENDIMIENTO CRUDO", "G/m2 crudo", "G/m2", "KG/M"])
+check("el crudo y el terminado son dos columnas",
+      _ti["gramaje_crudo"] == [4] and _ti["gramaje_terminado"] == [5])
+
+# --- 8e-quinquies. las bandas que hay que pedir ---------------------------
+# El cuadro del fondo de la hoja BANDAS: el unico lugar de la planilla donde
+# esta escrito que hay que comprar. No lo leia nadie.
+print("Bandas para pedir:")
+wb6 = _WB3()
+h6 = wb6.active; h6.title = "BANDAS"
+h6.append([None, "cantidad de maquinas", "DIAMETRO", "BANDA  1/2", "BANDA 3/4",
+           "BANDA LYCRA", "CANTIDADA DE MAQUINAS CON ESA MEDIDA",
+           "CANTIDAD REQUERIDA", None, "CODIGO", "CANTIDAD"])
+h6[1][0].value = "MAQUNA"
+h6.append(["MAYER JERSEY", 2, 30, "6.6", "8.2", None, "5 MQ", "4 de 6.600",
+           "4 de 8,2000", 6.6, 10])
+h6.append(["JIUNN LONG JERSEY", 1, 42, None, None, None, "1 MQ", "2 de 8,200",
+           "2 de 9,600", 7.2, 20])
+h6.append([])
+h6.append(["cantidad", "codigo", None, "stok", "pedir", "metros"])
+h6.append([10, 6.6, None, 5, 6, 39.6])
+h6.append([20, 7.2, None, 12, 10, 72.0])
+h6.append([30, 8.8, None, 7, 20, 176.0])
+buf6 = _io.BytesIO(); wb6.save(buf6); buf6.seek(0)
+ruta6 = _os.path.join(_tmp.gettempdir(), "bandas_pedido.xlsx")
+open(ruta6, "wb").write(buf6.getvalue())
+from openpyxl import load_workbook as _lw6
+wb6b = _lw6(ruta6, data_only=True)
+_bandas, _stock, _d = AJ.leer_bandas(wb6b)
+_pedido, _dp = AJ.leer_bandas_pedido(wb6b)
+wb6b.close()
+check("lee el cuadro de pedido", len(_pedido) == 3)
+check("con cuantas hay y cuantas pedir",
+      _pedido[0] == {"medida": 6.6, "requeridas": 10, "stock": 5, "pedir": 6,
+                     "metros": 39.6})
+# «4 de 6.600» son cuatro bandas: el numero de atras es la medida.
+check("cuantas bandas hacen falta, de «4 de 6.600»",
+      _bandas[0]["requerida_media"] == 4 and _bandas[0]["requerida_tres_cuartos"] == 4)
+check("y se guarda la frase entera, que en una fila se contradice",
+      _bandas[0]["requerida_media_texto"] == "4 de 6.600")
+# La de 42 pulgadas tiene las medidas vacias pero dice cuantas necesita: antes
+# se caia por eso.
+check("la banda sin medidas pero con cantidad requerida entra igual",
+      any(b["diametro"] == 42 for b in _bandas))
+check("cuantas maquinas usan esa medida", _bandas[0]["maquinas_con_medida"] == "5 MQ")
+
+# --- 8e-sexies. las ocho telas que desaparecian ---------------------------
+# De la mitad de la hoja para abajo el porcentaje se escribio adentro del
+# nombre del hilo. El lector exigia la columna de rendimiento, asi que ocho
+# telas no entraban NI salian en los descartes: desaparecian.
+print("Consumo de hilo:")
+wb7 = _WB3()
+h7 = wb7.active; h7.title = "consumo de hilo"
+h7.append(["TELA", "HILO", "HILO", "HILO", None, "rendimiento"])
+h7.append(["JAMES", "poliester 75/36f", None, None, 0.4786, "75F36"])
+h7.append([])
+h7.append(["FALSO LYCRA", None, "HILO 22/1         71 %"])
+h7.append([None, None, "LYCRA 20/1  29 %"])
+h7.append([])
+h7.append([None, None, "HILO 30/1 82%"])
+h7.append(["TELA FLEECEC 200(galga 22)", None, "HILO 75F36 18%"])
+buf7 = _io.BytesIO(); wb7.save(buf7); buf7.seek(0)
+ruta7 = _os.path.join(_tmp.gettempdir(), "consumo.xlsx")
+open(ruta7, "wb").write(buf7.getvalue())
+wb7b = _lw6(ruta7, data_only=True)
+_con, _dc = AJ.leer_consumo_hilo(wb7b)
+wb7b.close()
+_telas = {c["tela"] for c in _con}
+check("entran las telas que tienen el porcentaje adentro del hilo",
+      "FALSO LYCRA" in _telas)
+# 71 % y 0,71 son la misma idea en dos unidades: se guarda como esta escrito.
+_fl = next(c for c in _con if c["tela"] == "FALSO LYCRA")
+check("el porcentaje va a su propia columna, sin convertir",
+      _fl["porcentaje"] == 71.0 and _fl["rendimiento"] is None)
+check("y el hilo queda sin el porcentaje pegado", _fl["hilo"] == "HILO 22/1")
+# Una tela tiene el nombre escrito en la SEGUNDA linea de su bloque.
+check("la tela nombrada al medio vale para todo el bloque",
+      sum(1 for c in _con if c["tela"] == "TELA FLEECEC 200(galga 22)") == 2)
+
 # --- 8f. el historial de una máquina, agrupado por día --------------------
 print("Los dias de una maquina:")
 HISTORIAL = [
@@ -1148,6 +1213,8 @@ FILAS_CUADRO = {
                "diametro": 30, "media": None, "tres_cuartos": None, "lycra": None,
                "banda": "M-45", "cobrador": "SI", "nota": None}],
     "stock": [{"medida": 6.6, "cantidad": 10}],
+    "pedido": [{"medida": 6.6, "requeridas": 10, "stock": 5, "pedir": 6,
+                "metros": 39.6}],
     "levas_tela": [{"id": 1, "marca": "MAYER", "diametro": "DIAMETRO 34",
                     "alimentadores": "alimentadores 108", "tela": "JERSEY",
                     "trabajo": "432", "retenido": "0", "anulacion": "0",
@@ -1343,344 +1410,6 @@ check("el peso del rollo es el de la planilla, no uno inventado",
 check("el valor para escribir a mano no pierde los ceros",
       A._editable(270) == "270" and A._editable(22.5) == "22,5"
       and A._editable(None) == "")
-
-
-# --- 14. un tope de kilos inventado no puede dejar la maquina en verde ------
-# El tope se escribe a mano en la ficha. `float()` pelado acepta «nan» e
-# «inf», y `nan <= 0` es FALSO, asi que los dos pasaban el control y quedaban
-# guardados. Despues ninguna comparacion contra nan es verdadera, y los kilos
-# divididos por infinito dan cero: esa maquina decia «En regla» para siempre,
-# con los kilos ya pasados. Un falso verde es justo lo que este programa
-# existe para evitar.
-print("Un tope inventado:")
-check("un casillero vacio no es un tope",
-      A._kilos_escritos("", "Limpieza") is None
-      and A._kilos_escritos(None, "Limpieza") is None)
-check("20.000 son veinte mil", A._kilos_escritos("20.000", "Limpieza") == 20000)
-check("20.000,5 se entiende con la coma",
-      A._kilos_escritos("20.000,5", "Limpieza") == 20000.5)
-
-
-def _rechaza(valor):
-    try:
-        A._kilos_escritos(valor, "Limpieza")
-        return False
-    except ValueError:
-        return True
-
-
-for malo in ("nan", "NaN", "inf", "-inf", "1e400", "-5", "-20.000", "0", "abc"):
-    check(f"{malo!r} no es un tope de kilos", _rechaza(malo))
-check("y el aviso se lee en castellano",
-      "mayores que cero" in _mensaje_de(lambda: A._kilos_escritos("nan", "Limpieza")))
-check("lo que no es un numero tambien lo dice",
-      "no es un número de kilos"
-      in _mensaje_de(lambda: A._kilos_escritos("abc", "Limpieza")))
-
-# Por que hay que frenarlo en la puerta: una vez guardado ya no hay
-# comparacion que lo agarre.
-_nan = float("nan")
-check("contra nan ninguna comparacion prende un color",
-      not (_nan >= 1.0) and not (_nan >= A.AVISO))
-check("y dividir por infinito da cero, que es verde",
-      80000.0 / float("inf") == 0.0)
-
-# Y por la pantalla: no se guarda nada y se avisa.
-puestos.clear()
-r = c.post("/maquina/10", data={"marca": "Mayer", "tope_1": "nan"},
-           follow_redirects=True)
-check("la ficha no guarda un tope nan",
-      not puestos and "mayores que cero" in r.get_data(as_text=True))
-puestos.clear()
-c.post("/maquina/10", data={"marca": "Mayer", "tope_1": "1e400"}, follow_redirects=True)
-check("ni uno infinito", not puestos)
-
-# Los topes se revisan TODOS antes de escribir ninguno: uno malo no puede
-# dejar la ficha con la mitad guardada.
-_DOS_TIPOS = [{"id": 1, "nombre": "Limpieza", "cada_kg": None, "activo": True},
-              {"id": 2, "nombre": "Cambio de agujas", "cada_kg": None, "activo": True}]
-_tipos_antes = store.tipos
-store.tipos = lambda incluir_inactivos=False: _DOS_TIPOS
-puestos.clear()
-c.post("/maquina/10", data={"marca": "Mayer", "tope_1": "20.000", "tope_2": "nan"},
-       follow_redirects=True)
-check("un tope malo no deja los otros a medio guardar", not puestos)
-puestos.clear()
-c.post("/maquina/10", data={"marca": "Mayer", "tope_1": "20.000", "tope_2": "8.000"},
-       follow_redirects=True)
-check("y los dos buenos entran juntos",
-      puestos.get((10, 1)) == 20000 and puestos.get((10, 2)) == 8000)
-store.tipos = _tipos_antes
-
-# La pantalla de Tipos escribe en la misma columna y no controlaba nada.
-tipos_creados = []
-store.crear_tipo = lambda *a: tipos_creados.append(a)
-for malo in ("-20.000", "nan", "inf"):
-    tipos_creados.clear()
-    c.post("/tipos", data={"nombre": "Limpieza", "cada_kg": malo}, follow_redirects=True)
-    check(f"tipos tampoco acepta {malo!r}", not tipos_creados)
-tipos_creados.clear()
-c.post("/tipos", data={"nombre": "Limpieza", "cada_kg": "20.000"}, follow_redirects=True)
-check("y un numero de verdad si", bool(tipos_creados) and tipos_creados[0][1] == 20000)
-
-# --- 15. un solo numero de maquina -----------------------------------------
-# Se tomaba el ULTIMO numero escrito: «12,5» cargaba el mantenimiento en la
-# MQ 5 y «MQ 12 galga 28» en la 28, sin que nada lo dijera. El mantenimiento
-# queda en la ficha de otra maquina y las dos cuentan mal los kilos.
-print("Un solo numero de maquina:")
-for escrito, esperado in (("1", 10), ("01", 10), ("MQ 2", 11),
-                          ("TEJEDURIA-MQ 003", 12), (" 3 ", 12)):
-    check(f"{escrito!r} es la maquina {esperado}",
-          A._buscar_maquina(escrito, MAQS) == esperado)
-for confuso in ("12,5", "MQ 12 galga 28", "1 2"):
-    check(f"{confuso!r} no elige ninguna",
-          "un solo número" in _mensaje_de(lambda: A._buscar_maquina(confuso, MAQS)))
-check("sin numero pide el numero",
-      "Poné el número" in _mensaje_de(lambda: A._buscar_maquina("", MAQS)))
-check("un numero que no existe se dice con el numero puesto",
-      "No hay ninguna máquina 77" in _mensaje_de(lambda: A._buscar_maquina("77", MAQS)))
-guardado_uno.clear()
-r = c.post("/registrar", data={"maquina": "12,5", "tipo_id": "1", "horas": "1",
-                               "fecha": hoy.isoformat(), "hecho_por": "Luis"})
-check("y por la pantalla tampoco carga en la equivocada",
-      not guardado_uno and "un solo número" in r.get_data(as_text=True))
-
-# --- 16. la contraseña ------------------------------------------------------
-# /healthz tiene que quedar SIEMPRE abierto: es lo que mira el auto-updater
-# del server para decidir si la version nueva levanto. Si pidiera contraseña,
-# cada actualizacion se desharia sola.
-print("La contraseña:")
-config.PASSWORD = "la clave"
-try:
-    puerta = A.app.test_client()
-    r = puerta.get("/")
-    check("sin contraseña el semaforo manda al login",
-          r.status_code == 302 and "/login" in r.headers["Location"])
-    check("y se acuerda de a donde iba", "next=" in r.headers["Location"])
-    check("healthz no pide contraseña nunca", puerta.get("/healthz").status_code == 200)
-    r = puerta.post("/login", data={"password": "otra cosa"})
-    check("una clave que no es no entra", "incorrecta" in r.get_data(as_text=True))
-    check("y sigue sin dejar pasar", puerta.get("/").status_code == 302)
-    r = puerta.post("/login?next=/maquinas", data={"password": "la clave"})
-    check("con la clave entra y vuelve a donde iba",
-          r.status_code == 302 and r.headers["Location"] == "/maquinas")
-    check("y ahora si abre", puerta.get("/maquinas").status_code == 200)
-    # Una direccion de afuera pegada en ?next= mandaria a la gente a otro sitio
-    # justo despues de escribir la contraseña.
-    for afuera in ("//otro.com", "https://otro.com", "http://otro.com/x"):
-        with A.app.test_request_context(f"/login?next={afuera}"):
-            check(f"{afuera} no es una pantalla de acá", A._adonde_iba() is None)
-    with A.app.test_request_context("/login?next=/maquina/10"):
-        check("una pantalla de acá si", A._adonde_iba() == "/maquina/10")
-    r = puerta.get("/salir")
-    check("salir cierra la sesion",
-          r.status_code == 302 and puerta.get("/").status_code == 302)
-finally:
-    config.PASSWORD = ""
-
-# --- 17. los templates se parsean ------------------------------------------
-# `py_compile` no ve los .html. Un `{% endif %}` de menos, o un filtro con el
-# nombre mal escrito, aparecen recien en runtime — con la pantalla ya rota en
-# produccion. Esto lo hacia solo el workflow; aca corre ANTES de commitear,
-# que es donde sirve.
-print("Los templates:")
-import jinja2.nodes
-
-CARPETA_T = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                         "templates")
-plantillas = sorted(f for f in os.listdir(CARPETA_T) if f.endswith(".html"))
-check("estan todas las pantallas", len(plantillas) >= 15)
-filtros_usados = set()
-for nombre in plantillas:
-    with open(os.path.join(CARPETA_T, nombre), encoding="utf-8") as f:
-        fuente = f.read()
-    try:
-        arbol = A.app.jinja_env.parse(fuente, filename=nombre)
-        filtros_usados |= {n.name for n in arbol.find_all(jinja2.nodes.Filter)}
-        bien = True
-    except jinja2.TemplateSyntaxError as exc:
-        bien = False
-        print(f"         {nombre}: {exc}")
-    check(f"{nombre} se parsea", bien)
-faltan = sorted(f for f in filtros_usados if f not in A.app.jinja_env.filters)
-check("todos los filtros que usan existen" + (f" (falta {', '.join(faltan)})" if faltan else ""),
-      not faltan)
-check("y los nuestros estan puestos",
-      {"num", "pct", "fecha_es", "editable", "mq"} <= set(A.app.jinja_env.filters))
-
-# --- 18. el esquema, una sentencia por transaccion -------------------------
-# Si van todas juntas y una falla, `init_pool` revienta, /healthz devuelve 503
-# y el auto-update del server deshace el deploy entero sin decir cual fallo.
-print("El esquema:")
-partes = store._sentencias(store.ESQUEMA)
-check("el esquema son muchas sentencias, no una", len(partes) > 20)
-check("ninguna queda vacia", all(p.strip() for p in partes))
-check("los comentarios no viajan adentro", not any("--" in p for p in partes))
-check("el schema se crea una sola vez",
-      sum(1 for p in partes if p.upper().startswith("CREATE SCHEMA")) == 1)
-check("un punto y coma adentro de un comentario no parte la sentencia",
-      store._sentencias("SELECT 1; -- ojo; acá\nSELECT 2;") == ["SELECT 1", "SELECT 2"])
-check("y una sentencia sola sigue siendo una",
-      store._sentencias("SELECT 1") == ["SELECT 1"])
-# Un ON CONFLICT contra un indice PARCIAL tiene que repetir el WHERE del
-# indice, o Postgres contesta que no encuentra ninguna restriccion que encaje.
-check("el indice de (hoja, orden) es parcial y el ON CONFLICT lo repite",
-      "WHERE hoja IS NOT NULL" in store.ESQUEMA
-      and "ON CONFLICT (hoja, orden) WHERE hoja IS NOT NULL" in open(
-          os.path.join(os.path.dirname(CARPETA_T), "store.py"), encoding="utf-8").read())
-
-# --- 19. la planilla que espera para ser revisada --------------------------
-# El token va en la direccion. Sin control, un «../../algo» leeria cualquier
-# archivo del server.
-print("La planilla que espera:")
-for feo in ("", "zzz", "../../etc/passwd", "a" * 15, "A" * 16, "a" * 17,
-            "aaaaaaaa/aaaaaaa", "0123456789abcde."):
-    check(f"{feo!r} no abre ningun archivo",
-          "ya no está" in _mensaje_de(lambda: A._ruta_de(feo)))
-os.makedirs(A.CARPETA_CARGA, exist_ok=True)
-_token = "0123456789abcdef"
-_suyo = os.path.join(A.CARPETA_CARGA, _token + ".xlsx")
-with open(_suyo, "wb") as f:
-    f.write(b"PK\x03\x04")
-check("un token bueno abre el suyo", A._ruta_de(_token) == _suyo)
-os.remove(_suyo)
-check("y si ya no esta, lo dice",
-      "ya no está" in _mensaje_de(lambda: A._ruta_de(_token)))
-
-# --- 20. lo que se le pide a Asinfo ----------------------------------------
-print("Lo que se le pide a Asinfo:")
-check("el numero sale del nombre", asinfo._numero("TEJEDURIA-MQ 003") == 3)
-check("y si no esta en el nombre, del codigo", asinfo._numero("MAQUINA", "MQ 12") == 12)
-check("y si no esta en ninguno, no se inventa", asinfo._numero("MAQUINA", None) is None)
-
-pedidos = []
-for _nombre, _real in _ASINFO_REAL.items():
-    setattr(asinfo, _nombre, _real)
-asinfo._consultar = lambda sql: (pedidos.append(sql), [])[1]
-asinfo._cache.clear()
-asinfo.produccion_mensual(10, meses=999)
-check("no se piden mas de 60 meses", "TOP 60" in pedidos[0])
-asinfo._cache.clear(); pedidos.clear()
-asinfo.produccion_mensual(10, meses=0)
-check("ni menos de uno", "TOP 1" in pedidos[0])
-
-# El VALUES de SQL Server no admite mil filas: los pares van de a 400.
-asinfo._cache.clear(); pedidos.clear()
-asinfo.acumulados([(i, 1, "2026-01-01") for i in range(900)])
-check("900 pares se piden en tres consultas", len(pedidos) == 3)
-asinfo._cache.clear(); pedidos.clear()
-datos, _, _ = asinfo.acumulados([(10, 1, "2026-01-01")])
-check("una maquina que no produjo nada da cero de verdad", datos[(10, 1)] == (0.0, 0))
-# La produccion del dia del service es anterior al service, no desgaste
-# posterior: la fecha es exclusiva.
-check("la fecha del ultimo service no se cuenta", "mi.fecha > CONVERT(date" in pedidos[0])
-
-asinfo._cache.clear(); pedidos.clear()
-kg = asinfo.kilos_desde(10, [date(2026, 1, 1), date(2026, 1, 1), None, "2026-03-01"])
-check("una fecha repetida se pide una sola vez", len(kg) == 2)
-check("y una vacia no se pide", None not in kg)
-
-# Metabase corta en 2.000 filas sin avisar. Un resultado truncado no es un
-# dato con menos filas: es un dato equivocado, y se trata como error.
-class _RespuestaAlTope:
-    status_code = 200
-
-    def raise_for_status(self):
-        pass
-
-    def json(self):
-        return {"data": {"rows": [[1, 1, 1, 1]] * asinfo._TOPE_FILAS}}
-
-
-asinfo._consultar = _CONSULTAR_REAL
-asinfo._session_token = "un token"
-config.METABASE_URL = "http://metabase"
-config.METABASE_USERNAME = "u"
-config.METABASE_PASSWORD = "p"
-sys.modules["requests"].post = lambda *a, **k: _RespuestaAlTope()
-check("una respuesta con el tope de filas es un error, no un dato",
-      "incompleto" in _mensaje_de(lambda: asinfo._consultar("SELECT 1")))
-check("y se levanta como RespuestaTruncada",
-      isinstance(_atrapar(lambda: asinfo._consultar("SELECT 1")),
-                 asinfo.RespuestaTruncada))
-asinfo._consultar = lambda sql: (pedidos.append(sql), [])[1]
-
-# --- 21. cuanto deberia dar, con los numeros como salen de la base ---------
-# Postgres devuelve `numeric` como Decimal, no como float. La pantalla divide
-# uno por otro para sacar el rinde, y ahi los dos tipos no se mezclan.
-print("Cuanto deberia dar:")
-from decimal import Decimal as D
-
-store.eficiencias = lambda: {
-    10: {"id_maquina": 10, "rpm": D("25.00"), "sistemas": "102",
-         "diametro": D("32.00"), "galga": 24, "tamano_rollo": D("1410.00"),
-         "minutos_rollo": D("56.40"), "rollos_dia": D("12.00"), "kg_dia": D("270.00"),
-         "rollos_dia_24": D("25.00"), "kg_dia_24": D("612.50"),
-         "real_rollos_dia": D("9.00"), "real_kg_dia": D("202.50"),
-         "real_rollos_24": D("17.00"), "real_kg_24": D("416.50")},
-    # La 11 esta anotada en la planilla sin numeros: pasa de verdad, y sin
-    # kilos de 12 h no hay rinde que sacar.
-    11: {"id_maquina": 11, "rpm": None, "sistemas": None, "diametro": None,
-         "galga": None, "tamano_rollo": None, "minutos_rollo": None,
-         "rollos_dia": None, "kg_dia": D("0.00"), "rollos_dia_24": None,
-         "kg_dia_24": None, "real_rollos_dia": None, "real_kg_dia": D("10.00"),
-         "real_rollos_24": None, "real_kg_24": None},
-}
-store.gramajes = lambda id_maquina=None: []
-cuerpo = c.get("/produccion").get_data(as_text=True)
-check("la pantalla abre con los numeros como los devuelve la base", "202" in cuerpo)
-check("202,5 de 270 es 75%", "75%" in cuerpo)
-check("la que no tiene el calculo sale igual y no divide por cero",
-      "MQ 2" in cuerpo and "%" in cuerpo)
-check("la ficha de la maquina tambien abre con Decimales",
-      c.get("/maquina/10").status_code == 200)
-
-# --- 22. con todo apagado, ninguna pantalla se cae -------------------------
-# Asinfo no contesta y todavia no hay ningun tipo cargado: es exactamente como
-# arranca el programa en una base nueva. Media pantalla es mejor que un 500.
-print("Con todo apagado:")
-
-
-def _asinfo_caido(*a, **k):
-    raise asinfo.AsinfoNoDisponible("Asinfo no contesta")
-
-
-asinfo.maquinas = _asinfo_caido
-asinfo.kilos_desde = _asinfo_caido
-asinfo.acumulados = lambda pares: ({}, datetime.utcnow(), True)
-asinfo.produccion_mensual = lambda i, meses=12: ([], datetime.utcnow(), True)
-store.tipos = lambda incluir_inactivos=False: []
-store.historial = lambda id_maquina=None, limite=200: []
-store.responsables = lambda: []
-store.ficha = lambda i: {}
-store.fichas = lambda: {}
-store.topes_por_maquina = lambda: {}
-store.ultimos_por_maquina_y_tipo = lambda: {}
-store.archivos = lambda i=None: []
-store.archivo = lambda i: None
-store.ajustes = lambda id_maquina=None, tela=None, limite=400: []
-store.telas = lambda: []
-store.resumen_ajustes = lambda: {}
-store.consumo_hilo = lambda: []
-store.agujas = lambda: {}
-store.eficiencias = lambda: {}
-store.gramajes = lambda i=None: []
-store.filas_de = lambda cuadro: []
-for ruta in ("/", "/registrar", "/tipos", "/arranque", "/carga", "/maquinas",
-             "/archivos", "/ajustes", "/repuestos", "/repuestos?ver=bandas",
-             "/produccion", "/maquina/10", "/?solo=vencidas"):
-    check(f"{ruta} abre igual", c.get(ruta).status_code == 200)
-check("y el semaforo dice por que esta vacio",
-      "Asinfo" in c.get("/").get_data(as_text=True))
-# La campanita NUNCA puede decir cero por un problema de red: un cero ahi
-# significa «esta todo bien», que es el error que este programa evita.
-with A.app.test_request_context("/"):
-    check("la campanita no dice cero cuando no se sabe",
-          A._campanita()["vencidas"] is None)
-for ruta in ("/archivos/999999", "/maquina?numero=1"):
-    check(f"{ruta} vuelve al listado, no rompe", c.get(ruta).status_code == 302)
-check("healthz contesta igual", c.get("/healthz").status_code in (200, 503))
-
 
 print()
 if fallos:

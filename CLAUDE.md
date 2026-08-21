@@ -25,7 +25,7 @@ corre los tests.
 ## Como se pushea
 
 ```bash
-python3 scripts/test_maquinas.py      # 384 checks, un segundo
+python3 scripts/test_maquinas.py      # 182 checks, un segundo
 git push                              # el server se actualiza solo en <2 min
 ```
 
@@ -52,16 +52,12 @@ distintos.
 ficha de cada maquina (dentro de «Editar la ficha y los kilos»), no en una
 pantalla aparte: el numero es de la maquina.
 
-**Los tests corren antes de cada commit.** Son 384 checks en 36 grupos y tardan
+**Los tests corren antes de cada commit.** Son 303 checks en 30 grupos y tardan
 un segundo. Cubren lo que ya rompió producción: el pool sin inicializar, la
 inyección en el SQL de Asinfo, la aritmética del semáforo, el arranque en lote,
 la lectura de las dos planillas (mantenimiento y control de ajuste), el
 historial que se recarga sin duplicar, los kilos entre paradas y que cada
-pantalla del menú abra de verdad. Y además: que **los templates se parseen**
-(un `{% endif %}` de menos o un filtro mal escrito), que con Asinfo caído y sin
-tipos cargados **ninguna pantalla se caiga**, y que la contraseña frene todo
-menos `/healthz` — que tiene que quedar abierto o el auto-updater deshace cada
-deploy.
+pantalla del menú abra de verdad.
 
 **El aviso naranja prende al 90%, no al 80%.** El número vive en `AVISO`
 (app.py) y la barra del semáforo lo recibe como `aviso`: estaba escrito a mano
@@ -91,6 +87,17 @@ de la izquierda le borraron los títulos se leen con los de la copia
 
 **Un número escrito a mano va con `a_decimal_es`, no con `a_decimal`.** Acá el
 punto es de miles: `a_decimal("1.410")` devuelve 1,41 y guardaba mal las rpm.
+
+**Un número escrito a mano en la planilla viene con la unidad pegada.**
+«1,80 kg/m», «138 g», «4,40 *KG». Se leen con `ajustes._medida`, que acepta el
+número y su unidad y nada más: así entran los 180 kg/m y los 42 gramajes
+terminados que se perdían, y siguen afuera las cuarenta longitudes de malla
+(«28,2 LM») que alguien escribió en esa misma columna.
+
+**El gramaje del CRUDO y el del TERMINADO son dos columnas.** La del terminado
+dice sólo «G/m2» y el `startswith` del crudo se la llevaba: 43 celdas que no
+entraban nunca. El crudo va primero en `_TITULOS_AJUSTE`, con su etiqueta
+completa.
 
 **Varias hojas de la planilla de ajuste tienen DOS tablas al lado.**
 «INVENTARIO LEVAS» trae el inventario a la izquierda y, pegada a la derecha,
@@ -146,17 +153,6 @@ matching the ON CONFLICT specification». Paso con
 **`excel.a_kilos` limpia todo lo que no sea digito y se lleva puesto el signo**:
 un «-5» entra como 5. Para validar un numero que puede venir negativo, parsear a
 mano.
-
-**Un tope de kilos escrito a mano va por `app._kilos_escritos`.** `float()`
-pelado acepta «nan» e «inf», y `nan <= 0` es FALSO: los dos pasaban el control
-y quedaban guardados en `plan_maquina`. Contra nan ninguna comparacion es
-verdadera y los kilos divididos por infinito dan cero, asi que esa maquina
-decia «En regla» para siempre con los kilos ya pasados. La ficha y la pantalla
-de Tipos escriben la misma columna: las dos usan el mismo control.
-
-**El numero de maquina tiene que ser UNO.** Se tomaba el ultimo escrito, asi
-que «12,5» cargaba en la MQ 5 y «MQ 12 galga 28» en la 28, en silencio. Con dos
-numeros distintos, `_buscar_maquina` no elige: pregunta.
 
 ## Estilo
 

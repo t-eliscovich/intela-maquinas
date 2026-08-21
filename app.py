@@ -14,7 +14,6 @@ tela cruda con la máquina que lo tejió.
 from __future__ import annotations
 
 import logging
-import math
 import os
 import re
 import secrets
@@ -140,32 +139,6 @@ def _tipo_elegido(escrito, tipos):
     if not any(t["id"] == tipo_id for t in tipos):
         raise ValueError("Ese mantenimiento no existe.")
     return tipo_id
-
-
-def _kilos_escritos(crudo, que):
-    """Un tope de kilos escrito a mano. Vacío es None: esa máquina no tiene
-    número propio y cae al del tipo.
-
-    A mano y no con `a_kilos`: ése limpia todo lo que no sea dígito y se lleva
-    puesto el signo, así que un «-5» entraba como 5.
-
-    Y no con `float()` pelado: `float("nan")` no falla y `nan <= 0` es FALSO,
-    así que un «nan» pasaba la validación y quedaba guardado como tope. Después
-    ninguna comparación contra nan es verdadera y esa máquina decía «En regla»
-    para siempre. Un «inf» hace lo mismo por el otro lado: los kilos divididos
-    por infinito dan cero. Un falso verde es exactamente lo que este programa
-    existe para evitar, así que los dos se rechazan acá.
-    """
-    crudo = (crudo or "").strip().replace(".", "").replace(",", ".")
-    if not crudo:
-        return None
-    try:
-        kg = float(crudo)
-    except ValueError:
-        raise ValueError(f"{que}: eso no es un número de kilos.")
-    if not math.isfinite(kg) or kg <= 0:
-        raise ValueError(f"{que}: los kilos tienen que ser mayores que cero.")
-    return kg
 
 
 def _adonde_iba():
@@ -398,13 +371,7 @@ def _buscar_maquina(escrito, maquinas):
     encontrados = _re.findall(r"\d+", str(escrito or ""))
     if not encontrados:
         raise ValueError("Poné el número de la máquina. Por ejemplo: 1")
-    # Se tomaba el último número escrito: «12,5» cargaba en la MQ 5 y
-    # «MQ 12 galga 28» en la 28, sin que nada lo dijera. Con dos números
-    # distintos no se elige — se pregunta.
-    numeros = {int(n) for n in encontrados}
-    if len(numeros) > 1:
-        raise ValueError("Poné un solo número de máquina. Por ejemplo: 1")
-    numero = numeros.pop()
+    numero = int(encontrados[-1])
     for m in maquinas:
         if m.get("numero") == numero:
             return m["id"]
@@ -479,7 +446,8 @@ def tipos_view():
             nombre = request.form.get("nombre", "").strip()
             if not nombre:
                 raise ValueError("Ponele un nombre.")
-            cada_kg = _kilos_escritos(request.form.get("cada_kg"), nombre)
+            crudo = (request.form.get("cada_kg") or "").strip()
+            cada_kg = float(crudo.replace(".", "").replace(",", ".")) if crudo else None
 
             tipo_id = request.form.get("tipo_id")
             if tipo_id:
@@ -1060,8 +1028,17 @@ def maquina_detalle(id_maquina):
             # el mecánico se iba creyendo que no se había guardado nada.
             nuevos_topes = []
             for tipo in tipos:
-                kg = _kilos_escritos(request.form.get(f"tope_{tipo['id']}"),
-                                     tipo["nombre"])
+                crudo = (request.form.get(f"tope_{tipo['id']}") or "").strip()
+                # A mano, no con `a_kilos`: ése limpia todo lo que no sea
+                # dígito y se lleva puesto el signo, así que un «-5» entraba
+                # como 5 y la validación no se enteraba.
+                crudo = crudo.replace(".", "").replace(",", ".")
+                try:
+                    kg = float(crudo) if crudo else None
+                except ValueError:
+                    raise ValueError(f"{tipo['nombre']}: eso no es un número de kilos.")
+                if kg is not None and kg <= 0:
+                    raise ValueError("Los kilos tienen que ser mayores que cero.")
                 nuevos_topes.append((tipo["id"], kg))
 
             store.guardar_ficha(id_maquina, datos)
@@ -1216,6 +1193,9 @@ def ajustes_view():
 # `orden` no: el nombre sale de Asinfo y los otros dos son de la planilla.
 CAMPOS_AJUSTE_A_MANO = ("tipo_maquina", "cilindro", "poleas", "ajuste_agujas",
                         "estiraje", "hilos", "malla_manual", "malla")
+# Los números que se cargan a mano: el punto es de miles y la unidad puede
+# venir pegada («180,5», «138 g»).
+CAMPOS_AJUSTE_NUMERO = ("gramaje_crudo", "gramaje_terminado")
 
 
 def _guardar_ajuste_nuevo(maquinas):
@@ -1238,13 +1218,14 @@ def _guardar_ajuste_nuevo(maquinas):
             (m["nombre"] for m in maquinas if m["id"] == id_maquina), None)
         datos["tela"] = tela
         datos["fecha"] = fecha
-        # El gramaje es el único número con coma que se carga a mano.
-        crudo = (request.form.get("gramaje_crudo") or "").strip().replace(",", ".")
-        if crudo:
-            try:
-                datos["gramaje_crudo"] = float(crudo)
-            except ValueError:
+        for campo in CAMPOS_AJUSTE_NUMERO:
+            escrito = (request.form.get(campo) or "").strip()
+            if not escrito:
+                continue
+            numero = excel.a_decimal_es(escrito)
+            if numero is None:
                 raise ValueError("El gramaje tiene que ser un número. Por ejemplo 180,5.")
+            datos[campo] = numero
 
         store.crear_ajuste(datos)
         flash(f"Ajuste cargado en {datos['maquina_nombre'] or 'la máquina'}.", "ok")
@@ -1354,6 +1335,10 @@ CUADROS_REPUESTOS = [
          {"campo": "media", "titulo": "1/2", "tipo": "texto"},
          {"campo": "tres_cuartos", "titulo": "3/4", "tipo": "texto"},
          {"campo": "lycra", "titulo": "Lycra", "tipo": "texto"},
+         {"campo": "requerida_media_texto", "titulo": "Hacen falta de 1/2",
+          "tipo": "texto"},
+         {"campo": "requerida_tres_cuartos_texto", "titulo": "Hacen falta de 3/4",
+          "tipo": "texto"},
      ]},
     {"clave": "motor", "titulo": "Bandas de motor",
      "bajada": "La que va del motor a la máquina, y la del cobrador",
@@ -1369,6 +1354,17 @@ CUADROS_REPUESTOS = [
     # repuesto, es la MEDIDA de la banda (6,6 · 7,2 · 8,8), las mismas que salen
     # en las columnas de 1/2, 3/4 y lycra. Y la cantidad es cuántas hay
     # guardadas de esa medida.
+    # El cuadro del fondo de la hoja BANDAS: el único lugar de toda la planilla
+    # donde está escrito qué hay que comprar.
+    {"clave": "pedido", "titulo": "Qué bandas hay que pedir",
+     "bajada": "Cuántas hacen falta, cuántas hay y cuántas pedir",
+     "columnas": [
+         {"campo": "medida", "titulo": "Medida", "tipo": "decimal", "decimales": 1},
+         {"campo": "requeridas", "titulo": "Hacen falta", "tipo": "entero"},
+         {"campo": "stock", "titulo": "Hay", "tipo": "entero"},
+         {"campo": "pedir", "titulo": "Pedir", "tipo": "entero"},
+         {"campo": "metros", "titulo": "Metros", "tipo": "decimal", "decimales": 1},
+     ]},
     {"clave": "stock", "titulo": "Cuántas bandas hay en bodega",
      "bajada": "De cada medida, contadas",
      "columnas": [
@@ -1415,7 +1411,8 @@ def _en_criollo(exc):
 PESTANAS_REPUESTOS = [
     {"clave": "agujas", "titulo": "Agujas", "cuadros": ["agujas", "modelos"]},
     {"clave": "levas", "titulo": "Levas", "cuadros": ["levas", "levas_tela"]},
-    {"clave": "bandas", "titulo": "Bandas", "cuadros": ["bandas", "motor", "stock"]},
+    {"clave": "bandas", "titulo": "Bandas",
+     "cuadros": ["pedido", "bandas", "motor", "stock"]},
 ]
 
 

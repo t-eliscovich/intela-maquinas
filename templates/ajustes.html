@@ -80,6 +80,11 @@
                  placeholder="180,5">
         </div>
         <div>
+          <label class="campo" for="gramaje-term">Gramaje terminado (g/m²)</label>
+          <input name="gramaje_terminado" id="gramaje-term" inputmode="decimal"
+                 placeholder="198">
+        </div>
+        <div>
           <label class="campo" for="tipo-maquina-nuevo">Tipo de máquina</label>
           <input name="tipo_maquina" id="tipo-maquina-nuevo" placeholder="MAYER 32">
         </div>
@@ -105,7 +110,8 @@
         <th class="oculta-chico">Cilindro y poleas</th>
         <th class="oculta-chico">Estiraje</th>
         <th class="oculta-chico">Malla</th>
-        <th class="der oculta-chico">g/m²</th>
+        <th class="der oculta-chico">g/m² crudo</th>
+        <th class="der oculta-chico">g/m² terminado</th>
       </tr>
     </thead>
     <tbody>
@@ -128,6 +134,7 @@
         <td class="tenue oculta-chico">
           {{ [f.malla, f.malla_manual] | select | join(' · ') or '—' }}</td>
         <td class="der oculta-chico">{{ f.gramaje_crudo | num(2) }}</td>
+        <td class="der oculta-chico">{{ f.gramaje_terminado | num(2) }}</td>
       </tr>
     {% endfor %}
     </tbody>
@@ -167,7 +174,8 @@
     <summary>Consumo de hilo · {{ consumo | length }} telas</summary>
     <table>
       <thead><tr><th>Tela</th><th>Hilo</th><th class="oculta-chico">Código</th>
-                 <th class="der">Rendimiento</th></tr></thead>
+                 <th class="der">Rendimiento</th>
+                 <th class="der">Del total</th></tr></thead>
       <tbody>
       {% for c in consumo %}
         <tr>
@@ -175,6 +183,13 @@
           <td class="tenue">{{ c.hilo }}</td>
           <td class="tenue oculta-chico">{{ c.codigo_hilo or '—' }}</td>
           <td class="der">{{ c.rendimiento | num(4) }}</td>
+          {# Ocho telas tienen el porcentaje escrito adentro del nombre del
+             hilo en vez del rendimiento. Se muestra como está escrito: 71 % y
+             0,71 son la misma idea y pasarlo de una a otra sería corregir la
+             planilla. #}
+          <td class="der">
+            {% if c.porcentaje %}{{ c.porcentaje | num(0) }} %
+            {% else %}<span class="tenue">—</span>{% endif %}</td>
         </tr>
       {% endfor %}
       </tbody>
