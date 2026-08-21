@@ -52,13 +52,15 @@
   <table class="ordenable">
     <thead><tr>
       <th class="ordena" data-orden="numero">Máquina</th>
-      <th class="ordena" data-orden="texto">Lo que falta</th>
+      <th class="der ordena" data-orden="numero">Faltan</th>
+      <th class="ordena" data-orden="texto">Qué</th>
     </tr></thead>
     <tbody>
     {% for f in ficha_a_medias %}
       <tr>
         <td><a href="{{ url_for('maquina_detalle', id_maquina=f.maquina.id) }}#editar"
                class="mq" style="text-decoration:none">{{ f.maquina | mq }}</a></td>
+        <td class="der">{{ f.campos | length }}</td>
         <td class="tenue">{{ f.campos | join(', ') }}</td>
       </tr>
     {% endfor %}

@@ -1337,6 +1337,15 @@ def _guardar_ajuste_nuevo(maquinas):
 # --------------------------------------------------------------------------
 # Qué falta: todo lo que el programa sabe que le falta
 # --------------------------------------------------------------------------
+# Cómo se llama en pantalla cada dato de la ficha. En castellano y con tilde:
+# «anio» y «diametro» son nombres de columna, no palabras.
+NOMBRE_DEL_CAMPO = {
+    "marca": "la marca", "modelo": "el modelo", "diametro": "el diámetro",
+    "galga": "la galga", "alimentadores": "los alimentadores",
+    "agujas": "las agujas", "anio": "el año", "serie": "el número de serie",
+}
+
+
 @app.route("/falta")
 @requiere_login
 def falta():
@@ -1366,15 +1375,18 @@ def falta():
         if not any(ultimos.get((m["id"], t["id"])) for t in tipos):
             sin_arrancar.append(m)
         ficha = fichas.get(m["id"], {})
-        faltan = [c for c in ("marca", "modelo", "diametro", "galga",
-                              "alimentadores", "agujas", "anio", "serie")
+        faltan = [NOMBRE_DEL_CAMPO[c] for c in NOMBRE_DEL_CAMPO
                   if not ficha.get(c)]
         if faltan:
             ficha_a_medias.append({"maquina": m, "campos": faltan})
 
     for lista in (sin_tope, sin_arrancar):
         lista.sort(key=lambda m: (m["numero"] is None, m["numero"] or 0))
-    ficha_a_medias.sort(key=lambda f: (f["maquina"]["numero"] is None,
+    # Las más incompletas primero: a casi todas les falta el mismo dato —los
+    # alimentadores, que la planilla no trae— y las que están de verdad a
+    # medias se perdían en el medio de la lista.
+    ficha_a_medias.sort(key=lambda f: (-len(f["campos"]),
+                                       f["maquina"]["numero"] is None,
                                        f["maquina"]["numero"] or 0))
 
     try:
