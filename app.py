@@ -584,7 +584,36 @@ def _lugar_nuevo() -> tuple[str, str]:
 def _guardar_temporal(archivo) -> str:
     token, ruta = _lugar_nuevo()
     archivo.save(ruta)
+    _guardar_la_planilla(archivo.filename, ruta)
     return token
+
+
+def _guardar_la_planilla(nombre, ruta) -> None:
+    """La planilla queda guardada en el programa, no sólo mientras se revisa.
+
+    El archivo temporal se borra a las dos horas, así que cada vez que hacía
+    falta volver a leerla —porque el lector aprendió a leer una columna nueva,
+    por ejemplo— había que ir a buscar el Excel a la computadora de la oficina
+    y subirlo de nuevo. Guardada, volver a leerla es un botón.
+
+    Si ya había una con el mismo nombre, se reemplaza: la planilla es UNA y
+    sigue viva en planta. Guardar cada subida dejaría veinte copias y ninguna
+    forma de saber cuál es la buena.
+    """
+    if not nombre:
+        return
+    try:
+        with open(ruta, "rb") as f:
+            contenido = f.read()
+        for viejo in store.archivos():
+            if viejo["nombre"].strip().lower() == nombre.strip().lower():
+                store.borrar_archivo(viejo["id"])
+        store.guardar_archivo(nombre, contenido,
+                              descripcion="La planilla de planta, como se subió",
+                              subido_por="Carga del Excel")
+    except Exception as exc:  # noqa: BLE001
+        # Guardarla es una comodidad, no el trabajo: si falla, la carga sigue.
+        logging.warning("No se pudo guardar la planilla subida: %s", exc)
 
 
 def _guardar_pegado(texto: str) -> str:
@@ -625,7 +654,15 @@ def carga():
     """Subir el Excel que ya usan, revisarlo y recién ahí guardar."""
     tipos = store.tipos()
     if request.method == "GET":
-        return render_template("carga.html", paso="subir", tipos=tipos)
+        # Las planillas que ya se subieron alguna vez: volver a leerlas es un
+        # botón y no ir a buscar el Excel a la otra computadora.
+        try:
+            guardadas = [a for a in store.archivos()
+                         if a["nombre"].lower().endswith((".xlsx", ".xlsm"))]
+        except Exception:  # noqa: BLE001
+            guardadas = []
+        return render_template("carga.html", paso="subir", tipos=tipos,
+                               guardadas=guardadas)
 
     pegado = (request.form.get("pegado") or "").strip()
     if pegado:
@@ -633,13 +670,14 @@ def carga():
             token = _guardar_pegado(pegado)
         except ValueError as exc:
             flash(str(exc), "error")
-            return render_template("carga.html", paso="subir", tipos=tipos, pegado=pegado)
+            return render_template("carga.html", paso="subir", tipos=tipos,
+                                   pegado=pegado, guardadas=[])
         return redirect(url_for("carga_revisar", token=token))
 
     archivo = request.files.get("archivo")
     if not archivo or not archivo.filename.lower().endswith((".xlsx", ".xlsm")):
         flash("Elegí un archivo .xlsx, o pegá las filas.", "error")
-        return render_template("carga.html", paso="subir", tipos=tipos)
+        return render_template("carga.html", paso="subir", tipos=tipos, guardadas=[])
     token = _guardar_temporal(archivo)
     return redirect(url_for("carga_revisar", token=token))
 

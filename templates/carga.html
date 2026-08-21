@@ -28,6 +28,33 @@
   </form>
 </div></div>
 
+{% if guardadas %}
+{# Las planillas que ya se subieron quedan guardadas en el programa. Volver a
+   leerlas es un botón: antes había que ir a buscar el Excel a la computadora
+   de la oficina cada vez. #}
+<div class="bloque">
+  <div class="titulo"><h2>Las planillas guardadas</h2>
+    <p>Ya están acá adentro: no hace falta volver a subirlas</p></div>
+  <table>
+    <thead><tr><th>Planilla</th><th class="oculta-chico">Cuándo se subió</th><th></th></tr></thead>
+    <tbody>
+    {% for a in guardadas %}
+      <tr>
+        <td><b>{{ a.nombre }}</b></td>
+        <td class="tenue oculta-chico">{{ a.creado_en | fecha_es }}</td>
+        <td class="der">
+          <form method="POST" action="{{ url_for('archivo_leer', id_archivo=a.id) }}"
+                style="display:inline">
+            <button class="btn chico" type="submit">Volver a leerla</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
 {% else %}
 <h1>Revisá antes de guardar
   <small>Todavía no se guardó nada.</small></h1>

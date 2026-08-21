@@ -52,7 +52,7 @@ distintos.
 ficha de cada maquina (dentro de «Editar la ficha y los kilos»), no en una
 pantalla aparte: el numero es de la maquina.
 
-**Los tests corren antes de cada commit.** Son 419 checks en 39 grupos y tardan
+**Los tests corren antes de cada commit.** Son 424 checks en 40 grupos y tardan
 un segundo. Cubren lo que ya rompió producción: el pool sin inicializar, la
 inyección en el SQL de Asinfo, la aritmética del semáforo, el arranque en lote,
 la lectura de las dos planillas (mantenimiento y control de ajuste), el

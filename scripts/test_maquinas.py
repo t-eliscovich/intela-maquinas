@@ -1146,6 +1146,40 @@ check("y el hilo queda sin el porcentaje pegado", _fl["hilo"] == "HILO 22/1")
 check("la tela nombrada al medio vale para todo el bloque",
       sum(1 for c in _con if c["tela"] == "TELA FLEECEC 200(galga 22)") == 2)
 
+# --- 8e-septies. la planilla subida queda guardada ------------------------
+# El archivo temporal se borra a las dos horas. Cada vez que el lector aprendia
+# a leer una columna nueva habia que ir a buscar el Excel a la otra
+# computadora: guardada, volver a leerla es un boton.
+print("La planilla queda guardada:")
+_guardados, _borrados = [], []
+store.archivos = lambda id_maquina=None: [
+    {"id": 7, "nombre": "CONTROL DE AJUSTE.xlsx", "descripcion": None,
+     "tamano": 10, "subido_por": None, "creado_en": datetime.utcnow(),
+     "id_maquina": None}]
+store.guardar_archivo = lambda nombre, contenido, **k: (
+    _guardados.append((nombre, len(contenido))), 9)[1]
+store.borrar_archivo = lambda id_archivo: _borrados.append(id_archivo)
+_wb8 = _WB3(); _wb8.active.append(["Fecha", "x"])
+_buf8 = _io.BytesIO(); _wb8.save(_buf8); _buf8.seek(0)
+c.post("/carga", data={"archivo": (_buf8, "CONTROL DE AJUSTE.xlsx")},
+       content_type="multipart/form-data")
+check("subir la planilla la deja guardada", len(_guardados) == 1)
+check("con su nombre", _guardados[0][0] == "CONTROL DE AJUSTE.xlsx")
+# La planilla es UNA y sigue viva en planta: la copia vieja se reemplaza, o
+# quedarian veinte y ninguna forma de saber cual es la buena.
+check("y reemplaza a la copia anterior", _borrados == [7])
+_cuerpo = c.get("/carga").get_data(as_text=True)
+check("la pantalla de subir muestra las guardadas",
+      "CONTROL DE AJUSTE.xlsx" in _cuerpo and "Volver a leerla" in _cuerpo)
+# Guardarla es una comodidad, no el trabajo: si la base falla, la carga sigue.
+def _no_anda(*a, **k):
+    raise RuntimeError("sin base")
+store.guardar_archivo = _no_anda
+_buf9 = _io.BytesIO(); _wb8.save(_buf9); _buf9.seek(0)
+_r8 = c.post("/carga", data={"archivo": (_buf9, "otra.xlsx")},
+             content_type="multipart/form-data")
+check("si no se puede guardar, la carga sigue igual", _r8.status_code == 302)
+
 # --- 8f. el historial de una máquina, agrupado por día --------------------
 print("Los dias de una maquina:")
 HISTORIAL = [
