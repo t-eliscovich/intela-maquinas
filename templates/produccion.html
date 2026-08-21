@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block titulo %}Producción{% endblock %}
+{% block contenido %}
+
+<h1>Cuánto debería dar cada máquina
+  <small>Es el cálculo de la planilla, no lo que tejió</small></h1>
+
+<div class="bloque">
+  <div class="titulo"><h2>{{ filas | length }} máquinas</h2>
+    {# `select` saca las vacías: hay máquinas anotadas en la planilla a las que
+       todavía no les calcularon los kilos, y sumar un vacío rompe la pantalla. #}
+    <p><b>{{ filas | map(attribute='e.kg_dia') | select | sum | num(0) }} kg</b>
+       en 12 horas ·
+       {{ filas | map(attribute='e.kg_dia_24') | select | sum | num(0) }} kg en 24</p></div>
+  {% if not filas %}
+    <div class="vacio"><h3>Todavía no hay nada cargado</h3>
+      <p>Sale de la planilla de control de ajuste.</p>
+      <a class="btn" href="{{ url_for('archivos') }}">Subir la planilla</a></div>
+  {% else %}
+  <table class="ordenable">
+    <thead><tr>
+      <th class="ordena" data-orden="numero">Máquina</th>
+      <th class="der ordena" data-orden="numero">Velocidad</th>
+      <th class="der oculta-chico ordena" data-orden="numero">Sistemas</th>
+      <th class="der ordena" data-orden="numero">Diámetro</th>
+      <th class="der oculta-chico ordena" data-orden="numero">Alimentadores</th>
+      <th class="der oculta-chico ordena" data-orden="numero">Rollo</th>
+      <th class="der oculta-chico ordena" data-orden="numero">Minutos por rollo</th>
+      <th class="der ordena" data-orden="numero">Rollos 12 h</th>
+      <th class="der ordena" data-orden="numero">Kilos 12 h</th>
+      <th class="der oculta-chico ordena" data-orden="numero">Kilos 24 h</th>
+    </tr></thead>
+    <tbody>
+    {% for f in filas %}
+      <tr>
+        <td><a href="{{ url_for('maquina_detalle', id_maquina=f.maquina.id) }}"
+               class="mq" style="text-decoration:none">{{ f.maquina | mq }}</a></td>
+        <td class="der">{{ f.e.rpm | num(1) }}</td>
+        <td class="der tenue oculta-chico">{{ f.e.sistemas or '—' }}</td>
+        <td class="der">{{ f.e.diametro | num(0) }}{{ '"' if f.e.diametro }}</td>
+        <td class="der oculta-chico">{{ f.e.alimentadores | num(0) }}</td>
+        <td class="der tenue oculta-chico">{{ f.e.tamano_rollo | num(0) }}</td>
+        <td class="der tenue oculta-chico">{{ f.e.minutos_rollo | num(1) }}</td>
+        <td class="der">{{ f.e.rollos_dia | num(0) }}</td>
+        <td class="der"><b>{{ f.e.kg_dia | num(0) }}</b></td>
+        <td class="der tenue oculta-chico">{{ f.e.kg_dia_24 | num(0) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="nota">El número de cada máquina se corrige en su ficha, en
+    «Cuánto debería dar».</p>
+  {% endif %}
+</div>
+
+{% if sin_dato %}
+{# Que se vea a cuáles les falta: si no, la suma de arriba parece la planta
+   entera y es sólo una parte. #}
+<div class="bloque">
+  <div class="titulo"><h2>Sin el cálculo</h2>
+    <p>{{ sin_dato | length }} máquinas que no están en la planilla</p></div>
+  <div class="relleno" style="padding:10px 14px">
+    {% for m in sin_dato %}
+      <a class="btn chico suave" style="margin:0 4px 4px 0"
+         href="{{ url_for('maquina_detalle', id_maquina=m.id, abrir='deberia') }}#deberia"
+      >{{ m | mq }}</a>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if gramajes %}
+<div class="bloque">
+  <div class="titulo"><h2>Peso de la tela, medido</h2>
+    <p>Lo que pesó de verdad, máquina por máquina</p></div>
+  <table class="ordenable">
+    <thead><tr>
+      <th class="ordena" data-orden="numero">Máquina</th>
+      <th class="ordena" data-orden="texto">Tela</th>
+      <th class="tenue ordena" data-orden="texto">Hilos</th>
+      <th class="der ordena" data-orden="numero">Peso</th>
+      <th class="oculta-chico ordena" data-orden="texto">Cuándo</th>
+    </tr></thead>
+    <tbody>
+    {% for g in gramajes %}
+      <tr>
+        <td><span class="mq">{{ g.maquina | mq }}</span></td>
+        <td>{{ g.tela or '—' }}</td>
+        <td class="tenue">{{ g.hilos or '—' }}</td>
+        <td class="der"><b>{{ g.peso | num(2) }}</b></td>
+        <td class="tenue oculta-chico">
+          {% if g.fecha %}{{ g.fecha | fecha_es }}{% else %}—{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% include "_ordenar.html" %}
+{% endblock %}

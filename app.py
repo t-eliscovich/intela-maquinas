@@ -1230,6 +1230,43 @@ def _guardar_ajuste_nuevo(maquinas):
 
 
 # --------------------------------------------------------------------------
+# Producción: cuánto debería dar cada máquina
+# --------------------------------------------------------------------------
+@app.route("/produccion")
+@requiere_login
+def produccion():
+    """El cálculo de la planilla: cuántos kilos da cada máquina en 12 horas.
+
+    No es lo que la máquina tejió —eso lo mide Asinfo—: es lo que debería dar.
+    Que no coincidan no es un error: uno es el plan y el otro es lo que pasó.
+
+    Estaba sólo adentro de la ficha de cada máquina, así que para comparar dos
+    había que entrar y salir de las dos. Acá se ven las 43 juntas.
+    """
+    try:
+        maquinas, _, _ = asinfo.maquinas()
+    except asinfo.AsinfoNoDisponible:
+        maquinas = []
+    eficiencias = store.eficiencias()
+    filas = [{"maquina": m, "e": eficiencias[m["id"]]} for m in maquinas
+             if m["id"] in eficiencias]
+    filas.sort(key=lambda f: (f["maquina"]["numero"] is None,
+                              f["maquina"]["numero"] or 0))
+
+    # El peso medido de la tela, de la hoja de gramajes. Estaba cargado y no se
+    # veía en ninguna pantalla.
+    nombres = {m["id"]: m for m in maquinas}
+    gramajes = store.gramajes()
+    for g in gramajes:
+        g["maquina"] = nombres.get(g["id_maquina"])
+
+    sin_dato = [m for m in maquinas if m["id"] not in eficiencias]
+    sin_dato.sort(key=lambda m: (m["numero"] is None, m["numero"] or 0))
+    return render_template("produccion.html", filas=filas, gramajes=gramajes,
+                           sin_dato=sin_dato)
+
+
+# --------------------------------------------------------------------------
 # Repuestos: agujas, levas y bandas
 # --------------------------------------------------------------------------
 # Los seis cuadros, como se ven en pantalla. Las columnas de la base están en

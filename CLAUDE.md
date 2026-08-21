@@ -107,8 +107,8 @@ descartes, no en silencio.
 mockear `store` entero, a propósito. Un test que mockea todo no ve que la app
 levanta pero devuelve 500 en cada pantalla.
 
-**El menu es de seis: Semaforo · Cargar mantenimiento · Ajustes de tela ·
-Repuestos · Maquinas · Tipos.** `/archivos` y `/carga` siguen vivas pero NO van en el menu:
+**El menu es de siete: Semaforo · Cargar mantenimiento · Ajustes de tela ·
+Produccion · Repuestos · Maquinas · Tipos.** `/archivos` y `/carga` siguen vivas pero NO van en el menu:
 las planillas ya se cargaron y no se tocan todos los dias. No volver a
 colgarlas.
 

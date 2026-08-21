@@ -1243,6 +1243,25 @@ check("las tres tablas de bandas van juntas",
 check("los codigos de aguja van uno por renglon",
       'class="codigo"' in c.get("/repuestos?ver=agujas").get_data(as_text=True))
 
+# Cuánto debería dar cada máquina tiene pantalla propia: estaba sólo adentro
+# de la ficha, así que comparar dos máquinas era entrar y salir de las dos.
+store.eficiencias = lambda: {10: {"id_maquina": 10, "rpm": 25, "sistemas": "102",
+                                  "diametro": 32, "alimentadores": 24,
+                                  "tamano_rollo": 1410, "minutos_rollo": 56.4,
+                                  "rollos_dia": 12, "kg_dia": 270,
+                                  "rollos_dia_24": 24, "kg_dia_24": 540}}
+store.gramajes = lambda id_maquina=None: [
+    {"id": 1, "id_maquina": 10, "fecha": date(2021, 11, 10), "tela": "FALSO F",
+     "hilos": "20/1 KW", "peso": 4.39, "orden": 1}]
+cuerpo = c.get("/produccion").get_data(as_text=True)
+check("produccion es una pantalla propia", "Cuánto debería dar cada máquina" in cuerpo)
+check("con los kilos de cada maquina", "270" in cuerpo)
+check("y las que no tienen el calculo se ven aparte",
+      "Sin el cálculo" in cuerpo and "MQ 2" in cuerpo)
+# El peso medido estaba cargado y no se veía en ninguna pantalla.
+check("el peso medido de la tela tambien se ve", "4,39" in cuerpo)
+check("produccion esta en el menu", "/produccion" in c.get("/").get_data(as_text=True))
+
 # --- 11. la ficha: los ultimos 5 y cuanto deberia dar ----------------------
 print("Ficha:")
 store.historial = lambda id_maquina=None, limite=200: [
