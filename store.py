@@ -730,7 +730,10 @@ def completar_ficha_vacia(id_maquina: int, datos: dict) -> bool:
     campos = [c for c in CAMPOS_FICHA if datos.get(c) not in (None, "")]
     if not campos:
         return False
-    sets = ", ".join(f"{c} = coalesce({c}, %s)" for c in campos)
+    # El nombre de la columna va con el de la tabla adelante: adentro de un
+    # ON CONFLICT, «marca» sola es ambigua —está en la tabla y en la fila que
+    # se quiso insertar— y Postgres contesta «column reference is ambiguous».
+    sets = ", ".join(f"{c} = coalesce(maquina_ficha.{c}, %s)" for c in campos)
     with _conn() as con, con.cursor() as cur:
         cur.execute(
             f"""INSERT INTO mantenimiento.maquina_ficha (id_maquina, {', '.join(campos)})
