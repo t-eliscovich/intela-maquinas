@@ -84,7 +84,7 @@ TIPOS = [{"id": 1, "nombre": "Cambio de agujas", "cada_kg": 50000,
 MAQS = [{"id": 10, "codigo": "1", "nombre": "TEJEDURIA-MQ 001", "numero": 1},
         {"id": 11, "codigo": "2", "nombre": "TEJEDURIA-MQ 002", "numero": 2},
         {"id": 12, "codigo": "3", "nombre": "TEJEDURIA-MQ 003", "numero": 3}]
-KG = {10: 80000.0, 11: 42000.0, 12: 1000.0}   # pasado / falta poco / tranquilo
+KG = {10: 80000.0, 11: 46000.0, 12: 1000.0}   # pasado / falta poco / tranquilo
 
 store.tipos = lambda incluir_inactivos=False: TIPOS
 store.historial = lambda id_maquina=None, limite=200: []
@@ -108,7 +108,9 @@ por_maquina = {f["maquina"]["id"]: f for f in filas}
 check("hay una sola fila por maquina", len(filas) == len(MAQS))
 check("lo mas pasado va primero", filas[0]["maquina"]["id"] == 10)
 check("pasado de kilos = vencido", por_maquina[10]["estado"] == "vencido")
-check("84% = falta poco", por_maquina[11]["estado"] == "por_vencer")
+check("92% = falta poco", por_maquina[11]["estado"] == "por_vencer")
+# El aviso arranca al 90%: al 84% todavía está en regla. Antes prendía al 80%.
+check("84% todavia esta en regla", A.AVISO == 0.90 and 0.84 < A.AVISO)
 check("2% = ok", por_maquina[12]["estado"] == "ok")
 check("dice cuanto se paso", round(por_maquina[10]["principal"]["falta"]) == -30000)
 check("el color lo pone el mantenimiento principal",
@@ -156,6 +158,27 @@ check("el que no tiene tope queda como dato, sin color",
       and por_maquina[10]["por_tipo"][1]["desde"] == hoy - timedelta(days=30))
 check("y el que tiene tope si prende", por_maquina[10]["estado"] == "vencido")
 check("la maquina tranquila sigue en verde", por_maquina[12]["estado"] == "ok")
+
+# Una máquina a la que le falta el tope tiene que hablar del mantenimiento que
+# PRENDE el semáforo, no del último que se le hizo. La MQ 52 decía «sin tope ·
+# Cambio de agujas», que es un tope que nadie va a poner nunca.
+DOS_TIPOS[1]["cada_kg"] = None      # el tope va por máquina, no por tipo
+store.topes_por_maquina = lambda: {(11, 2): 50000.0}
+store.ultimos_por_maquina_y_tipo = lambda: {
+    # A la 10 le falta el tope de limpieza y lo último fue un cambio de agujas.
+    (10, 1): {"fecha": hoy, "hecho_por": "x"},
+    (10, 2): {"fecha": hoy - timedelta(days=200), "hecho_por": "x"},
+    # A la 12 nunca le hicieron una limpieza: sólo tiene el cambio de agujas.
+    (12, 1): {"fecha": hoy, "hecho_por": "x"},
+}
+filas, _, _, _ = A.armar_semaforo()
+por_maquina = {f["maquina"]["id"]: f for f in filas}
+check("sin tope, la fila habla de la limpieza y no del cambio de agujas",
+      por_maquina[10]["estado"] == "sin_tope"
+      and por_maquina[10]["principal"]["tipo"]["id"] == 2)
+check("si nunca le hicieron una limpieza, lo que falta es arrancar",
+      por_maquina[12]["estado"] == "sin_arrancar")
+DOS_TIPOS[1]["cada_kg"] = 50000
 
 store.ultimos_por_maquina_y_tipo = lambda: {}
 filas, _, _, _ = A.armar_semaforo()
@@ -337,6 +360,123 @@ check("la maquina que no esta en Asinfo queda afuera con motivo",
 # la MQ 22 tiene 22 mantenimientos desde 2019.
 check("la hoja sin fecha ninguna queda afuera con motivo",
       any(d["donde"] == "MQ 2" and "fecha" in d["motivo"] for d in hd))
+
+# --- 6d. la ficha entera: los codigos de aguja y la ficha de al lado -------
+# «TIPO DE AGUJAS» no trae un codigo: trae los cuatro del cilindro y el del
+# plato, uno por renglon. Y seis hojas tienen DOS fichas pegadas, la de la
+# maquina y la copia de la de al lado: la MQ 61 salia con el numero de serie de
+# la otra, que es peor que no tener ninguno.
+print("Ficha completa:")
+wb3 = _WB()
+g1 = wb3.active; g1.title = "MAQ 1"
+g1.append(["R01-Registro de Mantenimiento"])
+g1.append(["Equipo:", "", "Cantidad de agujas", "MODELO", "Responsable",
+           "NUMERO", "TIPO DE AGUJAS"])
+g1.append(["CIRCULAR", "MAYER", 2460, "Relanit 3.2 HS", "", 73830,
+           "VO LS 140.50 G0036"])
+g1.append(["", "", "", "D 32   G24", "", "", "VO LS 140.50 G0037"])
+g1.append(["", "", "", "", "ANGEL PONCE", "", "VO LS 140.50 G0038"])
+g1.append(["", "", "", "", "", "", "VO LS 140.50 G0039"])
+g1.append(["Año de fabricación:", "", "", 2017, "", "", "platina 206001 681k 00"])
+g1.append(["Fecha", "Tipo de mantenimiento"])
+g1.append([datetime(2026, 7, 17), "limpieza de cilindro"])
+
+# Dos fichas pegadas. A la de la izquierda —la de esta maquina— le borraron los
+# titulos: los unicos que quedaron son los de la copia, ocho columnas a la
+# derecha. Los datos son los de la izquierda; los titulos, los de la derecha.
+g2 = wb3.create_sheet("MAQ 2")
+g2.append(["", "", "R01 REGISTRO DE MANTENIMIENTO"])
+g2.append(["Equipo:", "", "", "", "", "", "TIPO DE AGUJAS"])
+g2.append(["CIRCULAR", "MAYER", 2640, "OV 3.2 QC", "", 72345, "plato VOTA 65.41 G004",
+           "", "Equipo:", "", "Cantidad de agujas", "MODELO", "Responsable",
+           "NUMERO", "TIPO DE AGUJAS"])
+g2.append(["", "", "", "", "", "", "plato VO 65.41 G007",
+           "", "CIRCULAR", "JIUNN LONG", "", "JLD-T", "", 230502, "plato VOTA 65.41 G004"])
+g2.append(["2", "", "", "D 30   G28", "", "", "cilindro Vota 105,41 G005",
+           "", "", "", 3168, "D 36   G28"])
+g2.append(["", "", "96 ALIMENTADORES", "", "ANGEL PONCE"])
+g2.append(["Año de fabricación:", "", "", 2013])
+g2.append(["Fecha", "Tipo de mantenimiento"])
+g2.append([datetime(2026, 3, 10), "limpieza de cilindro"])
+
+# Una sola ficha, pero con «CANTIDAD DE AGUJAS» escrito dos veces: pasa en dos
+# hojas de verdad. Cortar ahi se llevaba puesto el numero de serie.
+g3 = wb3.create_sheet("MAQ.3")
+g3.append(["Equipo:", "", "Cantidad de agujas", "MODELO", "Responsable",
+           "NUMERO", "TIPO DE AGUJAS"])
+g3.append(["CIRCULAR", "MAYER", 1680, "FS 2,2", "", 75508, "VO 91,50 G0011"])
+g3.append(["", "", "", "D 30   G18", "", "", "VOTA 62,50 G0011"])
+g3.append(["", "", "", "", "", "CANTIDAD DE AGUJAS"])
+g3.append(["Fecha", "Tipo de mantenimiento"])
+g3.append([datetime(2026, 5, 4), "limpieza de cilindro"])
+
+buf3 = _io.BytesIO(); wb3.save(buf3); buf3.seek(0)
+ruta3 = _os.path.join(_tmp.gettempdir(), "planilla_fichas.xlsx")
+open(ruta3, "wb").write(buf3.getvalue())
+_, fichas3, _ = excel.leer_historial_por_maquina(ruta3, MAQS, TIPOS2,
+                                                 hoy=date(2026, 8, 20))
+fpn = {m["numero"]: f for m, f in fichas3}
+check("guarda los cinco codigos de aguja, no el primero",
+      fpn[1]["tipo_agujas"] == ("VO LS 140.50 G0036 · VO LS 140.50 G0037 · "
+                                "VO LS 140.50 G0038 · VO LS 140.50 G0039 · "
+                                "platina 206001 681k 00"))
+check("la serie no se lee de la ficha de al lado", str(fpn[2]["serie"]) == "72345")
+check("ni las agujas", fpn[2]["agujas"] == 2640)
+check("ni el modelo", fpn[2]["modelo"] == "OV 3.2 QC")
+check("de la ficha pegada se leen los codigos de la izquierda",
+      fpn[2]["tipo_agujas"].startswith("plato VOTA 65.41 G004 · plato VO 65.41 G007"))
+check("el diametro y la galga son los de esta maquina",
+      (fpn[2]["diametro"], fpn[2]["galga"]) == (30, 28))
+check("una etiqueta repetida en la MISMA ficha no la parte al medio",
+      str(fpn[3]["serie"]) == "75508" and fpn[3]["agujas"] == 1680)
+check("y sus codigos de aguja salen enteros",
+      fpn[3]["tipo_agujas"] == "VO 91,50 G0011 · VOTA 62,50 G0011")
+
+# --- 6e. una fila puede ser dos mantenimientos ----------------------------
+# La MQ 22 tiene renglones que dicen «limpiesa de cilindro» y en la columna de
+# al lado «cambio de cilindro a galga 28»: ese dia se hicieron DOS cosas.
+# Guardar sólo la limpieza borraba el cambio de cilindro del historial.
+print("Dos mantenimientos en un renglon:")
+TIPOS4 = [{"id": 1, "nombre": "Limpieza", "cada_kg": None, "activo": True},
+          {"id": 2, "nombre": "Cambio de agujas", "cada_kg": None, "activo": True},
+          {"id": 3, "nombre": "Cambio de cilindro", "cada_kg": None, "activo": True},
+          {"id": 4, "nombre": "Cambio de platinas", "cada_kg": None, "activo": True}]
+esp4, limp4 = excel._clasificar(TIPOS4)
+check("la limpieza es la que se llama limpieza", limp4["id"] == 1)
+nombres = lambda t: [x["nombre"] for x in excel._tipos_del_texto(t, esp4, limp4)]
+# La trampa: «limpiesa de cilindro» dice cilindro y NO es un cambio de cilindro.
+check("limpiar el cilindro es una limpieza",
+      nombres("limpiesa de cilindro") == ["Limpieza"])
+check("limpieza y cambio de cilindro son dos",
+      nombres("limpiesa de cilindro · cambio de cilindro a galga 28")
+      == ["Limpieza", "Cambio de cilindro"])
+check("el cambio de ci,indro mal tipeado tambien cuenta",
+      "Cambio de cilindro" in nombres("limpiesa de cilindro · cambio de ci,indro G 24"))
+check("las platinas van aparte",
+      nombres("limpiesa de cilindro · cambio de platinas galga 28")
+      == ["Limpieza", "Cambio de platinas"])
+check("agujas y platinas el mismo dia son las dos",
+      set(nombres("cambio de agujas y platinas"))
+      == {"Cambio de agujas", "Cambio de platinas"})
+check("una fila que no dice nada es una limpieza", nombres("") == ["Limpieza"])
+# Los tipos los crea el mecanico en la pantalla de Tipos. Si todavia no estan,
+# la planilla se sigue leyendo igual que antes: todo cae en limpieza.
+esp2, limp2 = excel._clasificar(TIPOS2)
+check("sin los tipos nuevos cargados, sigue siendo una limpieza",
+      [x["nombre"] for x in
+       excel._tipos_del_texto("limpiesa de cilindro · cambio de platinas", esp2, limp2)]
+      == ["Limpieza"])
+
+hm4, _, _ = excel.leer_historial_por_maquina(ruta2, MAQS, TIPOS4, hoy=date(2026, 8, 20))
+check("la clave (hoja, orden) sigue sin repetirse",
+      len({(m["hoja"], m["orden"]) for m in hm4}) == len(hm4))
+
+# Relanit es una maquina Mayer y JUNNLOG es JIUNN LONG mal tipeado: la misma
+# marca escrita de tres formas partia la planta en marcas que son la misma.
+check("relanit es mayer", excel._marca_pareja("RELANIT") == "MAYER")
+check("mayer mv4 es mayer", excel._marca_pareja("MAYER  MV4") == "MAYER")
+check("junnlog es jiunn long", excel._marca_pareja("JUNNLOG") == "JIUNN LONG")
+check("una marca bien escrita no se toca", excel._marca_pareja("PILOTELLI") == "PILOTELLI")
 
 # --- 7. la carga entera, de punta a punta ---------------------------------
 print("Carga del Excel:")
@@ -567,10 +707,10 @@ store.fichas = lambda: {10: {"marca": "Mayer", "modelo": "Relanit", "galga": 24,
 store.topes_por_maquina = lambda: {(10, 1): 50000.0}
 r = c.get("/maquinas")
 cuerpo = r.get_data(as_text=True)
-check("el listado dice que le falta a cada maquina", "Qué le falta" in cuerpo)
+check("el listado dice que le falta a cada maquina", "Datos que faltan" in cuerpo)
 check("la que esta completa se ve completa", "completa" in cuerpo)
 check("la que no tiene nada cargado dice que le falta la ficha",
-      "falta la ficha" in cuerpo)
+      "sin cargar: la ficha" in cuerpo)
 
 # --- 8d-bis. las fechas tipeadas a mano -----------------------------------
 # En la planilla hay doce fechas escritas en una celda de texto, con los dos
@@ -807,6 +947,41 @@ check("la revisión muestra qué entendió",
 _r = c.post(f"/carga/{_token}", data={"boton": "confirmar"})
 check("confirmar guarda todo junto", _r.status_code == 302 and _guardado.get("ajustes"))
 
+# --- 8e-bis. cargar un ajuste a mano, desde la pantalla -------------------
+# Hasta ahora los ajustes sólo entraban por la planilla: una puesta a punto que
+# se hizo hoy tenía que esperar a que alguien volviera a subir el Excel.
+print("Cargar un ajuste:")
+_ajuste = {}
+store.crear_ajuste = lambda d: _ajuste.update(d)
+store.ajustes = lambda id_maquina=None, tela=None, limite=400: []
+store.telas = lambda: []
+store.resumen_ajustes = lambda: {"filas": 0, "maquinas": 0, "con_fecha": 0,
+                                 "desde": None, "hasta": None}
+store.consumo_hilo = lambda: []
+r = c.post("/ajustes", data={"maquina": "1", "tela": "PIQUE",
+                             "fecha": hoy.isoformat(), "hilos": "20/1 KW",
+                             "cilindro": "pro 24", "estiraje": "B/4",
+                             "gramaje_crudo": "180,5"})
+check("cargar un ajuste guarda y vuelve a la lista", r.status_code == 302)
+check("lo guarda en la maquina que se eligio", _ajuste.get("id_maquina") == 10)
+check("con el nombre que tiene en Asinfo",
+      _ajuste.get("maquina_nombre") == "TEJEDURIA-MQ 001")
+check("la tela y los ajustes quedan como se escribieron",
+      _ajuste.get("tela") == "PIQUE" and _ajuste.get("cilindro") == "pro 24")
+check("el gramaje con coma se entiende", _ajuste.get("gramaje_crudo") == 180.5)
+check("lo que se dejo vacio queda vacio, no en blanco",
+      _ajuste.get("poleas") is None)
+_ajuste.clear()
+r = c.post("/ajustes", data={"maquina": "1", "tela": ""})
+check("sin tela no guarda y lo dice",
+      not _ajuste and "tela" in c.get("/ajustes").get_data(as_text=True).lower())
+r = c.post("/ajustes", data={"maquina": "1", "tela": "PIQUE",
+                             "fecha": (hoy + timedelta(days=1)).isoformat()})
+check("una fecha futura no entra", not _ajuste)
+r = c.post("/ajustes", data={"maquina": "1", "tela": "PIQUE",
+                             "gramaje_crudo": "un poco"})
+check("un gramaje que no es numero no entra", not _ajuste)
+
 # --- 8f. el historial de una máquina, agrupado por día --------------------
 print("Los dias de una maquina:")
 HISTORIAL = [
@@ -837,6 +1012,10 @@ check("la ultima parada cuenta los kilos hasta hoy",
       dias[0]["kg"] == 30000.0 and dias[0]["hasta_hoy"] is True)
 check("entre dos paradas, los kilos son la resta de los acumulados",
       dias[1]["kg"] == 65000.0)
+# Cuánto estuvo parada la máquina ese día: si se hicieron dos cosas, la suma.
+check("el tiempo del dia es la suma de lo que llevo cada cosa",
+      dias[0]["horas"] == 2.5)
+check("un dia sin horas anotadas no inventa un cero", dias[1]["horas"] is None)
 
 def _kilos_caidos(*a, **k):
     raise asinfo.AsinfoNoDisponible("timeout")

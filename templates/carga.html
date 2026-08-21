@@ -74,7 +74,7 @@
   <div class="titulo"><h2>Planilla de control de ajuste</h2>
     <p>{{ hojas | length }} hojas · una por máquina, más las de repuestos</p></div>
   <table>
-    <thead><tr><th>Qué</th><th class="der">Cuántas filas</th><th>Un ejemplo</th></tr></thead>
+    <thead><tr><th>Qué</th><th class="der">Cantidad</th><th>Un ejemplo</th></tr></thead>
     <tbody>
     {% for clave, filas_bloque in bloques.items() %}
       <tr>
@@ -90,8 +90,7 @@
     {% endfor %}
     </tbody>
   </table>
-  <p class="nota">Si ya se cargó antes, las filas que estaban se
-    <b>actualizan</b>: no se duplican.</p>
+  <p class="nota">Lo que ya estaba se <b>actualiza</b>. No se duplica.</p>
 </div>
 {% elif formato == 'historial' %}
 <div class="bloque">
@@ -120,14 +119,10 @@
     </tbody>
   </table>
   {% if ya_cargados %}
-  <p class="nota">
-    Hay <b>{{ ya_cargados }}</b> mantenimientos de la primera carga, que sólo
-    guardaba la última fecha. Son estas mismas fechas: al confirmar se
-    reemplazan, así ninguna máquina queda con el historial repetido.
-  </p>
+  <p class="nota">Se reemplazan <b>{{ ya_cargados }}</b> de la primera carga.
+    No queda historial repetido.</p>
   {% endif %}
-  <p class="nota">Si ya se cargó, cada fila se <b>actualiza</b> en su lugar: no
-    se duplica.</p>
+  <p class="nota">Lo que ya estaba se <b>actualiza</b>. No se duplica.</p>
 </div>
 {% else %}
 <div class="bloque">
@@ -219,7 +214,7 @@
   {% else %}
     <div style="width:220px">
       <label class="campo" for="hecho_por">Quién lo hizo</label>
-      <input name="hecho_por" id="hecho_por" placeholder="Carga del Excel">
+      <input name="hecho_por" id="hecho_por" placeholder="Nombre del mecánico">
     </div>
     <button class="btn" type="submit" name="boton" value="confirmar"
             {{ 'disabled' if not listas }}>Guardar estas {{ listas | length }} máquinas</button>

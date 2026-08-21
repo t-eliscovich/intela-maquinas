@@ -9,7 +9,9 @@
     --tinta:#0f172a; --gris:#64748b; --gris-claro:#94a3b8;
     --borde:#e6eaf0; --fondo:#f5f7fa; --papel:#fff;
     --azul:#0f2942; --acento:#2563eb;
-    --rojo:#dc2626; --ambar:#d97706; --verde:#16a34a;
+    /* El naranja del «falta poco» va fuerte: en la planta la pantalla se mira
+       de lejos y el ámbar suave se perdía contra el gris. */
+    --rojo:#dc2626; --ambar:#ea580c; --verde:#16a34a;
     --radio:14px;
   }
   /* La planta mira esto en una pantalla chica y de parado: entra todo o no se
@@ -119,6 +121,32 @@
   .btn.suave:hover{background:#f7f9fc}
   .btn.chico{height:30px;padding:0 12px;font-size:13px}
 
+  /* ---------- ordenar una tabla tocando el título ---------- */
+  th.ordena{cursor:pointer;-webkit-user-select:none;user-select:none}
+  th.ordena:hover{color:var(--azul)}
+  th.ordena.ordenada{color:var(--azul)}
+  th.ordena.ordenada::after{content:" ▲";font-size:9px}
+  th.ordena.ordenada[data-como="baja"]::after{content:" ▼"}
+
+  /* ---------- cuánto debería dar ---------- */
+  /* Dos zonas separadas: lo que se carga y lo que sale de la cuenta. Con los
+     diez casilleros iguales y en fila nadie sabía cuál tocar, y ocupaban media
+     pantalla para diez números cortos. */
+  .deberia{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-start}
+  .deberia-zona{display:flex;flex-direction:column;gap:5px}
+  .deberia-zona > b{font-size:11px;font-weight:800;letter-spacing:.04em;
+        text-transform:uppercase;color:var(--gris)}
+  .deberia-zona > b small{font-weight:600;text-transform:none;letter-spacing:0;
+        color:var(--gris-claro)}
+  .deberia-zona.sale{background:#f4f6f9;border:1px solid var(--borde);border-radius:10px;
+        padding:7px 10px;margin:-8px 0 0}
+  .deberia-zona.sale input{background:#fff;font-weight:700}
+  .deberia-campos{display:flex;flex-wrap:wrap;gap:6px}
+  .deberia-campos > div{width:98px}
+  .deberia-campos .campo{font-size:11px;line-height:1.2;margin-bottom:2px;min-height:26px}
+  .deberia-campos input{height:32px;font-size:14px;padding:0 8px}
+  .deberia-pie{flex-basis:100%;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+
   /* ---------- la ficha de una máquina ---------- */
   .ficha-cabecera{display:flex;align-items:center;justify-content:space-between;gap:12px;
         flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--borde)}
@@ -198,7 +226,7 @@
     <nav>
       <a href="{{ url_for('semaforo') }}"   class="{{ 'activo' if request.endpoint=='semaforo' }}">Semáforo</a>
       <a href="{{ url_for('registrar') }}"  class="{{ 'activo' if request.endpoint=='registrar' }}">Cargar mantenimiento</a>
-      <a href="{{ url_for('ajustes_view') }}" class="{{ 'activo' if request.endpoint=='ajustes_view' }}">Ajustes</a>
+      <a href="{{ url_for('ajustes_view') }}" class="{{ 'activo' if request.endpoint=='ajustes_view' }}">Ajustes de tela</a>
       <a href="{{ url_for('repuestos') }}" class="{{ 'activo' if request.endpoint=='repuestos' }}">Repuestos</a>
       <a href="{{ url_for('maquinas_lista') }}" class="{{ 'activo' if request.endpoint in ('maquinas_lista','maquina_detalle') }}">Máquinas</a>
       <a href="{{ url_for('tipos_view') }}" class="{{ 'activo' if request.endpoint=='tipos_view' }}">Tipos</a>

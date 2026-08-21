@@ -33,9 +33,15 @@ TIPOS = [
      "cada_dias": None, "activo": True},
     {"id": 2, "nombre": "Limpieza", "cada_kg": 50000, "cada_rollos": None,
      "cada_dias": None, "activo": True},
+    {"id": 3, "nombre": "Cambio de cilindro", "cada_kg": None, "cada_rollos": None,
+     "cada_dias": None, "activo": True},
+    {"id": 4, "nombre": "Cambio de platinas", "cada_kg": None, "cada_rollos": None,
+     "cada_dias": None, "activo": True},
 ]
+# Las 43 de verdad, con el hueco del 31 al 50: la pantalla de cargar muestra un
+# botón por máquina y con quince inventadas no se veía cómo queda la rejilla.
 MAQS = [{"id": 100 + n, "codigo": str(n), "nombre": f"TEJEDURIA-MQ {n:03d}", "numero": n}
-        for n in range(1, 16)]
+        for n in list(range(1, 31)) + list(range(51, 64))]
 
 # Kilos de mentira, pero con la forma real: unas pocas máquinas tejen mucho.
 def _kg(id_maquina, tipo_id):

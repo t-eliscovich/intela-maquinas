@@ -2,8 +2,7 @@
 {% block titulo %}Sin base de datos{% endblock %}
 {% block contenido %}
 <h1>No hay conexión con la base
-  <small>El programa levantó, pero no puede leer ni guardar nada. Mejor decirlo que
-  mostrar pantallas vacías que parecen datos.</small></h1>
+  <small>El programa levantó, pero no puede leer ni guardar nada.</small></h1>
 
 <div class="bloque">
   <div class="titulo"><h2>El error, tal cual</h2></div>
@@ -14,10 +13,11 @@
 <div class="bloque">
   <div class="titulo"><h2>Qué mirar</h2></div>
   <div class="relleno"><ul style="margin:0;padding-left:20px;line-height:1.9">
-    <li>Que <code>MAQUINAS_DATABASE_URL</code> esté seteada a nivel «Machine» en el server.</li>
-    <li>Que la tarea se haya reiniciado <b>después</b> de setear la variable — si no, el
-        proceso sigue con el entorno viejo.</li>
-    <li>El log del día en <code>C:\maquinas_app\logs\</code>.</li>
+    <li>Que <code>MAQUINAS_DATABASE_URL</code> esté cargada en el servidor, para todo
+        el equipo y no para un usuario solo.</li>
+    <li>Que el programa se haya reiniciado <b>después</b> de cargarla: si no, sigue
+        andando con la de antes.</li>
+    <li>Lo que pasó hoy, anotado en <code>C:\maquinas_app\logs\</code>.</li>
   </ul></div>
 </div>
 {% endblock %}

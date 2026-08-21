@@ -4,7 +4,8 @@
 <h1>Las máquinas</h1>
 
 {% if error %}
-  <div class="aviso"><b>No se pudo leer Asinfo.</b> {{ error }}</div>
+  <div class="aviso"><b>No se pudo leer Asinfo.</b>
+    Probá de nuevo en un rato. Si sigue igual, avisá a sistemas.</div>
 {% endif %}
 
 <div class="bloque">
@@ -17,16 +18,19 @@
   <table>
     <thead>
       <tr>
-        <th>Máquina</th><th>Qué le falta</th><th>Marca</th><th>Modelo</th>
-        <th class="der">Diám.</th><th class="der">Galga</th>
-        <th class="der oculta-chico">Alim.</th><th class="der oculta-chico">Agujas</th>
+        <th>Máquina</th><th>Datos que faltan</th><th>Marca</th><th>Modelo</th>
+        <th class="der">Diámetro</th><th class="der">Galga</th>
+        <th class="der oculta-chico">Alimentadores</th><th class="der oculta-chico">Agujas</th>
         <th class="der oculta-chico">Año</th>
         {% for t in tipos %}<th class="oculta-chico">{{ t.nombre }}</th>{% endfor %}
       </tr>
     </thead>
     <tbody>
     {% for f in filas %}
-      <tr class="{{ 'por_vencer' if f.falta }}">
+      {# Gris, no naranja: acá «falta» es un dato de la ficha sin cargar, no un
+         mantenimiento por vencer. Con el mismo color, la lista parecía media
+         planta a punto de romperse. #}
+      <tr class="{{ 'sin_tope' if f.falta }}">
         {# Sólo «MQ 3»: el nombre de Asinfo es «TEJEDURIA-MQ 003» y repetirlo
            debajo hacía de cada renglón dos. #}
         <td>
@@ -35,7 +39,7 @@
         </td>
         <td>
           {% if f.falta %}
-            <span class="marca-estado por_vencer">falta {{ f.falta | join(', ') }}</span>
+            <span class="marca-estado sin_tope">sin cargar: {{ f.falta | join(', ') }}</span>
           {% else %}<span class="marca-estado ok">completa</span>{% endif %}
         </td>
         <td>{{ f.ficha.marca or '—' }}</td>

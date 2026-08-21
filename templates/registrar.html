@@ -1,23 +1,23 @@
 {% extends "base.html" %}
 {% block titulo %}Cargar mantenimiento{% endblock %}
 {% block contenido %}
-<h1>Cargar un mantenimiento hecho
+<h1>Cargar mantenimiento
   <small>Al guardar, esa máquina vuelve a cero.</small></h1>
 
 <div class="bloque"><div class="relleno">
-  {# Esta es la pantalla que más se usa en el día. En columna, los ocho campos
-     obligaban a scrollear hasta el botón para cargar UN mantenimiento: por eso
-     los cortos van todos en la misma rejilla y Guardar queda al lado de la
-     nota, a la vista desde el primer campo. #}
+  {# Esta es la pantalla que más se usa en el día. Los campos van en una sola
+     rejilla y Guardar queda a la vista desde el primero: en columna, cargar UN
+     mantenimiento era media pantalla de scroll. Repuestos y Nota van al final
+     porque casi nunca se completan: quien carga lo de siempre llega al botón
+     sin pasar por ellos. #}
   <form method="POST" class="formulario">
     <div>
+      {# Se escribe el número y abajo aparece el nombre que tiene en Asinfo:
+         así se ve, antes de guardar, que es la máquina que se quería. #}
       <label class="campo" for="maquina">Máquina</label>
-      <input name="maquina" id="maquina" list="maquinas" required autofocus
-             inputmode="numeric" autocomplete="off" placeholder="1"
+      <input name="maquina" id="maquina" required autofocus inputmode="numeric"
+             autocomplete="off" placeholder="1"
              value="{{ request.args.get('numero', '') }}">
-      <datalist id="maquinas">
-        {% for m in maquinas %}<option value="{{ m.numero }}">{{ m.nombre }}</option>{% endfor %}
-      </datalist>
     </div>
 
     <div>
@@ -46,24 +46,22 @@
     </div>
 
     <div>
-      <label class="campo" for="repuestos">Repuestos (opcional)</label>
-      <input name="repuestos" id="repuestos" placeholder="12 agujas de cilindro">
-    </div>
-
-    <div>
       <label class="campo" for="horas">Horas</label>
       <input name="horas" id="horas" inputmode="decimal" placeholder="2,5" required>
     </div>
 
-    <p class="ayuda ancho" style="margin:0">
-      La máquina es el número nomás. La 1 es la
-      {{ maquinas[0].nombre if maquinas else 'TEJEDURIA-MQ 001' }}.
-      {%- if not tipos %} No hay tipos:
+    <p class="ayuda ancho" style="margin:0" id="nombre-maquina">
+      {%- if not maquinas %}No se pudo leer la lista de máquinas.
+      {%- elif not tipos %} No hay tipos:
         <a href="{{ url_for('tipos_view') }}">definilos primero</a>.{% endif %}
     </p>
 
-    <div class="ancho" style="display:flex;gap:12px;align-items:flex-end">
-      <div style="flex:1;min-width:0">
+    <div class="ancho" style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+      <div style="flex:1;min-width:150px">
+        <label class="campo" for="repuestos">Repuestos (opcional)</label>
+        <input name="repuestos" id="repuestos" placeholder="12 agujas de cilindro">
+      </div>
+      <div style="flex:2;min-width:180px">
         <label class="campo" for="nota">Nota (opcional)</label>
         <input name="nota" id="nota" placeholder="Algo raro que se vio">
       </div>
@@ -71,6 +69,27 @@
     </div>
   </form>
 </div></div>
+
+{# El nombre de Asinfo, mientras se escribe. Si el número no existe se dice con
+   el número puesto: no se elige una parecida. #}
+<script>
+(function () {
+  var nombres = {{ nombres_maquinas | tojson }};
+  var campo = document.getElementById('maquina');
+  var salida = document.getElementById('nombre-maquina');
+  if (!campo || !salida) return;
+  var deAntes = salida.innerHTML;
+  function mostrar() {
+    var escrito = (campo.value || '').replace(/[^0-9]/g, '');
+    if (!escrito) { salida.innerHTML = deAntes; return; }
+    var numero = parseInt(escrito, 10);
+    var nombre = nombres[String(numero)];
+    salida.textContent = nombre || ('No existe la máquina ' + numero + '. Fijate el número.');
+  }
+  campo.addEventListener('input', mostrar);
+  mostrar();
+})();
+</script>
 
 {% if historial %}
 <div class="bloque">
@@ -83,7 +102,7 @@
     {% for h in historial %}
       <tr>
         <td>{{ h.fecha | fecha_es }}</td>
-        <td>{{ h.maquina_nombre }}</td>
+        <td>{{ h.maquina_nombre | mq }}</td>
         <td>{{ h.tipo_nombre }}</td>
         <td>{{ h.hecho_por }}</td>
         <td class="tenue oculta-chico">{{ h.repuestos or '—' }}</td>

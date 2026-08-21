@@ -720,7 +720,13 @@ def leer_eficiencia(wb, maquinas) -> tuple[list[dict], list[dict]]:
             continue
         if not mapa:
             continue
-        numero = _numero(fila[mapa["numero"]] if mapa["numero"] < len(fila) else None)
+        # Con `.get`, no con `[...]`: si a esa hoja le cambian el título de la
+        # columna de la máquina, esto tiene que dejar la hoja de lado, no tirar
+        # abajo la carga entera de la planilla.
+        columna = mapa.get("numero")
+        if columna is None:
+            continue
+        numero = _numero(fila[columna] if columna < len(fila) else None)
         if numero is None or numero in vistas:
             continue
         maquina = por_numero.get(numero)

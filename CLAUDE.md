@@ -52,19 +52,48 @@ distintos.
 ficha de cada maquina (dentro de «Editar la ficha y los kilos»), no en una
 pantalla aparte: el numero es de la maquina.
 
-**Los tests corren antes de cada commit.** Son 182 checks en 19 grupos y tardan
+**Los tests corren antes de cada commit.** Son 251 checks en 26 grupos y tardan
 un segundo. Cubren lo que ya rompió producción: el pool sin inicializar, la
 inyección en el SQL de Asinfo, la aritmética del semáforo, el arranque en lote,
 la lectura de las dos planillas (mantenimiento y control de ajuste), el
 historial que se recarga sin duplicar, los kilos entre paradas y que cada
 pantalla del menú abra de verdad.
 
+**El aviso naranja prende al 90%, no al 80%.** El número vive en `AVISO`
+(app.py) y la barra del semáforo lo recibe como `aviso`: estaba escrito a mano
+en la plantilla y entre el 80% y el 90% la fila decía «En regla» en verde con
+la barra naranja.
+
+**Un renglón de la planilla puede ser DOS mantenimientos.** «limpiesa de
+cilindro · cambio de cilindro a galga 28» son dos cosas hechas el mismo día. Y
+al revés: «limpiesa de cilindro» NO es un cambio de cilindro — tiene que decir
+*cambio*. Por eso la fila 7 se guarda como orden 70, 71, 72: la clave
+(hoja, orden) tiene que seguir siendo única.
+
+**Los tipos los crea el mecánico en la pantalla de Tipos.** El lector busca cuál
+de los que EXISTEN habla de agujas, cilindro o platinas (`excel._clasificar`).
+Si uno no está cargado, esa frase cae en limpieza. Nunca crear tipos desde el
+código.
+
+**Recargar una planilla borra y rehace sus hojas.** Antes sólo actualizaba fila
+por fila, así que una fila borrada del Excel se quedaba para siempre. Los
+mantenimientos cargados a mano (`hoja` en nulo) no se tocan.
+
+**Seis hojas tienen DOS fichas pegadas al lado.** La de la máquina y la copia de
+la de al lado. La MQ 61 salía con el número de serie de la otra. Se corta en la
+columna donde empieza el segundo encabezado (`excel._segunda_ficha`), y si a la
+de la izquierda le borraron los títulos se leen con los de la copia
+(`excel._espejo`).
+
+**Un número escrito a mano va con `a_decimal_es`, no con `a_decimal`.** Acá el
+punto es de miles: `a_decimal("1.410")` devuelve 1,41 y guardaba mal las rpm.
+
 **Importar la app como la importa Waitress.** Los tests hacen `import app` sin
 mockear `store` entero, a propósito. Un test que mockea todo no ve que la app
 levanta pero devuelve 500 en cada pantalla.
 
-**El menu es de seis: Semaforo · Cargar mantenimiento · Ajustes · Repuestos ·
-Maquinas · Tipos.** `/archivos` y `/carga` siguen vivas pero NO van en el menu:
+**El menu es de seis: Semaforo · Cargar mantenimiento · Ajustes de tela ·
+Repuestos · Maquinas · Tipos.** `/archivos` y `/carga` siguen vivas pero NO van en el menu:
 las planillas ya se cargaron y no se tocan todos los dias. No volver a
 colgarlas.
 

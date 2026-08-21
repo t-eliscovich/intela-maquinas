@@ -227,10 +227,20 @@ ESQUEMA = """
                 creado_en      timestamptz NOT NULL DEFAULT now()
             );
 
+            -- Un ajuste cargado desde la pantalla no salió de ninguna planilla:
+            -- no tiene hoja ni fila. Con el NOT NULL puesto, la pantalla de
+            -- «Cargar un ajuste nuevo» no podía guardar NUNCA — cada intento
+            -- terminaba en un error de Postgres en la cara del mecánico.
+            ALTER TABLE mantenimiento.ajuste ALTER COLUMN hoja DROP NOT NULL;
+
+            ALTER TABLE mantenimiento.ajuste ALTER COLUMN orden DROP NOT NULL;
+
             -- (hoja, orden) = de qué hoja del Excel salió y en qué fila estaba.
             -- Es lo que hace que volver a cargar la misma planilla ACTUALICE en
             -- vez de duplicar: sin esto, cargarla dos veces deja 2.388 ajustes
-            -- y ninguna forma de saber cuáles sobran.
+            -- y ninguna forma de saber cuáles sobran. Los cargados a mano van
+            -- con las dos en nulo y en Postgres dos nulos no chocan, así que no
+            -- se pisan entre ellos ni con los de la planilla.
             CREATE UNIQUE INDEX IF NOT EXISTS ajuste_hoja_orden_idx
                 ON mantenimiento.ajuste (hoja, orden);
             CREATE INDEX IF NOT EXISTS ajuste_maquina_idx
@@ -490,6 +500,15 @@ def guardar_historial(filas: list[dict]) -> dict:
             (SELLO_CARGA_VIEJA,),
         )
         borrados = cur.rowcount or 0
+        # Las hojas que vuelven a venir se cargan de cero. Antes sólo se
+        # actualizaba fila por fila: una fila borrada del Excel se quedaba para
+        # siempre en el programa, y una fila que pasó a ser DOS mantenimientos
+        # dejaba al viejo al lado de los nuevos.
+        hojas = sorted({f["hoja"] for f in filas if f.get("hoja")})
+        if hojas:
+            cur.execute(
+                "DELETE FROM mantenimiento.service WHERE hoja = ANY(%s)", (hojas,)
+            )
         # El `WHERE hoja IS NOT NULL` no es de más: el índice único es PARCIAL
         # (sólo mira las filas que vinieron de una planilla, para no molestar a
         # las cargadas a mano). Postgres exige que el ON CONFLICT repita esa
@@ -767,6 +786,22 @@ def resumen_ajustes() -> dict:
              FROM mantenimiento.ajuste"""
     )
     return filas[0] if filas else {}
+
+
+def crear_ajuste(datos: dict) -> None:
+    """Un ajuste cargado a mano, desde la pantalla.
+
+    Va sin `hoja` ni `orden`: no salió de ninguna planilla. El índice único es
+    de (hoja, orden) y en Postgres dos NULL no chocan, así que se pueden cargar
+    todos los que hagan falta sin pisarse.
+    """
+    campos = tuple(c for c in CAMPOS_AJUSTE if c not in ("hoja", "orden"))
+    columnas = ", ".join(campos)
+    marcas = ", ".join(["%s"] * len(campos))
+    _ejecutar(
+        f"INSERT INTO mantenimiento.ajuste ({columnas}) VALUES ({marcas})",
+        tuple(datos.get(c) for c in campos),
+    )
 
 
 def guardar_ajustes(filas: list[dict]) -> int:

@@ -29,10 +29,73 @@
     </form>
   </div>
 
+  {# Cargar uno a mano. Va plegado y arriba de la lista: la pantalla se abre
+     para mirar, no para cargar, pero cuando hay que cargar tiene que estar a
+     la vista y no en otra pantalla. #}
+  <details id="nuevo" {{ 'open' if abrir_nuevo }}>
+    <summary>Cargar un ajuste nuevo</summary>
+    <div class="relleno" style="padding:10px 14px">
+      <form method="POST" class="formulario">
+        <div>
+          <label class="campo" for="mq-nueva">Máquina</label>
+          <input name="maquina" id="mq-nueva" required inputmode="numeric"
+                 autocomplete="off" placeholder="21">
+        </div>
+        <div>
+          <label class="campo" for="tela-nueva">Tela</label>
+          <input name="tela" id="tela-nueva" required list="telas"
+                 placeholder="PIQUE" autocomplete="off">
+        </div>
+        <div>
+          <label class="campo" for="fecha-nueva">Cuándo</label>
+          <input type="date" name="fecha" id="fecha-nueva" value="{{ hoy }}" max="{{ hoy }}">
+        </div>
+        <div>
+          <label class="campo" for="hilos-nuevo">Hilos</label>
+          <input name="hilos" id="hilos-nuevo" placeholder="20/1 KW · 16/1 EP">
+        </div>
+        <div>
+          <label class="campo" for="cilindro-nuevo">Cilindro</label>
+          <input name="cilindro" id="cilindro-nuevo" placeholder="pro 24">
+        </div>
+        <div>
+          <label class="campo" for="poleas-nuevo">Poleas</label>
+          <input name="poleas" id="poleas-nuevo" placeholder="dibujo 30 · pro 26">
+        </div>
+        <div>
+          <label class="campo" for="agujas-nuevo">Ajuste de agujas</label>
+          <input name="ajuste_agujas" id="agujas-nuevo" placeholder="lycra pro 6,5">
+        </div>
+        <div>
+          <label class="campo" for="estiraje-nuevo">Estiraje</label>
+          <input name="estiraje" id="estiraje-nuevo" placeholder="B/4">
+        </div>
+        <div>
+          <label class="campo" for="malla-nueva">Malla</label>
+          <input name="malla_manual" id="malla-nueva" placeholder="30,2 LM">
+        </div>
+        <div>
+          <label class="campo" for="gramaje-nuevo">Gramaje crudo (g/m²)</label>
+          <input name="gramaje_crudo" id="gramaje-nuevo" inputmode="decimal"
+                 placeholder="180,5">
+        </div>
+        <div>
+          <label class="campo" for="tipo-maquina-nuevo">Tipo de máquina</label>
+          <input name="tipo_maquina" id="tipo-maquina-nuevo" placeholder="MAYER 32">
+        </div>
+        <div class="ancho" style="display:flex;gap:12px;align-items:center">
+          <button class="btn" type="submit">Guardar</button>
+          <span class="ayuda" style="margin:0">La máquina y la tela son lo único
+            obligatorio. Lo que no se sepa, se deja vacío.</span>
+        </div>
+      </form>
+    </div>
+  </details>
+
   {% if not filas %}
     <div class="vacio">
       <h3>No hay ningún ajuste cargado</h3>
-      <p>Se cargan desde la planilla de control de ajuste de planta.</p>
+      <p>Se cargan acá arriba, de a uno, o subiendo la planilla de control de ajuste.</p>
     </div>
   {% else %}
   <table>

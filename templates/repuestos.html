@@ -52,11 +52,16 @@
     <input type="hidden" name="ver" value="{{ ver }}">
   </form>
 
-  <table>
+  {# Se ordena tocando el título de la columna. La lista viene ordenada por
+     máquina, que es como se busca casi siempre, pero para pedir bandas hace
+     falta verla por diámetro y para contar levas, por cantidad. #}
+  <table id="cuadro-repuestos">
     <thead><tr>
       {% for c in cuadro.columnas %}
-        <th class="{{ 'der' if c.tipo in ('entero','decimal') }}
-                   {{ 'oculta-chico' if loop.index > 3 }}">{{ c.titulo }}</th>
+        <th class="ordena {{ 'der' if c.tipo in ('entero','decimal') }}
+                   {{ 'oculta-chico' if loop.index > 3 }}"
+            data-orden="{{ 'numero' if c.tipo in ('entero','decimal','maquina') else 'texto' }}"
+            title="Tocá para ordenar por {{ c.titulo | lower }}">{{ c.titulo }}</th>
       {% endfor %}
       <th></th>
     </tr></thead>
@@ -70,7 +75,7 @@
           <td>
             <div class="acciones">
               <button class="btn chico" form="editar-fila" type="submit">Guardar</button>
-              <a class="btn chico suave" href="{{ url_for('repuestos', ver=ver) }}">Dejar</a>
+              <a class="btn chico suave" href="{{ url_for('repuestos', ver=ver) }}">Salir sin guardar</a>
               <button class="btn chico suave" form="editar-fila" type="submit"
                       name="accion" value="borrar"
                       onclick="return confirm('¿Borrar esta fila?')">Borrar</button>
@@ -107,8 +112,60 @@
 
   {% if not filas %}
     <p class="nota">Todavía no hay nada cargado en este cuadro. Se llena acá, o
-      subiendo la planilla de control de ajuste en Archivos.</p>
+      <a href="{{ url_for('archivos') }}">subiendo la planilla de ajustes</a>.</p>
   {% endif %}
 </div>
+
+{# Ordenar tocando el título. La fila en blanco de abajo no se mueve nunca: es
+   para agregar, no es un dato. #}
+<script>
+(function () {
+  var tabla = document.getElementById("cuadro-repuestos");
+  if (!tabla || !tabla.tBodies.length) { return; }
+  var cuerpo = tabla.tBodies[0];
+
+  function numero(texto) {
+    var limpio = texto.replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".");
+    var x = parseFloat(limpio);
+    return isFinite(x) ? x : null;
+  }
+  function valor(fila, i, tipo) {
+    var celda = fila.children[i];
+    var texto = celda ? celda.textContent.trim() : "";
+    if (texto === "—" || texto === "") { return null; }
+    return tipo === "numero" ? numero(texto) : texto.toLowerCase();
+  }
+
+  tabla.querySelectorAll("thead th.ordena").forEach(function (th) {
+    th.addEventListener("click", function () {
+      var i = Array.prototype.indexOf.call(th.parentNode.children, th);
+      var tipo = th.dataset.orden;
+      var subiendo = th.dataset.como !== "sube";
+      tabla.querySelectorAll("thead th.ordena").forEach(function (otra) {
+        if (otra !== th) { otra.removeAttribute("data-como"); otra.classList.remove("ordenada"); }
+      });
+      th.dataset.como = subiendo ? "sube" : "baja";
+      th.classList.add("ordenada");
+
+      var filas = Array.prototype.filter.call(cuerpo.children, function (f) {
+        return !f.classList.contains("nueva");
+      });
+      var nueva = cuerpo.querySelector("tr.nueva");
+      filas.sort(function (a, b) {
+        var x = valor(a, i, tipo), y = valor(b, i, tipo);
+        // Lo que no tiene dato va siempre al final, se ordene como se ordene.
+        if (x === null && y === null) { return 0; }
+        if (x === null) { return 1; }
+        if (y === null) { return -1; }
+        if (x < y) { return subiendo ? -1 : 1; }
+        if (x > y) { return subiendo ? 1 : -1; }
+        return 0;
+      });
+      filas.forEach(function (f) { cuerpo.appendChild(f); });
+      if (nueva) { cuerpo.appendChild(nueva); }
+    });
+  });
+})();
+</script>
 
 {% endblock %}

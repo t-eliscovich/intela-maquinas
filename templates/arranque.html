@@ -10,7 +10,7 @@
     <a class="btn" href="{{ url_for('tipos_view') }}">Ir a tipos</a>
   </div></div>
 {% elif not maquinas %}
-  <div class="bloque"><div class="vacio"><h3>No se pudo leer las máquinas de Asinfo</h3></div></div>
+  <div class="bloque"><div class="vacio"><h3>No se pudo leer Asinfo</h3><p>Probá de nuevo en un rato. Si sigue igual, avisá a sistemas.</p></div></div>
 {% else %}
 
 <div class="bloque"><div class="relleno">
@@ -49,7 +49,7 @@
     Se crea un mantenimiento para cada máquina que no tenga uno de ese tipo; las
     que ya tienen no se tocan. Desde esa fecha los kilos los cuenta Asinfo solo,
     y cuando se haga uno de verdad se carga en
-    <a href="{{ url_for('registrar') }}">Cargar uno</a>.
+    <a href="{{ url_for('registrar') }}">Cargar mantenimiento</a>.
   </p>
 </div></div>
 

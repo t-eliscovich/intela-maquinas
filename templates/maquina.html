@@ -20,7 +20,7 @@
      líneas, no de cinco, y abajo queda lugar para los mantenimientos. #}
   <div class="ficha-datos" style="padding:8px 14px">
     <div>
-      <p><span>Máquina:</span> {{ maquina.nombre if maquina else '—' }}</p>
+      <p><span>Nombre en Asinfo:</span> {{ maquina.nombre if maquina else '—' }}</p>
       <p><span>Marca:</span> {{ ficha.marca or '—' }}</p>
       <p><span>Modelo:</span> {{ ficha.modelo or '—' }}</p>
     </div>
@@ -54,7 +54,7 @@
 
   <div class="nota" style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
     <a href="{{ url_for('maquinas_lista') }}">← Todas las máquinas</a>
-    <a href="{{ url_for('registrar') }}?numero={{ maquina.numero if maquina else '' }}">Cargar un mantenimiento</a>
+    <a href="{{ url_for('registrar') }}?numero={{ maquina.numero if maquina else '' }}">Cargar mantenimiento</a>
     <a href="{{ url_for('ajustes_view', maquina=maquina.numero if maquina else '') }}">Ver los ajustes</a>
   </div>
 
@@ -112,16 +112,19 @@
   <tr>
     <td><b>{{ d.fecha | fecha_es }}</b></td>
     <td class="der">
+      {# La primera fila es la parada más nueva: sus kilos son los que lleva
+         encima ahora. Aclararlo con un «hasta hoy» al lado no agregaba nada. #}
       {% if d.kg is none %}<span class="tenue">—</span>
-      {% else %}{{ d.kg | num(0) }}
-        {% if d.hasta_hoy %}<span class="tenue" style="font-size:11px">hasta hoy</span>{% endif %}
-      {% endif %}
+      {% else %}{{ d.kg | num(0) }}{% endif %}
     </td>
     <td>
       {% for t in d.tipos %}
         <span class="etiqueta {{ 'agujas' if 'aguja' in t | lower else 'limpieza' }}">{{ t }}</span>
       {% endfor %}
     </td>
+    {# Cuánto estuvo parada. Los de la planilla vienen sin hora anotada. #}
+    <td class="der tenue">
+      {% if d.horas %}{{ d.horas | num(1) }} h{% else %}—{% endif %}</td>
     <td class="tenue oculta-chico">{{ d.repuestos | join(' · ') or '—' }}</td>
     <td class="tenue oculta-chico">{{ d.notas | join(' · ') or '—' }}</td>
   </tr>
@@ -130,6 +133,7 @@
 {% macro encabezado() -%}
   <thead><tr>
     <th>Fecha</th><th class="der">Kilos</th><th>Qué se hizo</th>
+    <th class="der">Horas</th>
     <th class="oculta-chico">Repuestos</th>
     <th class="oculta-chico">Anotado</th>
   </tr></thead>
@@ -137,10 +141,10 @@
 
 <div class="bloque">
   <div class="titulo"><h2>{{ dias | length | num(0) }} mantenimientos</h2>
-    <p>Los kilos son lo que tejió desde la parada anterior</p></div>
+    <p>Los kilos son lo que tejió desde el mantenimiento anterior</p></div>
   {% if not dias %}
     <div class="vacio"><h3>Todavía no tiene nada anotado</h3>
-      <p>Se cargan de a uno, o subiendo la planilla de planta en Archivos.</p></div>
+      <p>Se cargan de a uno, o <a href="{{ url_for('archivos') }}">subiendo la planilla</a>.</p></div>
   {% else %}
   <table>
     {{ encabezado() }}
@@ -173,44 +177,57 @@
   <summary>Cuánto debería dar</summary>
   <div class="relleno" style="padding:10px 14px">
     <p class="ayuda" style="margin:0 0 8px">Es el cálculo de la planilla, no lo que
-      tejió. La cuenta: las vueltas del rollo dividido las vueltas por minuto dan
-      los minutos que tarda un rollo, y de ahí cuántos rollos enteros entran en el
-      turno. Los kilos son los rollos por el peso del rollo.</p>
-    <form method="POST" id="eficiencia" class="formulario" style="max-width:none">
+      tejió.</p>
+    {# Los diez casilleros eran todos iguales y no se sabía cuál tocar: los
+       cinco de arriba son los que se cargan, los otros salen de la cuenta.
+       Salen en un recuadro aparte, y se pueden corregir a mano porque en
+       algunas máquinas la cuenta de la planilla no da. #}
+    <form method="POST" id="eficiencia" class="deberia">
       <input type="hidden" name="que" value="eficiencia">
-      <div><label class="campo" for="rpm">Velocidad (rpm)</label>
-        <input name="rpm" id="rpm" inputmode="decimal"
-               value="{{ eficiencia.rpm | editable if eficiencia else '' }}"></div>
-      <div><label class="campo" for="sistemas">Sistemas</label>
-        <input name="sistemas" id="sistemas"
-               value="{{ eficiencia.sistemas or '' if eficiencia else '' }}"></div>
-      <div><label class="campo" for="tamano_rollo">Tamaño de rollo (vueltas)</label>
-        <input name="tamano_rollo" id="tamano_rollo" inputmode="numeric"
-               value="{{ eficiencia.tamano_rollo | editable if eficiencia else '' }}"></div>
-      <div><label class="campo" for="minutos_rollo">Minutos por rollo</label>
-        <input name="minutos_rollo" id="minutos_rollo" inputmode="decimal"
-               value="{{ eficiencia.minutos_rollo | editable if eficiencia else '' }}"></div>
-      <div><label class="campo" for="rollos_dia">Rollos en 12 horas</label>
-        <input name="rollos_dia" id="rollos_dia" inputmode="numeric"
-               value="{{ eficiencia.rollos_dia | editable if eficiencia else '' }}"></div>
-      <div><label class="campo" for="kg_dia">Kilos en 12 horas</label>
-        <input name="kg_dia" id="kg_dia" inputmode="numeric"
-               value="{{ eficiencia.kg_dia | editable if eficiencia else '' }}"></div>
-      <div><label class="campo" for="rollos_dia_24">Rollos en 24 horas</label>
-        <input name="rollos_dia_24" id="rollos_dia_24" inputmode="numeric"
-               value="{{ eficiencia.rollos_dia_24 | editable if eficiencia else '' }}"></div>
-      <div><label class="campo" for="kg_dia_24">Kilos en 24 horas</label>
-        <input name="kg_dia_24" id="kg_dia_24" inputmode="numeric"
-               value="{{ eficiencia.kg_dia_24 | editable if eficiencia else '' }}"></div>
-      <div><label class="campo" for="diametro_ef">Diámetro</label>
-        <input name="diametro_ef" id="diametro_ef" inputmode="decimal"
-               value="{{ eficiencia.diametro | editable if eficiencia else '' }}"></div>
-      <div><label class="campo" for="alimentadores_ef">Alimentadores</label>
-        <input name="alimentadores_ef" id="alimentadores_ef" inputmode="numeric"
-               value="{{ eficiencia.alimentadores | editable if eficiencia else '' }}"></div>
+      <div class="deberia-zona">
+        <b>Lo que se carga</b>
+        <div class="deberia-campos">
+          <div><label class="campo" for="rpm">Velocidad (rpm)</label>
+            <input name="rpm" id="rpm" inputmode="decimal"
+                   value="{{ eficiencia.rpm | editable if eficiencia else '' }}"></div>
+          <div><label class="campo" for="sistemas">Sistemas</label>
+            <input name="sistemas" id="sistemas"
+                   value="{{ eficiencia.sistemas or '' if eficiencia else '' }}"></div>
+          <div><label class="campo" for="tamano_rollo">Rollo (vueltas)</label>
+            <input name="tamano_rollo" id="tamano_rollo" inputmode="numeric"
+                   value="{{ eficiencia.tamano_rollo | editable if eficiencia else '' }}"></div>
+          <div><label class="campo" for="diametro_ef">Diámetro</label>
+            <input name="diametro_ef" id="diametro_ef" inputmode="decimal"
+                   value="{{ eficiencia.diametro | editable if eficiencia else '' }}"></div>
+          <div><label class="campo" for="alimentadores_ef">Alimentadores</label>
+            <input name="alimentadores_ef" id="alimentadores_ef" inputmode="numeric"
+                   value="{{ eficiencia.alimentadores | editable if eficiencia else '' }}"></div>
+        </div>
+      </div>
 
-      <div class="ancho" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-        <button class="btn" type="submit">Guardar</button>
+      <div class="deberia-zona sale">
+        <b>Lo que da la cuenta <small>se puede corregir</small></b>
+        <div class="deberia-campos">
+          <div><label class="campo" for="minutos_rollo">Minutos por rollo</label>
+            <input name="minutos_rollo" id="minutos_rollo" inputmode="decimal"
+                   value="{{ eficiencia.minutos_rollo | editable if eficiencia else '' }}"></div>
+          <div><label class="campo" for="rollos_dia">Rollos 12 h</label>
+            <input name="rollos_dia" id="rollos_dia" inputmode="numeric"
+                   value="{{ eficiencia.rollos_dia | editable if eficiencia else '' }}"></div>
+          <div><label class="campo" for="kg_dia">Kilos 12 h</label>
+            <input name="kg_dia" id="kg_dia" inputmode="numeric"
+                   value="{{ eficiencia.kg_dia | editable if eficiencia else '' }}"></div>
+          <div><label class="campo" for="rollos_dia_24">Rollos 24 h</label>
+            <input name="rollos_dia_24" id="rollos_dia_24" inputmode="numeric"
+                   value="{{ eficiencia.rollos_dia_24 | editable if eficiencia else '' }}"></div>
+          <div><label class="campo" for="kg_dia_24">Kilos 24 h</label>
+            <input name="kg_dia_24" id="kg_dia_24" inputmode="numeric"
+                   value="{{ eficiencia.kg_dia_24 | editable if eficiencia else '' }}"></div>
+        </div>
+      </div>
+
+      <div class="deberia-pie">
+        <button class="btn chico" type="submit">Guardar</button>
         <span class="ayuda" id="la-cuenta" style="margin:0"></span>
       </div>
     </form>

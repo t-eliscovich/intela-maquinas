@@ -5,9 +5,14 @@
 <h1>Qué máquina necesita mantenimiento</h1>
 
 {% if error %}
-  <div class="aviso"><b>No se pudo leer Asinfo.</b> {{ error }} Sin eso no se cuentan los kilos.</div>
+  <div class="aviso"><b>No se pudo leer Asinfo.</b> Sin eso no se cuentan los kilos.
+    Probá de nuevo en un rato. Si sigue igual, avisá a sistemas.</div>
 {% elif not fresco and leido_en %}
-  <div class="aviso"><b>Asinfo no contestó recién.</b> Estos números son de la última lectura buena.</div>
+  {# La hora de la lectura está en UTC y la planta está en Ecuador: mostrarla
+     tal cual serían cinco horas de más. Mejor no decir una hora que decir una
+     equivocada. #}
+  <div class="aviso"><b>Asinfo no contesta.</b> Estos números son de la última
+    lectura buena. Probá de nuevo en un rato.</div>
 {% endif %}
 
 {% if not hay_tipos %}
@@ -71,7 +76,7 @@
         <th>Máquina</th>
         <th>Estado</th>
         <th class="der">Kilos</th>
-        <th class="der">Le falta</th>
+        <th class="der">Kilos que faltan</th>
         <th class="oculta-chico">Última {{ (con_tope | first).nombre | lower if con_tope else 'vez' }}</th>
         {% for t in sin_tope %}<th class="oculta-chico">Último {{ t.nombre | lower }}</th>{% endfor %}
       </tr>
@@ -103,7 +108,10 @@
             {% if p.tope %} <span class="tenue">de {{ p.tope | num(0) }}</span>{% endif %}
             {% if p.pct is not none %}
               {% set ancho = (p.pct * 100) if p.pct < 1 else 100 %}
-              {% set color = 'var(--rojo)' if p.pct >= 1 else ('var(--ambar)' if p.pct >= 0.8 else 'var(--verde)') %}
+              {# El mismo número que usa el semáforo. Estaba escrito acá a mano
+                 en 0,8: entre el 80% y el 90% la fila decía «En regla» en verde
+                 y la barra se dibujaba naranja. #}
+              {% set color = 'var(--rojo)' if p.pct >= 1 else ('var(--ambar)' if p.pct >= aviso else 'var(--verde)') %}
               <div class="progreso" style="margin-top:2px"><span style="width:{{ ancho }}%;background:{{ color }}"></span></div>
             {% endif %}
           {% else %}<span class="tenue">—</span>{% endif %}

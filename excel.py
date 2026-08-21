@@ -177,6 +177,30 @@ def a_decimal(valor) -> float | None:
     return float(m.group()) if m else None
 
 
+def a_decimal_es(valor) -> float | None:
+    """Un número escrito como se escribe acá: punto de miles, coma decimal.
+
+    `a_decimal` toma el punto como coma decimal, así que «1.410» rpm entraba
+    como 1,41 y la cuenta de cuánto debería dar salía mal sin que nadie se
+    diera cuenta. Éste guarda el signo, que `a_kilos` se lleva puesto.
+    """
+    if valor is None or valor == "":
+        return None
+    if isinstance(valor, (int, float)):
+        return float(valor)
+    texto = str(valor).strip()
+    negativo = texto.startswith("-")
+    limpio = re.sub(r"[^\d,.]", "", texto)
+    if not limpio:
+        return None
+    limpio = limpio.replace(".", "").replace(",", ".")
+    try:
+        numero = float(limpio)
+    except ValueError:
+        return None
+    return -numero if negativo else numero
+
+
 def a_kilos(valor) -> float | None:
     """'30.000 kg' es treinta mil. El punto es de miles: en castellano nadie
     escribe 30.000 queriendo decir treinta."""
@@ -317,10 +341,81 @@ def armar(titulos, filas, mapa, maquinas, tipos, hoy=None):
 _MARCAS = ("MAYER", "TERROT", "FUKUHARA", "PAILUNG", "JIUNN LONG", "ORIZIO",
            "MONARCH", "UNITEX", "SANTONI", "WELLKNIT", "KEUMYONG")
 
-# Con "aguja" adentro es cambio de agujas; todo lo demás es limpieza. Es la
-# unica division que la planilla banca: el tipo no esta en una columna, esta
-# escrito a mano adentro del texto de la actividad.
+# La misma marca escrita de varias formas. Relanit es una máquina MAYER, y
+# JUNNLOG es JIUNN LONG mal tipeado: dejarlas como están parte la planta en
+# marcas distintas que son la misma.
+_MISMA_MARCA = {"relanit": "MAYER", "junnlog": "JIUNN LONG",
+                "junn log": "JIUNN LONG", "jiunnlog": "JIUNN LONG",
+                "jiunn log": "JIUNN LONG"}
+
+
+def _marca_pareja(marca):
+    """La marca escrita siempre igual. «MAYER MV4» es MAYER: MV4 es el modelo."""
+    if not isinstance(marca, str):
+        return marca
+    texto = _limpio(marca)
+    for canonica in _MARCAS:
+        if texto.startswith(canonica.lower()):
+            return canonica
+    for escrita, canonica in _MISMA_MARCA.items():
+        if texto.startswith(escrita):
+            return canonica
+    return marca
+
+# El tipo no está en una columna: está escrito adentro del texto de la
+# actividad. Cada uno se reconoce por su frase, no por la palabra suelta:
+# «limpiesa de cilindro» dice cilindro y NO es un cambio de cilindro.
 _ES_AGUJAS = re.compile(r"aguja", re.IGNORECASE)
+# Tiene que decir CAMBIO: «limpiesa de cilindro» nombra al cilindro y no es un
+# cambio de cilindro. El «(algo) y» del medio es para «cambio de agujas y
+# platinas», que son dos cosas en un renglón. «ci,indro» y «cilndro» existen:
+# la planilla está tipeada a mano.
+_CAMBIO = r"cambi\w*\s+(?:de\s+)?(?:\w+\s+y\s+)?"
+_ES_CILINDRO = re.compile(_CAMBIO + r"ci\W?l?\W?[ií]ndro", re.IGNORECASE)
+_ES_PLATINAS = re.compile(_CAMBIO + r"platina", re.IGNORECASE)
+
+
+def _clasificar(tipos):
+    """Qué tipo de la base corresponde a cada frase de la planilla.
+
+    Los tipos los define el mecánico en la pantalla de Tipos, así que acá no se
+    inventa ninguno: se busca cuál de los que EXISTEN habla de agujas, de
+    cilindro o de platinas. Si alguno no está cargado, esa frase cae en
+    limpieza, como caía antes.
+    """
+    def buscar(palabra):
+        return next((t for t in tipos if palabra in t["nombre"].lower()), None)
+
+    especiales = [(_ES_AGUJAS, buscar("aguja")),
+                  (_ES_CILINDRO, buscar("cilindro")),
+                  (_ES_PLATINAS, buscar("platina"))]
+    especiales = [(regla, tipo) for regla, tipo in especiales if tipo]
+    ids = {t["id"] for _, t in especiales}
+    # Limpieza es la que se llama así; si no está, la primera que no sea una de
+    # las otras. Nunca se elige "la que sobra" a ciegas: con cuatro tipos
+    # cargados, la que sobraba podía ser «Cambio de cilindro».
+    limpieza = next((t for t in tipos if "limpi" in t["nombre"].lower()), None)
+    if limpieza is None:
+        limpieza = next((t for t in tipos if t["id"] not in ids), None)
+    return especiales, limpieza
+
+
+def _tipos_del_texto(texto, especiales, limpieza):
+    """Todos los mantenimientos que menciona una fila, no sólo el primero.
+
+    Un renglón puede decir «limpiesa de cilindro · cambio de platinas galga
+    28»: ese día se hicieron dos cosas y son dos mantenimientos. Contar sólo el
+    primero borraba el otro del historial de la máquina.
+    """
+    encontrados = []
+    for regla, tipo in especiales:
+        if texto and regla.search(texto) and tipo not in encontrados:
+            encontrados.append(tipo)
+    # La limpieza va si la nombra, o si la fila no dice ninguna otra cosa: la
+    # planilla nació siendo un registro de limpiezas.
+    if limpieza and (not encontrados or (texto and re.search(r"limpi", texto, re.I))):
+        encontrados.insert(0, limpieza)
+    return encontrados
 
 
 def _celdas(filas, hasta):
@@ -375,10 +470,118 @@ def _fila_de_titulos(filas):
     return None
 
 
+def _segunda_ficha(filas, hasta):
+    """En qué columna empieza la ficha de OTRA máquina, si está pegada al lado.
+
+    Seis hojas tienen dos encabezados uno junto al otro: el de la máquina y el
+    de la de al lado, copiado. Todo lo que está a la derecha del segundo no es
+    de esta máquina — la MQ 61 salía con la marca de una y las agujas de la
+    otra. Se corta ahí y no se mira más a la derecha.
+    """
+    columnas = {}
+    for fila in filas[:hasta]:
+        for j, celda in enumerate(fila):
+            if not isinstance(celda, str):
+                continue
+            texto = _limpio(celda)
+            for etiqueta in ("equipo", "tipo de aguja", "modelo",
+                             "cantidad de agujas", "responsable"):
+                if texto.startswith(etiqueta):
+                    columnas.setdefault(etiqueta, set()).add(j)
+    segundas = [sorted(cols)[1] for cols in columnas.values() if len(cols) > 1]
+    # Con UNA etiqueta repetida no alcanza: en dos hojas «CANTIDAD DE AGUJAS»
+    # está escrito dos veces en el mismo encabezado y cortar ahí se llevaba
+    # puesto el número de serie. Una ficha entera repite varias.
+    return min(segundas) if len(segundas) >= 2 else None
+
+
+def _columna_entera(filas, hasta, desde_fila, columna):
+    """Todo lo que cuelga de una etiqueta, hacia abajo, en su misma columna.
+
+    «TIPO DE AGUJAS» no trae un código: trae los cuatro del cilindro y el del
+    plato, uno por renglón. Guardar sólo el primero es guardar un cuarto de la
+    ficha. Dos renglones vacíos seguidos cortan: ahí terminó la lista.
+    """
+    valores, vacios = [], 0
+    for i in range(desde_fila + 1, hasta):
+        celda = filas[i][columna] if columna < len(filas[i]) else None
+        if celda in (None, ""):
+            vacios += 1
+            if vacios >= 2 and valores:
+                break
+            continue
+        vacios = 0
+        texto = str(celda).strip()
+        if texto and texto not in valores:
+            valores.append(texto)
+    return valores
+
+
+def _lista_de(filas, hasta, etiquetas, corte_col=None):
+    """Los valores que cuelgan de una etiqueta, juntos en un solo texto."""
+    etiquetas = tuple(_limpio(e) for e in etiquetas)
+    for i, fila in enumerate(filas[:hasta]):
+        for j, celda in enumerate(fila):
+            if corte_col is not None and j >= corte_col:
+                continue
+            if not isinstance(celda, str):
+                continue
+            if not any(_limpio(celda).startswith(e) for e in etiquetas):
+                continue
+            valores = _columna_entera(filas, hasta, i, j)
+            if valores:
+                return " · ".join(valores)
+    return None
+
+
+def _espejo(filas, hasta, corte_col, etiquetas, saltar, sirve=None):
+    """El dato que está sin título, leído con los títulos de la ficha de al lado.
+
+    Las dos fichas pegadas son la misma plantilla corrida `corte_col` columnas.
+    A la MQ 61 se le borraron los títulos y quedaron sólo los de la copia: sin
+    esto, su número de serie se leía del de la máquina de al lado —un dato de
+    otra máquina, que es peor que no tener ninguno.
+    """
+    etiquetas = tuple(_limpio(e) for e in etiquetas)
+    saltar = tuple(_limpio(s) for s in saltar)
+    for fila in filas[:hasta]:
+        for j, celda in enumerate(fila):
+            if j < corte_col or not isinstance(celda, str):
+                continue
+            if not any(_limpio(celda).startswith(e) for e in etiquetas):
+                continue
+            columna = j - corte_col
+            for otra in filas[:hasta]:
+                if columna >= len(otra):
+                    continue
+                valor = otra[columna]
+                if valor in (None, ""):
+                    continue
+                if isinstance(valor, str):
+                    limpio = _limpio(valor)
+                    # «R01 Registro de Mantenimiento» es el título de la hoja y
+                    # está en cualquier columna: nunca es el dato.
+                    if (not limpio or limpio.startswith("r01")
+                            or any(limpio.startswith(s) for s in saltar)):
+                        continue
+                if sirve and not sirve(valor):
+                    continue
+                return valor
+    return None
+
+
 def _ficha_de_hoja(filas, corte):
+    # Primero se saca de encima la ficha de la máquina de al lado, si la hay:
+    # todo lo que sigue lee este bloque como si fuera la única.
+    filas_todas = filas
+    corte_col = _segunda_ficha(filas, corte)
+    if corte_col is not None:
+        filas = [[c for j, c in enumerate(fila) if j < corte_col] for fila in filas]
+
     bloque = _celdas(filas, corte)
     etiquetas = ("equipo", "modelo", "numero", "responsable", "tipo de aguja",
-                 "tipo de agujas", "cantidad de agujas", "agujas",
+                 "tipo de agujas", "cantidad de agujas", "agujas", "aguujas",
+                 "codigo agujas", "codigo de agujas",
                  "año de fabricacion", "diametro gg", "fecha", "observaciones",
                  "repuestos", "actividad realizada", "tipo de mantenimiento")
 
@@ -391,6 +594,7 @@ def _ficha_de_hoja(filas, corte):
     marca = _valor_de(bloque, ("circular",), filas, etiquetas, preferir="derecha")
     if not isinstance(marca, str) or _limpio(marca) in ("", "circular"):
         marca = next((m for m in _MARCAS if m.lower() in texto_todo.lower()), None)
+    marca = _marca_pareja(marca)
     modelo = _valor_de(bloque, ("modelo",), filas, etiquetas)
     serie = _valor_de(bloque, ("numero", "n de serie", "serie"), filas, etiquetas)
     responsable = _valor_de(bloque, ("responsable",), filas, etiquetas)
@@ -431,7 +635,28 @@ def _ficha_de_hoja(filas, corte):
             break
         agujas = None
 
-    tipo_agujas = _valor_de(bloque, ("tipo de agujas", "tipo de aguja"), filas, etiquetas)
+    # Los códigos de aguja van uno abajo del otro: se guardan todos. Hay hojas
+    # que a la columna la llaman «CODIGO AGUJAS» en vez de «TIPO DE AGUJAS».
+    nombres_agujas = ("tipo de agujas", "tipo de aguja", "codigo agujas",
+                      "codigo de agujas")
+    tipo_agujas = _lista_de(filas, corte, nombres_agujas)
+    if not tipo_agujas:
+        tipo_agujas = _valor_de(bloque, nombres_agujas, filas, etiquetas)
+
+    # Lo que quedó sin llenar y la ficha de al lado sí tiene titulado.
+    if corte_col is not None:
+        if not modelo:
+            modelo = _espejo(filas_todas, corte, corte_col, ("modelo",), etiquetas)
+        if not serie:
+            serie = _espejo(filas_todas, corte, corte_col,
+                            ("numero", "n de serie", "serie"), etiquetas)
+        if not agujas:
+            def _es_cantidad(valor):
+                n = a_numero(valor)
+                return n is not None and 500 <= n <= 20000
+            agujas = a_numero(_espejo(filas_todas, corte, corte_col,
+                                      ("cantidad de agujas", "agujas"), etiquetas,
+                                      sirve=_es_cantidad))
 
     return {
         "marca": _texto(marca),
@@ -550,8 +775,7 @@ def leer_historial_por_maquina(ruta, maquinas, tipos, hoy=None):
     """
     hoy = hoy or date.today()
     por_numero = {m["numero"]: m for m in maquinas if m.get("numero") is not None}
-    tipo_agujas = next((t for t in tipos if "aguja" in t["nombre"].lower()), None)
-    tipo_limpieza = next((t for t in tipos if t is not tipo_agujas), None)
+    especiales, limpieza = _clasificar(tipos)
 
     wb = load_workbook(ruta, read_only=True, data_only=True)
     mantenimientos, fichas, descartes = [], [], []
@@ -582,7 +806,13 @@ def leer_historial_por_maquina(ruta, maquinas, tipos, hoy=None):
                     continue
                 corte = primera - 1
 
-            ficha = _ficha_de_hoja(filas, corte)
+            # Dónde termina la ficha. Sin fila de títulos la ficha llega hasta
+            # el primer mantenimiento: con `corte` se perdía el último renglón
+            # del encabezado, y si el historial arrancaba en la primera fila,
+            # `corte` valía -1 y la ficha se leía de la hoja ENTERA — marca,
+            # serie y año salían de renglones de mantenimiento.
+            fin_ficha = primera if sin_titulos else corte
+            ficha = _ficha_de_hoja(filas, fin_ficha)
             fichas.append((maquina, ficha))
             mapa = {} if sin_titulos else _columnas_historial(filas[corte])
 
@@ -658,23 +888,27 @@ def leer_historial_por_maquina(ruta, maquinas, tipos, hoy=None):
                         str(c).strip() for c in fila[desde_col:]
                         if isinstance(c, str) and c.strip())[:300] or None
                 observaciones = _texto(celda(fila, "observaciones"))
-                tipo = (tipo_agujas if (actividad and _ES_AGUJAS.search(actividad)
-                                        and tipo_agujas) else tipo_limpieza)
-                if not tipo:
+                texto = " · ".join(p for p in (actividad, observaciones) if p)
+                del_dia = _tipos_del_texto(texto, especiales, limpieza)
+                if not del_dia:
                     continue
 
-                mantenimientos.append({
-                    "id_maquina": maquina["id"],
-                    "maquina_nombre": maquina["nombre"],
-                    "tipo_id": tipo["id"],
-                    "fecha": fecha,
-                    "hecho_por": _texto(celda(fila, "responsable")) or "Planilla de planta",
-                    "nota": " · ".join(p for p in (actividad, observaciones) if p) or None,
-                    "repuestos": _texto(celda(fila, "repuestos")),
-                    "horas": None,
-                    "hoja": nombre_hoja,
-                    "orden": n,
-                })
+                # Una fila puede ser dos mantenimientos. La clave (hoja, orden)
+                # tiene que seguir siendo única, así que la fila 7 pasa a ser
+                # 70, 71, 72: siguen en orden y no chocan con las de al lado.
+                for k, tipo in enumerate(del_dia):
+                    mantenimientos.append({
+                        "id_maquina": maquina["id"],
+                        "maquina_nombre": maquina["nombre"],
+                        "tipo_id": tipo["id"],
+                        "fecha": fecha,
+                        "hecho_por": _texto(celda(fila, "responsable")) or "Planilla de planta",
+                        "nota": texto or None,
+                        "repuestos": _texto(celda(fila, "repuestos")),
+                        "horas": None,
+                        "hoja": nombre_hoja,
+                        "orden": n * 10 + k,
+                    })
                 leidas += 1
 
             if not leidas:
@@ -695,8 +929,7 @@ def leer_por_maquina(ruta, maquinas, tipos, hoy=None):
     """
     hoy = hoy or date.today()
     por_numero = {m["numero"]: m for m in maquinas if m.get("numero") is not None}
-    tipo_agujas = next((t for t in tipos if "aguja" in t["nombre"].lower()), None)
-    tipo_limpieza = next((t for t in tipos if t is not tipo_agujas), None)
+    especiales, limpieza = _clasificar(tipos)
 
     wb = load_workbook(ruta, read_only=True, data_only=True)
     listas, descartes = [], []
@@ -732,11 +965,10 @@ def leer_por_maquina(ruta, maquinas, tipos, hoy=None):
                     continue
                 cuantas += 1
                 texto = " ".join(str(c) for c in fila if isinstance(c, str))
-                tipo = tipo_agujas if (_ES_AGUJAS.search(texto) and tipo_agujas) else tipo_limpieza
-                if not tipo:
-                    continue
-                if fecha > ultimas.get(tipo["id"], date.min):
-                    ultimas[tipo["id"]] = fecha
+                # Una fila puede ser dos mantenimientos: cuentan los dos.
+                for tipo in _tipos_del_texto(texto, especiales, limpieza):
+                    if fecha > ultimas.get(tipo["id"], date.min):
+                        ultimas[tipo["id"]] = fecha
 
             if not ultimas:
                 descartes.append({"fila": nombre_hoja, "texto": f"MQ {numero}",

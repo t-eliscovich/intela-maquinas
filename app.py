@@ -40,8 +40,10 @@ app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
 app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024  # un Excel de planta es chico
 
-# Cuánto antes del tope se pone amarillo.
-AVISO = 0.80
+# Cuánto antes del tope avisa. Al 80% avisaba demasiado pronto: con topes de
+# 20.000 kg quedaban 4.000 kg por delante, casi un mes de tejido, y la fila
+# vivía en naranja. Decisión de la dueña, 20/08/2026.
+AVISO = 0.90
 
 CARPETA = os.path.dirname(os.path.abspath(__file__))
 
@@ -124,12 +126,40 @@ def requiere_login(f):
     return wrapper
 
 
+def _tipo_elegido(escrito, tipos):
+    """Cuál de los mantenimientos se eligió.
+
+    Si el casillero llegó vacío, el `int()` pelado tiraba «invalid literal for
+    int() with base 10», que en planta no le dice nada a nadie.
+    """
+    try:
+        tipo_id = int(escrito)
+    except (TypeError, ValueError):
+        raise ValueError("Falta elegir qué se le hizo.")
+    if not any(t["id"] == tipo_id for t in tipos):
+        raise ValueError("Ese mantenimiento no existe.")
+    return tipo_id
+
+
+def _adonde_iba():
+    """La pantalla que pedía antes de mandarlo a poner la contraseña.
+
+    Tiene que ser una pantalla de acá: una dirección de afuera pegada en
+    `?next=` mandaría a la gente a otro sitio justo después de escribir la
+    contraseña. Se aceptan sólo las que empiezan con una barra sola.
+    """
+    pedida = request.args.get("next") or ""
+    if pedida.startswith("/") and not pedida.startswith("//"):
+        return pedida
+    return None
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         if request.form.get("password") == config.PASSWORD:
             session["ok"] = True
-            return redirect(request.args.get("next") or url_for("semaforo"))
+            return redirect(_adonde_iba() or url_for("semaforo"))
         flash("Contraseña incorrecta.", "error")
     return render_template("login.html")
 
@@ -181,6 +211,18 @@ def armar_semaforo():
 
     acum, leido_en, fresco = asinfo.acumulados(pares)
 
+    # Qué mantenimientos PRENDEN el semáforo: los que en alguna máquina tienen
+    # puesto un tope de kilos. El cambio de agujas no lleva tope a propósito —se
+    # hace cuando la tela lo pide—, así que una máquina a la que sólo le falta
+    # el tope de limpieza no tiene que decir «sin tope · Cambio de agujas»: eso
+    # hacía parecer que faltaba un número que nadie va a poner nunca.
+    prenden = {tipo_id for (_, tipo_id) in topes}
+    prenden |= {t["id"] for t in tipos if t["cada_kg"]}
+    # Si todavía no hay ningún tope puesto en ningún lado no hay distinción que
+    # hacer: cuentan todos, y la pantalla dice que falta el número.
+    if not prenden:
+        prenden = {t["id"] for t in tipos}
+
     filas, pendientes = [], []
     for maquina in maquinas:
         por_tipo, con_tope = {}, []
@@ -226,8 +268,11 @@ def armar_semaforo():
             # Sin tope no hay semáforo, pero el dato sirve igual: se muestra
             # cuántos kilos lleva desde la última vez que se le hizo. Un guión
             # no dice nada; el número deja decidir a ojo hasta que el mecánico
-            # ponga el tope.
-            hechos = [i for i in por_tipo.values() if i.get("desde")]
+            # ponga el tope. Se mira SÓLO el mantenimiento que prende el
+            # semáforo: si esa máquina nunca tuvo una limpieza anotada, lo que
+            # le falta es arrancar, no un tope.
+            hechos = [i for i in por_tipo.values()
+                      if i.get("desde") and i["tipo"]["id"] in prenden]
             principal = (max(hechos, key=lambda i: i["desde"]) if hechos else None)
         filas.append({
             "maquina": maquina,
@@ -308,6 +353,7 @@ def semaforo():
         tipos_sin_tope=[t for t in tipos if t["id"] not in con_tope],
         pendientes=pendientes,
         resumen=resumen,
+        aviso=AVISO,
         leido_en=leido_en,
         fresco=fresco,
         error=error,
@@ -344,7 +390,7 @@ def registrar():
     if request.method == "POST":
         try:
             id_maquina = _buscar_maquina(request.form.get("maquina"), maquinas)
-            tipo_id = int(request.form["tipo_id"])
+            tipo_id = _tipo_elegido(request.form.get("tipo_id"), tipos)
             fecha = request.form.get("fecha") or date.today().isoformat()
             hecho_por = request.form.get("hecho_por", "").strip()
             if not hecho_por:
@@ -382,6 +428,9 @@ def registrar():
     return render_template(
         "registrar.html",
         maquinas=maquinas,
+        # El nombre de Asinfo por número, para mostrarlo mientras se escribe.
+        nombres_maquinas={str(m["numero"]): m["nombre"] for m in maquinas
+                          if m.get("numero") is not None},
         tipos=tipos,
         hoy=date.today().isoformat(),
         responsables=store.responsables(),
@@ -437,7 +486,7 @@ def arranque():
 
     if request.method == "POST":
         try:
-            tipo_id = int(request.form["tipo_id"])
+            tipo_id = _tipo_elegido(request.form.get("tipo_id"), tipos)
             fecha = request.form.get("fecha") or date.today().isoformat()
             hecho_por = request.form.get("hecho_por", "").strip() or "Arranque inicial"
             if datetime.strptime(fecha, "%Y-%m-%d").date() > date.today():
@@ -579,14 +628,23 @@ def carga_revisar(token):
         flash(str(exc), "error")
         return redirect(url_for("carga"))
 
-    nombres_hojas = excel.hojas(ruta)
+    # Abrir el archivo puede fallar de mil formas: un .xlsx que en realidad no
+    # lo es, uno cortado a la mitad, uno guardado por un programa raro. Todo eso
+    # tiene que salir como una frase y no como la pantalla de error de Python.
+    try:
+        nombres_hojas = excel.hojas(ruta)
+        es_de_ajuste = ajustes_excel.es_planilla_ajuste(ruta)
+    except Exception:  # noqa: BLE001
+        flash("No se pudo abrir el archivo. Fijate que sea el Excel de la "
+              "planilla y que no esté dañado.", "error")
+        return redirect(url_for("carga"))
 
     # La planilla de CONTROL DE AJUSTE es otra cosa: no trae mantenimientos,
     # trae cómo se pone cada máquina para tejer cada tela, más las agujas, las
     # levas y las bandas. Se reconoce sola por los nombres de las hojas y entra
     # por esta misma puerta a propósito: una segunda pantalla de carga sería un
     # segundo lugar donde equivocarse.
-    if ajustes_excel.es_planilla_ajuste(ruta):
+    if es_de_ajuste:
         return _revisar_planilla_ajuste(token, ruta, maquinas, nombres_hojas)
 
     # Dos formas de planilla, y se reconoce sola cuál es:
@@ -595,7 +653,12 @@ def carga_revisar(token):
     #     historial abajo. No hay nada que mapear.
     #   * Una tabla comun: una fila por maquina. Ahi si hay que decir que
     #     columna es cada cosa.
-    por_maquina, descartes_pm = excel.leer_por_maquina(ruta, maquinas, tipos)
+    try:
+        por_maquina, descartes_pm = excel.leer_por_maquina(ruta, maquinas, tipos)
+    except Exception:  # noqa: BLE001
+        flash("No se pudo leer el archivo. Fijate que sea la planilla de la "
+              "fábrica y que no esté dañado.", "error")
+        return redirect(url_for("carga"))
     es_por_maquina = len(por_maquina) >= 3
 
     if es_por_maquina:
@@ -605,7 +668,11 @@ def carga_revisar(token):
         return _revisar_historial(token, ruta, maquinas, tipos, nombres_hojas)
     else:
         hoja = request.form.get("hoja") or nombres_hojas[0]
-        titulos, filas = excel.leer(ruta, hoja)
+        try:
+            titulos, filas = excel.leer(ruta, hoja)
+        except Exception:  # noqa: BLE001
+            flash(f"No se pudo leer la hoja «{hoja}».", "error")
+            return redirect(url_for("carga"))
         detectado = excel.detectar(titulos, tipos)
         mapa = _mapa_del_form(request.form, titulos, tipos, detectado)
         listas, descartes = excel.armar(titulos, filas, mapa, maquinas, tipos)
@@ -915,12 +982,15 @@ def maquina_detalle(id_maquina):
         # lo que la máquina tejió de verdad lo mide Asinfo y no se toca de acá.
         try:
             store.guardar_eficiencia(id_maquina, {
-                "rpm": excel.a_decimal(request.form.get("rpm")),
+                # Todo con `a_decimal_es`: acá el punto es de miles. Con
+                # `a_decimal`, escribir «1.410» rpm guardaba 1,41 y la cuenta
+                # salía mal en silencio.
+                "rpm": excel.a_decimal_es(request.form.get("rpm")),
                 "sistemas": (request.form.get("sistemas") or "").strip() or None,
-                "diametro": excel.a_decimal(request.form.get("diametro_ef")),
+                "diametro": excel.a_decimal_es(request.form.get("diametro_ef")),
                 "alimentadores": excel.a_numero(request.form.get("alimentadores_ef")),
                 "tamano_rollo": excel.a_kilos(request.form.get("tamano_rollo")),
-                "minutos_rollo": excel.a_decimal(request.form.get("minutos_rollo")),
+                "minutos_rollo": excel.a_decimal_es(request.form.get("minutos_rollo")),
                 "rollos_dia": excel.a_numero(request.form.get("rollos_dia")),
                 "kg_dia": excel.a_kilos(request.form.get("kg_dia")),
                 "rollos_dia_24": excel.a_numero(request.form.get("rollos_dia_24")),
@@ -938,12 +1008,17 @@ def maquina_detalle(id_maquina):
                      for c in store.CAMPOS_FICHA}
             for entero in ("galga", "alimentadores", "agujas", "anio"):
                 datos[entero] = excel.a_numero(datos[entero])
-            datos["diametro"] = excel.a_decimal(datos["diametro"])
-            store.guardar_ficha(id_maquina, datos)
+            datos["diametro"] = excel.a_decimal_es(datos["diametro"])
 
             # Cada cuántos kilos va cada mantenimiento EN ESTA máquina. Se
             # carga acá y no en una pantalla aparte: el número es de la
             # máquina, y el mecánico lo decide mirándola a ella.
+            #
+            # Se revisan TODOS antes de escribir nada. Guardando sobre la
+            # marcha, un número mal escrito en el tercer tope dejaba la ficha y
+            # los dos primeros ya guardados, y la pantalla decía sólo «error»:
+            # el mecánico se iba creyendo que no se había guardado nada.
+            nuevos_topes = []
             for tipo in tipos:
                 crudo = (request.form.get(f"tope_{tipo['id']}") or "").strip()
                 # A mano, no con `a_kilos`: ése limpia todo lo que no sea
@@ -956,7 +1031,11 @@ def maquina_detalle(id_maquina):
                     raise ValueError(f"{tipo['nombre']}: eso no es un número de kilos.")
                 if kg is not None and kg <= 0:
                     raise ValueError("Los kilos tienen que ser mayores que cero.")
-                store.guardar_tope(id_maquina, tipo["id"], kg)
+                nuevos_topes.append((tipo["id"], kg))
+
+            store.guardar_ficha(id_maquina, datos)
+            for tipo_id, kg in nuevos_topes:
+                store.guardar_tope(id_maquina, tipo_id, kg)
 
             flash("Ficha guardada.", "ok")
         except Exception as exc:  # noqa: BLE001
@@ -969,6 +1048,8 @@ def maquina_detalle(id_maquina):
         mensual = []
 
     historial = store.historial(id_maquina, limite=500)
+    # Una sola vez, no una por tipo: `topes_por_maquina` trae la tabla entera.
+    todos_los_topes = store.topes_por_maquina()
     return render_template(
         "maquina.html",
         maquina=maquina,
@@ -981,8 +1062,7 @@ def maquina_detalle(id_maquina):
         aguja=store.agujas().get(id_maquina),
         eficiencia=store.eficiencias().get(id_maquina),
         tipos=tipos,
-        topes={t["id"]: store.topes_por_maquina().get((id_maquina, t["id"]))
-               for t in tipos},
+        topes={t["id"]: todos_los_topes.get((id_maquina, t["id"])) for t in tipos},
         abrir=request.args.get("abrir"),
     )
 
@@ -1015,9 +1095,14 @@ def _dias_de_mantenimiento(id_maquina, historial):
     for h in historial:
         d = por_dia.setdefault(h["fecha"], {"fecha": h["fecha"], "tipos": [],
                                             "notas": [], "repuestos": [],
-                                            "quien": set(), "kg": None})
+                                            "quien": set(), "kg": None,
+                                            "horas": None})
         if h["tipo_nombre"] not in d["tipos"]:
             d["tipos"].append(h["tipo_nombre"])
+        # Si el mismo día se hicieron dos cosas, la máquina estuvo parada la
+        # suma de las dos: lo que se pregunta es cuánto estuvo sin tejer.
+        if h.get("horas"):
+            d["horas"] = round((d["horas"] or 0) + float(h["horas"]), 2)
         for campo, clave in (("nota", "notas"), ("repuestos", "repuestos")):
             if h.get(campo) and h[campo] not in d[clave]:
                 d[clave].append(h[campo])
@@ -1053,18 +1138,23 @@ def _dias_de_mantenimiento(id_maquina, historial):
 # --------------------------------------------------------------------------
 # Ajustes: cómo se pone la máquina para tejer cada tela
 # --------------------------------------------------------------------------
-@app.route("/ajustes")
+@app.route("/ajustes", methods=["GET", "POST"])
 @requiere_login
 def ajustes_view():
     """El histórico de puestas a punto.
 
     Se busca por máquina o por tela, porque son las dos preguntas reales: «qué
-    le hicimos a la 21» y «cómo tejíamos la TANIA».
+    le hicimos a la 21» y «cómo tejíamos la TANIA». Y se carga uno nuevo acá
+    mismo: hasta ahora sólo entraban por la planilla, y una puesta a punto que
+    se hizo hoy no puede esperar a que alguien vuelva a subir el Excel.
     """
     try:
         maquinas, _, _ = asinfo.maquinas()
     except asinfo.AsinfoNoDisponible:
         maquinas = []
+
+    if request.method == "POST":
+        return _guardar_ajuste_nuevo(maquinas)
 
     escrito = (request.args.get("maquina") or "").strip()
     tela = (request.args.get("tela") or "").strip()
@@ -1086,7 +1176,51 @@ def ajustes_view():
     return render_template("ajustes.html", filas=filas, telas=store.telas(),
                            resumen=store.resumen_ajustes(),
                            consumo=store.consumo_hilo(),
+                           maquinas=maquinas, hoy=date.today().isoformat(),
+                           abrir_nuevo=request.args.get("nuevo"),
                            escrito=escrito, tela=tela)
+
+
+# Lo que se puede escribir a mano en un ajuste. `maquina_nombre`, `hoja` y
+# `orden` no: el nombre sale de Asinfo y los otros dos son de la planilla.
+CAMPOS_AJUSTE_A_MANO = ("tipo_maquina", "cilindro", "poleas", "ajuste_agujas",
+                        "estiraje", "hilos", "malla_manual", "malla")
+
+
+def _guardar_ajuste_nuevo(maquinas):
+    """Un ajuste cargado desde la pantalla. Vuelve a la máquina que se cargó."""
+    try:
+        id_maquina = _buscar_maquina(request.form.get("maquina"), maquinas)
+        tela = (request.form.get("tela") or "").strip()
+        if not tela:
+            raise ValueError("Falta poner qué tela se estaba tejiendo.")
+
+        fecha = (request.form.get("fecha") or "").strip() or None
+        if fecha:
+            if datetime.strptime(fecha, "%Y-%m-%d").date() > date.today():
+                raise ValueError("La fecha no puede ser futura.")
+
+        datos = {c: (request.form.get(c) or "").strip() or None
+                 for c in CAMPOS_AJUSTE_A_MANO}
+        datos["id_maquina"] = id_maquina
+        datos["maquina_nombre"] = next(
+            (m["nombre"] for m in maquinas if m["id"] == id_maquina), None)
+        datos["tela"] = tela
+        datos["fecha"] = fecha
+        # El gramaje es el único número con coma que se carga a mano.
+        crudo = (request.form.get("gramaje_crudo") or "").strip().replace(",", ".")
+        if crudo:
+            try:
+                datos["gramaje_crudo"] = float(crudo)
+            except ValueError:
+                raise ValueError("El gramaje tiene que ser un número. Por ejemplo 180,5.")
+
+        store.crear_ajuste(datos)
+        flash(f"Ajuste cargado en {datos['maquina_nombre'] or 'la máquina'}.", "ok")
+        return redirect(url_for("ajustes_view", maquina=request.form.get("maquina")))
+    except Exception as exc:  # noqa: BLE001
+        flash(str(exc), "error")
+        return redirect(url_for("ajustes_view", nuevo="1"))
 
 
 # --------------------------------------------------------------------------
@@ -1130,7 +1264,7 @@ CUADROS_REPUESTOS = [
      "bajada": "Las Memminger, por modelo y diámetro",
      "columnas": [
          {"campo": "maquinas", "titulo": "Máquinas", "tipo": "texto"},
-         {"campo": "cantidad_maquinas", "titulo": "Cuántas", "tipo": "entero"},
+         {"campo": "cantidad_maquinas", "titulo": "Cantidad", "tipo": "entero"},
          {"campo": "diametro", "titulo": "Diámetro", "tipo": "decimal", "sufijo": '"'},
          {"campo": "media", "titulo": "1/2", "tipo": "texto"},
          {"campo": "tres_cuartos", "titulo": "3/4", "tipo": "texto"},
@@ -1140,7 +1274,7 @@ CUADROS_REPUESTOS = [
      "bajada": "Por modelo y diámetro",
      "columnas": [
          {"campo": "maquinas", "titulo": "Máquinas", "tipo": "texto"},
-         {"campo": "cantidad_maquinas", "titulo": "Cuántas", "tipo": "entero"},
+         {"campo": "cantidad_maquinas", "titulo": "Cantidad", "tipo": "entero"},
          {"campo": "diametro", "titulo": "Diámetro", "tipo": "decimal", "sufijo": '"'},
          {"campo": "banda", "titulo": "Banda", "tipo": "texto"},
          {"campo": "cobrador", "titulo": "Cobrador", "tipo": "texto"},
@@ -1314,9 +1448,17 @@ def _editable(valor):
 
 @app.template_filter("mq")
 def _mq(maquina):
-    """Como la llaman en planta: MQ 3, y al lado el nombre de Asinfo."""
+    """Como la llaman en planta: MQ 3.
+
+    Acepta la máquina entera o sólo su nombre de Asinfo: en el historial se
+    guarda el nombre y no el número, y ahí también tiene que decir MQ 3 y no
+    TEJEDURIA-MQ 003, para que la columna se lea igual en todas las pantallas.
+    """
     if not maquina:
         return "—"
+    if isinstance(maquina, str):
+        encontrado = re.search(r"(\d+)\s*$", maquina)
+        return f"MQ {int(encontrado.group(1))}" if encontrado else maquina
     numero = maquina.get("numero")
     return f"MQ {numero}" if numero is not None else maquina.get("nombre", "—")
 
