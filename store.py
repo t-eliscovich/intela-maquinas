@@ -252,6 +252,14 @@ ESQUEMA = """
             ALTER TABLE mantenimiento.ajuste
                 ADD COLUMN IF NOT EXISTS gramaje_terminado numeric(10,2);
 
+            -- Lo que quedó escrito a la DERECHA de la última columna de la
+            -- planilla: «menos 5 centímetros solicitado por Oscar 11/8/2020,
+            -- cambio 11/11/2020 a 32,5 LM», «tención 30», «spander 132».
+            -- Son ~95 celdas que se tiraban enteras, y es el único lugar
+            -- donde está escrito POR QUÉ se cambió un ajuste.
+            ALTER TABLE mantenimiento.ajuste
+                ADD COLUMN IF NOT EXISTS nota text;
+
             -- Cuántas máquinas usan esa medida de banda y cuántas hacen falta.
             -- Se guarda también la frase tal cual («4 de 6.600»): en una fila
             -- contradice a la columna de al lado, y guardar la frase entera
@@ -712,6 +720,28 @@ def ficha(id_maquina: int) -> dict:
     return filas[0] if filas else {}
 
 
+def completar_ficha_vacia(id_maquina: int, datos: dict) -> bool:
+    """Escribe SÓLO los campos que hoy están vacíos. Devuelve si escribió algo.
+
+    Lo hace el motor con `coalesce`, en una sentencia: entre leer la ficha y
+    escribirla, alguien puede estar cargándola desde la pantalla, y ahí lo que
+    escribió a mano tiene que ganar siempre.
+    """
+    campos = [c for c in CAMPOS_FICHA if datos.get(c) not in (None, "")]
+    if not campos:
+        return False
+    sets = ", ".join(f"{c} = coalesce({c}, %s)" for c in campos)
+    with _conn() as con, con.cursor() as cur:
+        cur.execute(
+            f"""INSERT INTO mantenimiento.maquina_ficha (id_maquina, {', '.join(campos)})
+                VALUES (%s, {', '.join(['%s'] * len(campos))})
+                ON CONFLICT (id_maquina) DO UPDATE SET {sets}""",
+            (id_maquina, *[datos[c] for c in campos], *[datos[c] for c in campos]),
+        )
+        con.commit()
+    return True
+
+
 def guardar_ficha(id_maquina: int, datos: dict) -> None:
     """Guarda sólo los campos conocidos. Lo que viene vacío queda en NULL:
     una ficha a medias es correcta, una ficha inventada no."""
@@ -816,7 +846,7 @@ def borrar_archivo(id_archivo: int) -> None:
 CAMPOS_AJUSTE = ("id_maquina", "maquina_nombre", "fecha", "tipo_maquina",
                  "cilindro", "poleas", "ajuste_agujas", "estiraje", "tela",
                  "hilos", "gramaje_crudo", "gramaje_terminado", "malla_manual",
-                 "malla", "rendimiento", "kg_m", "hoja", "orden")
+                 "malla", "rendimiento", "kg_m", "nota", "hoja", "orden")
 
 
 def ajustes(id_maquina: int | None = None, tela: str | None = None,

@@ -34,6 +34,8 @@ from datetime import date, datetime
 
 from openpyxl import load_workbook
 
+import excel
+
 # Cuántas filas miramos arriba de cada hoja buscando los títulos.
 _FILAS_CABECERA = 6
 
@@ -221,30 +223,38 @@ _TITULOS_AJUSTE = [
 _REPETIBLES = ("poleas", "hilos")
 
 
-def _mapa_de_titulos(fila) -> dict[str, list[int]]:
-    """{campo: [columnas]} a partir de la fila de títulos."""
+def _campo_del_titulo(celda) -> str | None:
+    """Qué campo es ese título, o vacío si no es ninguno."""
+    # Una fecha de verdad en la fila de títulos es la columna de la fecha:
+    # alguien escribió «FECHA 5/01/2021» encima y Excel lo guardó así.
+    if isinstance(celda, (datetime, date)):
+        return "fecha"
+    t = _apretado(celda)
+    if not t:
+        return None
+    for campo, etiquetas in _TITULOS_AJUSTE:
+        if any(t == e or t.startswith(e) for e in etiquetas):
+            return campo
+    return None
+
+
+def _mapa_de_titulos(fila, desde: int = 0, hasta: int | None = None) -> dict[str, list[int]]:
+    """{campo: [columnas]} a partir de la fila de títulos.
+
+    `desde` y `hasta` acotan a qué tabla se está mirando. Existen porque la
+    hoja MAQ 53 tiene DOS tablas pegadas, con los mismos títulos: sin este
+    freno las columnas «Polea» y «HILO» de la tabla de la derecha entraban en
+    las filas de la izquierda, y cada ajuste de la MQ 53 salía con las poleas
+    de otro.
+    """
     mapa: dict[str, list[int]] = {}
-    tomadas: set[int] = set()
     for i, celda in enumerate(fila):
-        if i in tomadas:
+        if i < desde or (hasta is not None and i >= hasta):
             continue
-        # Una fecha de verdad en la fila de títulos es la columna de la fecha:
-        # alguien escribió «FECHA 5/01/2021» encima y Excel lo guardó así.
-        if isinstance(celda, (datetime, date)):
-            mapa.setdefault("fecha", []).append(i)
-            tomadas.add(i)
+        campo = _campo_del_titulo(celda)
+        if campo is None or (campo in mapa and campo not in _REPETIBLES):
             continue
-        t = _apretado(celda)
-        if not t:
-            continue
-        for campo, etiquetas in _TITULOS_AJUSTE:
-            if not any(t == e or t.startswith(e) for e in etiquetas):
-                continue
-            if campo in mapa and campo not in _REPETIBLES:
-                break
-            mapa.setdefault(campo, []).append(i)
-            tomadas.add(i)
-            break
+        mapa.setdefault(campo, []).append(i)
     return mapa
 
 
@@ -267,6 +277,65 @@ _ORDEN_SUPLENTE = {
     "gramaje_crudo": [13], "malla_manual": [14], "malla": [15],
     "rendimiento": [16], "gramaje_terminado": [17], "kg_m": [18],
 }
+
+
+def _ultima_titulada(mapa) -> int:
+    """La columna más a la derecha que tiene título. -1 si no hay ninguna."""
+    return max((c for cols in mapa.values() for c in cols), default=-1)
+
+
+def _segunda_tabla(fila_titulos):
+    """La otra tabla de ajustes pegada a la derecha, si la hay.
+
+    La hoja MAQ 53 tiene DOS tablas al lado: la de la izquierda es la máquina
+    como está hoy y la de la derecha son nueve ajustes con su propio
+    encabezado, que también dice «MQ. 53». Se reconoce por el título
+    REPETIDO: cuando un título que puede aparecer una sola vez —«FECHA»,
+    «TIPO DE TELA», «ESTIRAJE»— vuelve a aparecer más a la derecha, ahí
+    empieza otra tabla.
+
+    Que el título se repita no alcanza: en la MAQ 52 hay dos «Longitud de
+    Malla» seguidas y son dos columnas de la MISMA tabla. Por eso se exige
+    además que de ahí a la derecha haya una tabla entera —cinco campos y la
+    fecha—, que es lo que separa una tabla de una columna repetida.
+
+    Devuelve (columna donde empieza, mapa) o (None, {}).
+    """
+    vistos: set[str] = set()
+    for i, celda in enumerate(fila_titulos):
+        campo = _campo_del_titulo(celda)
+        if campo is None or campo in _REPETIBLES:
+            continue
+        if campo not in vistos:
+            vistos.add(campo)
+            continue
+        mapa = _mapa_de_titulos(fila_titulos, desde=i)
+        if len(mapa) < 5 or "fecha" not in mapa:
+            continue
+        # La tabla no empieza en el título repetido sino en la columna del
+        # número de máquina, que está a su izquierda y sin título propio
+        # («MQ. 53»). Es la que dice de quién son esos ajustes.
+        inicio = i
+        while inicio > 0 and _apretado(fila_titulos[inicio - 1]):
+            inicio -= 1
+        return inicio, mapa
+    return None, {}
+
+
+def _nota_al_costado(fila, desde: int, hasta: int) -> str | None:
+    """Lo que quedó escrito a la derecha de la última columna con título.
+
+    Son ~100 celdas en toda la planilla y hasta ahora se tiraban enteras. Ahí
+    está lo único que explica POR QUÉ se cambió un ajuste: «menos 5
+    centímetros solicitado por Oscar 11/8/2020, cambio 11/11/2020 a 32,5 LM».
+    Al lado hay también medidas sueltas —«tención 30», «spander 132»— que no
+    tienen columna propia en ningún lado.
+
+    Se toma sólo lo que está DESPUÉS de la última columna con título, así que
+    no puede repetir lo que ya entró por su campo. Y se corta antes de la
+    segunda tabla de la MAQ 53, que son ajustes y no una nota.
+    """
+    return _juntar(_celdas(fila, range(desde, hasta)))
 
 
 def _celdas(fila, columnas) -> list:
@@ -311,6 +380,11 @@ def leer_ajustes(wb, maquinas, hoy=None) -> tuple[list[dict], list[dict]]:
 
         filas = _filas_de(wb[nombre_hoja])
         corte, mapa = _fila_de_titulos(filas)
+        # Si hay otra tabla pegada a la derecha, la de la izquierda termina
+        # ahí: sus columnas no son de esta.
+        inicio2, mapa2 = _segunda_tabla(filas[corte]) if corte is not None else (None, {})
+        if inicio2 is not None:
+            mapa = _mapa_de_titulos(filas[corte], hasta=inicio2)
         # Sin columna de fecha, los títulos no sirven: quiere decir que a esa
         # hoja se le perdieron las primeras columnas y TODO el resto está
         # corrido. Pasa en una sola hoja, pero si se leyera igual saldrían las
@@ -318,59 +392,42 @@ def leer_ajustes(wb, maquinas, hoy=None) -> tuple[list[dict], list[dict]]:
         por_posicion = corte is None or "fecha" not in mapa
         if por_posicion:
             corte, mapa = 1, dict(_ORDEN_SUPLENTE)
+            inicio2, mapa2 = None, {}
 
-        leidas = 0
-        for n, fila in enumerate(filas[corte + 1:], start=1):
-            if _vacia(fila):
-                continue
-            # Cuando se lee por posición no se sabe dónde terminaba el
-            # encabezado, así que una fila de títulos puede caer acá abajo. Se
-            # reconoce sola: tiene tres nombres de columna y ningún dato.
-            if por_posicion and len(_mapa_de_titulos(fila)) >= 3:
-                continue
-            # La fecha es la primera celda con fecha de verdad de la fila. En
-            # varias hojas los datos quedaron corridos una columna y la
-            # columna del título ya no es la que tiene el dato.
-            fecha = next((f for f in (_fecha(c, hoy) for c in fila) if f), None)
+        # Hasta dónde llega la tabla de la izquierda, y qué hay más a la
+        # derecha: otra tabla de ajustes (MAQ 53) o anotaciones sueltas.
+        ultima = _ultima_titulada(mapa)
+        tope_nota = inicio2 if inicio2 is not None else max(
+            (len(f) for f in filas), default=ultima + 1)
 
-            tipo = _texto(_una(fila, mapa, "tipo_maquina"))
-            if not tipo:
-                # Se corrió una columna: el tipo quedó en la primera.
-                primera = _texto(fila[0] if fila else None)
-                if primera and not re.fullmatch(r"\d+", primera):
-                    tipo = primera
+        leidas = _leer_bloque(filas, corte, mapa, maquina, nombre_hoja, hoy,
+                              salida, ultima + 1, tope_nota, 0, por_posicion)
 
-            item = {
-                "id_maquina": maquina["id"],
-                "maquina_nombre": maquina["nombre"],
-                "fecha": fecha,
-                "tipo_maquina": tipo,
-                "cilindro": _texto(_una(fila, mapa, "cilindro")),
-                "poleas": _juntar(_celdas(fila, mapa.get("poleas", []))),
-                "ajuste_agujas": _texto(_una(fila, mapa, "ajuste_agujas")),
-                "estiraje": _texto(_una(fila, mapa, "estiraje")),
-                "tela": _texto(_una(fila, mapa, "tela")),
-                "hilos": _juntar(_celdas(fila, mapa.get("hilos", []))),
-                # Con `_medida` y no con `_decimal`: casi nadie escribió el
-                # número solo, y «138 g» es un gramaje igual que 138.
-                "gramaje_crudo": _medida(_una(fila, mapa, "gramaje_crudo")),
-                "gramaje_terminado": _medida(_una(fila, mapa, "gramaje_terminado")),
-                "malla_manual": _texto(_una(fila, mapa, "malla_manual")),
-                "malla": _texto(_una(fila, mapa, "malla")),
-                "rendimiento": _decimal(_una(fila, mapa, "rendimiento")),
-                "kg_m": _medida(_una(fila, mapa, "kg_m")),
-                "hoja": nombre_hoja,
-                "orden": n,
-            }
-            # Una fila que sólo trae el número y el modelo de la máquina no es
-            # un ajuste: es una fila que quedó empezada.
-            util = ("cilindro", "poleas", "ajuste_agujas", "estiraje", "tela",
-                    "hilos", "gramaje_crudo", "gramaje_terminado",
-                    "malla_manual", "malla")
-            if not fecha and not any(item[c] for c in util):
-                continue
-            salida.append(item)
-            leidas += 1
+        if inicio2 is not None:
+            # La segunda tabla dice de qué máquina es en su primera celda
+            # («MQ. 53»). Si no coincide con la hoja, no se adivina: se avisa.
+            suya = _numero(filas[corte][inicio2]) if inicio2 < len(filas[corte]) else None
+            duena = por_numero.get(suya) if suya is not None else None
+            if duena is None:
+                descartes.append({
+                    "donde": nombre_hoja,
+                    "motivo": "Hay una segunda tabla de ajustes a la derecha y "
+                              "no dice de qué máquina es: no se leyó"})
+            else:
+                # El orden arranca en 1.000 para que la clave (hoja, orden)
+                # siga siendo única: las dos tablas están en la misma hoja y
+                # con la numeración de la izquierda se pisarían entre ellas.
+                ultima2 = _ultima_titulada(mapa2)
+                otras = _leer_bloque(filas, corte, mapa2, duena, nombre_hoja,
+                                     hoy, salida, ultima2 + 1,
+                                     max((len(f) for f in filas), default=0),
+                                     1000, False)
+                descartes.append({
+                    "donde": nombre_hoja,
+                    "motivo": f"La hoja tiene una segunda tabla pegada a la "
+                              f"derecha: {otras} ajustes más de la MQ {suya}. "
+                              "Conviene mirarlos."})
+                leidas += otras
 
         if not leidas:
             descartes.append({"donde": nombre_hoja,
@@ -382,6 +439,76 @@ def leer_ajustes(wb, maquinas, hoy=None) -> tuple[list[dict], list[dict]]:
                           "por posición. Conviene mirarlas."})
 
     return salida, descartes
+
+
+def _leer_bloque(filas, corte, mapa, maquina, nombre_hoja, hoy, salida,
+                 desde_nota, hasta_nota, base_orden, por_posicion) -> int:
+    """Lee una tabla de ajustes y la agrega a `salida`. Devuelve cuántas leyó.
+
+    Es una función aparte porque la MAQ 53 tiene DOS tablas en la misma hoja y
+    las dos se leen igual; lo único que cambia es en qué columnas están.
+    """
+    leidas = 0
+    for n, fila in enumerate(filas[corte + 1:], start=1):
+        if _vacia(fila):
+            continue
+        # Cuando se lee por posición no se sabe dónde terminaba el
+        # encabezado, así que una fila de títulos puede caer acá abajo. Se
+        # reconoce sola: tiene tres nombres de columna y ningún dato.
+        if por_posicion and len(_mapa_de_titulos(fila)) >= 3:
+            continue
+        # La fecha es la primera celda con fecha de verdad de la fila. En
+        # varias hojas los datos quedaron corridos una columna y la
+        # columna del título ya no es la que tiene el dato. Se mira sólo
+        # adentro de la tabla: la de la izquierda no puede quedarse con la
+        # fecha de la de la derecha.
+        propias = _celdas(fila, range(min((c for cols in mapa.values()
+                                           for c in cols), default=0),
+                                      desde_nota))
+        fecha = next((f for f in (_fecha(c, hoy) for c in propias) if f), None)
+
+        tipo = _texto(_una(fila, mapa, "tipo_maquina"))
+        if not tipo:
+            # Se corrió una columna: el tipo quedó en la primera.
+            primera = _texto(fila[0] if fila else None)
+            if primera and not re.fullmatch(r"\d+", primera):
+                tipo = primera
+
+        item = {
+            "id_maquina": maquina["id"],
+            "maquina_nombre": maquina["nombre"],
+            "fecha": fecha,
+            "tipo_maquina": tipo,
+            "cilindro": _texto(_una(fila, mapa, "cilindro")),
+            "poleas": _juntar(_celdas(fila, mapa.get("poleas", []))),
+            "ajuste_agujas": _texto(_una(fila, mapa, "ajuste_agujas")),
+            "estiraje": _texto(_una(fila, mapa, "estiraje")),
+            "tela": _texto(_una(fila, mapa, "tela")),
+            "hilos": _juntar(_celdas(fila, mapa.get("hilos", []))),
+            # Con `_medida` y no con `_decimal`: casi nadie escribió el
+            # número solo, y «138 g» es un gramaje igual que 138.
+            "gramaje_crudo": _medida(_una(fila, mapa, "gramaje_crudo")),
+            "gramaje_terminado": _medida(_una(fila, mapa, "gramaje_terminado")),
+            "malla_manual": _texto(_una(fila, mapa, "malla_manual")),
+            "malla": _texto(_una(fila, mapa, "malla")),
+            "rendimiento": _decimal(_una(fila, mapa, "rendimiento")),
+            "kg_m": _medida(_una(fila, mapa, "kg_m")),
+            "nota": _nota_al_costado(fila, desde_nota, hasta_nota),
+            "hoja": nombre_hoja,
+            "orden": base_orden + n,
+        }
+        # Una fila que sólo trae el número y el modelo de la máquina no es
+        # un ajuste: es una fila que quedó empezada. La nota cuenta: una
+        # fila que sólo dice «produccion normal» es lo que anotó el
+        # mecánico ese día y no hay dónde más guardarlo.
+        util = ("cilindro", "poleas", "ajuste_agujas", "estiraje", "tela",
+                "hilos", "gramaje_crudo", "gramaje_terminado",
+                "malla_manual", "malla", "nota")
+        if not fecha and not any(item[c] for c in util):
+            continue
+        salida.append(item)
+        leidas += 1
+    return leidas
 
 
 def leer_agustes(wb, maquinas, hoy=None) -> tuple[list[dict], list[dict]]:
@@ -402,6 +529,11 @@ def leer_agustes(wb, maquinas, hoy=None) -> tuple[list[dict], list[dict]]:
     corte, mapa = _fila_de_titulos(filas)
     if corte is None or "fecha" not in mapa:
         return [], [{"donde": hoja, "motivo": "No se encontraron los títulos"}]
+
+    # Igual que en las hojas por máquina, a la derecha de la última columna
+    # con título quedaron anotaciones sueltas: 40 celdas en esta hoja.
+    ultima = _ultima_titulada(mapa)
+    tope_nota = max((len(f) for f in filas), default=ultima + 1)
 
     salida, descartes = [], []
     numero = None
@@ -435,12 +567,13 @@ def leer_agustes(wb, maquinas, hoy=None) -> tuple[list[dict], list[dict]]:
             "malla": _texto(_una(fila, mapa, "malla")),
             "rendimiento": _decimal(_una(fila, mapa, "rendimiento")),
             "kg_m": _medida(_una(fila, mapa, "kg_m")),
+            "nota": _nota_al_costado(fila, ultima + 1, tope_nota),
             "hoja": hoja,
             "orden": n,
         }
         util = ("cilindro", "poleas", "ajuste_agujas", "estiraje", "tela",
                 "hilos", "gramaje_crudo", "gramaje_terminado",
-                    "malla_manual", "malla")
+                "malla_manual", "malla", "nota")
         if not fecha and not any(item[c] for c in util):
             continue
         salida.append(item)
@@ -453,6 +586,200 @@ def _firma(a) -> tuple:
     return (a["id_maquina"], a["fecha"],
             (a["tela"] or "").upper().strip(),
             (a["hilos"] or "").upper().strip())
+
+
+# --------------------------------------------------------------------------
+# La ficha escrita arriba de la hoja
+# --------------------------------------------------------------------------
+# Trece hojas —las de las máquinas 51 a 63— tienen la ficha de la máquina
+# escrita en una frase suelta arriba de todo, sin títulos ni columnas:
+# «MAQUINA JIUNN LONG DIAMETRO 36 GALGA 28 100 ALIMENTADORES 6 TRAK». No la
+# leía nadie. La 58 es el caso que más pesa: es la única máquina cuya ficha
+# está VACÍA en la planilla de mantenimiento, y esta frase la completa entera.
+#
+# Cada número se busca pegado a su palabra, y del lado en que está escrito:
+# los alimentadores llevan el número adelante («100 ALIMENTADORES») y las
+# agujas atrás («AGUJAS 2976»). Las agujas NO aceptan el número de adelante a
+# propósito: la 58 dice «MAYER OV 3,2 QC 2016 AGUJAS 2976» y el 2016 es el
+# año, no la cantidad de agujas.
+_DIAMETRO_ESCRITO = re.compile(r"di[aá]metro\s*(\d+(?:[.,]\d+)?)", re.I)
+_GALGA_ESCRITA = re.compile(r"galga\s*(\d+)", re.I)
+_ALIMENTADORES_ESCRITOS = re.compile(
+    r"(?:(\d+)\s*alimentadores|alimentadores\s*(\d+))", re.I)
+_AGUJAS_ESCRITAS = re.compile(r"agujas\s*(\d+)", re.I)
+
+# El año va suelto adentro del nombre del modelo («OV 3,2 QC 2016»). Se busca
+# sólo ahí, antes de la primera medida: más a la derecha, un año de cuatro
+# cifras y una cantidad de agujas se parecen demasiado.
+_ANIO_ESCRITO = re.compile(r"\b(19\d\d|20[0-3]\d)\b")
+
+# Dónde corta la marca: en la primera palabra que ya es una medida.
+_PALABRAS_DE_FICHA = ("diametro", "diámetro", "galga", "alimentadores",
+                      "agujas", "trak")
+
+# Cuántas filas de arriba se miran. La frase está arriba de los títulos, y
+# sólo ahí: más abajo, «con galga 28» es una anotación de una fila (MQ 22).
+_FILAS_DE_FICHA = 3
+
+# Los campos que puede traer la frase. `modelo` va aparte de `marca` porque
+# «MAYER OV 3,2 QC 2016» son las dos cosas escritas juntas.
+CAMPOS_FICHA_ESCRITA = ("marca", "modelo", "anio", "diametro", "galga",
+                        "alimentadores", "agujas")
+
+
+def _hallado(busqueda) -> str | None:
+    return busqueda.group(1) if busqueda else None
+
+
+def _numero_escrito(regla, texto) -> str | None:
+    """El número que encontró la regla. Algunas lo tienen adelante y otras
+    atrás, así que se devuelve el grupo que haya matcheado."""
+    hallado = regla.search(texto)
+    if hallado is None:
+        return None
+    return next((g for g in hallado.groups() if g), None)
+
+
+def _ficha_escrita(texto: str) -> dict | None:
+    """La ficha que dice esa frase, o vacío si no es una frase de ficha."""
+    bajo = texto.lower()
+    if not bajo.lstrip().startswith("maquina"):
+        return None
+    if not any(p in bajo for p in _PALABRAS_DE_FICHA):
+        return None
+
+    # La marca es lo que va entre «MAQUINA» y la primera medida. Se pasa por
+    # `excel._marca_pareja`, que es la misma lista de marcas que usa la
+    # planilla de mantenimiento: dos listas de marcas terminan en dos plantas
+    # distintas con la misma máquina escrita de dos formas.
+    arranque = bajo.index("maquina") + len("maquina")
+    corte = min((bajo.find(p, arranque) for p in _PALABRAS_DE_FICHA
+                 if bajo.find(p, arranque) >= 0), default=len(texto))
+    bruto = texto[arranque:corte].strip(" .,-")
+    anio = _numero(_hallado(_ANIO_ESCRITO.search(bruto)))
+    if anio is not None:
+        bruto = _ANIO_ESCRITO.sub("", bruto, count=1).strip(" .,-")
+    marca = excel._marca_pareja(bruto) if bruto else None
+    modelo = None
+    if marca and bruto and _apretado(bruto) != _apretado(marca):
+        # Lo que sobra después de la marca es el modelo: «OV 3,2 QC».
+        modelo = bruto[len(marca):].strip(" .,-") or None
+    elif not marca:
+        modelo = bruto or None
+
+    return {
+        "marca": _texto(marca),
+        "modelo": _texto(modelo),
+        "anio": anio,
+        # El diámetro puede estar escrito con coma («3,2»): va con
+        # `_decimal`, que la entiende. Los otros tres son enteros.
+        "diametro": _decimal(_numero_escrito(_DIAMETRO_ESCRITO, texto)),
+        "galga": _numero(_numero_escrito(_GALGA_ESCRITA, texto)),
+        "alimentadores": _numero(_numero_escrito(_ALIMENTADORES_ESCRITOS, texto)),
+        "agujas": _numero(_numero_escrito(_AGUJAS_ESCRITAS, texto)),
+    }
+
+
+def leer_fichas_escritas(wb, maquinas) -> tuple[dict[int, dict], list[dict]]:
+    """La ficha escrita arriba de cada hoja de ajuste. {id_maquina: ficha}.
+
+    Devuelve también si esa misma frase está escrita igual en otras hojas: en
+    la planilla, las hojas 51 a 57 tienen las SIETE la misma frase, palabra
+    por palabra, y la de mantenimiento dice que la 53 es de 34 pulgadas y 96
+    alimentadores y no de 36 y 100. Está copiada y pegada. Se lee igual —el
+    dato está escrito y hay que verlo— pero se marca, y `completar_ficha` no
+    escribe una frase copiada en ninguna ficha.
+    """
+    por_numero = {m["numero"]: m for m in maquinas if m.get("numero") is not None}
+    leidas: dict[int, dict] = {}
+    descartes: list[dict] = []
+
+    for nombre_hoja in wb.sheetnames:
+        limpio = _apretado(nombre_hoja)
+        if limpio in _HOJAS_PROPIAS or limpio in ("hoja3", "agustes"):
+            continue
+        numero = _numero(nombre_hoja)
+        maquina = por_numero.get(numero) if numero is not None else None
+        if not maquina:
+            continue
+        filas = _filas_de(wb[nombre_hoja])
+        for fila in filas[:_FILAS_DE_FICHA]:
+            frase = next((t for t in (_texto(c) for c in fila)
+                          if t and _ficha_escrita(t)), None)
+            if not frase:
+                continue
+            ficha = _ficha_escrita(frase)
+            ficha.update({"id_maquina": maquina["id"], "numero": numero,
+                          "hoja": nombre_hoja, "texto": frase,
+                          "copiada": False})
+            leidas[maquina["id"]] = ficha
+            break
+
+    # Una frase que está escrita igual en más de una hoja no es la ficha de
+    # ninguna de ellas: es una copia. Se marcan todas, incluida la primera.
+    cuantas: dict[str, int] = {}
+    for ficha in leidas.values():
+        clave = _apretado(ficha["texto"])
+        cuantas[clave] = cuantas.get(clave, 0) + 1
+    for ficha in leidas.values():
+        repetida = cuantas[_apretado(ficha["texto"])]
+        if repetida > 1:
+            ficha["copiada"] = True
+            descartes.append({
+                "donde": ficha["hoja"],
+                "motivo": f"La ficha escrita arriba de la hoja está copiada "
+                          f"igual en {repetida} hojas: no se puede saber de "
+                          "qué máquina es. No se completa nada con ella."})
+    return leidas, descartes
+
+
+def _mismo_numero(uno, otro) -> bool:
+    """Dos números son el mismo aunque uno venga de la base y otro del Excel."""
+    try:
+        return abs(float(uno) - float(otro)) < 0.005
+    except (TypeError, ValueError):
+        return _apretado(uno) == _apretado(otro)
+
+
+def completar_ficha(leidas: dict[int, dict],
+                    fichas: dict[int, dict]) -> tuple[list[dict], list[dict]]:
+    """Qué se puede completar de cada ficha con lo que dice la hoja.
+
+    Devuelve (cambios, descartes). Cada cambio es
+    {"id_maquina": ..., "campo": valor, ...} con SÓLO los campos que hoy
+    están vacíos: lo que ya está cargado no se pisa nunca. La ficha de la
+    máquina la cargó el mecánico desde la pantalla o desde la planilla de
+    mantenimiento, y una frase suelta arriba de una hoja de ajustes no le
+    puede ganar a eso.
+
+    Lo que no coincide tampoco se corrige solo: sale en descartes con las dos
+    versiones, para que el mecánico decida cuál vale.
+    """
+    cambios, descartes = [], []
+    for id_maquina, escrita in sorted(leidas.items()):
+        actual = fichas.get(id_maquina) or {}
+        nuevo = {}
+        for campo in CAMPOS_FICHA_ESCRITA:
+            valor = escrita.get(campo)
+            if valor in (None, ""):
+                continue
+            tiene = actual.get(campo)
+            if tiene not in (None, ""):
+                if not _mismo_numero(tiene, valor):
+                    descartes.append({
+                        "donde": escrita["hoja"],
+                        "motivo": f"La hoja dice {campo} {valor} y la ficha de "
+                                  f"la MQ {escrita['numero']} dice {tiene}. "
+                                  "Queda lo que ya estaba cargado."})
+                continue
+            if escrita["copiada"]:
+                continue
+            nuevo[campo] = valor
+        if nuevo:
+            cambios.append({"id_maquina": id_maquina,
+                            "numero": escrita["numero"],
+                            "hoja": escrita["hoja"], **nuevo})
+    return cambios, descartes
 
 
 # --------------------------------------------------------------------------
@@ -604,6 +931,15 @@ def leer_agujas_modelo(wb) -> tuple[list[dict], list[dict]]:
     return salida, descartes
 
 
+def _inicio_levas_tela(filas) -> int | None:
+    """En qué columna empieza la tabla de la derecha de «INVENTARIO LEVAS»."""
+    for fila in filas[:6]:
+        for j, celda in enumerate(fila):
+            if isinstance(celda, str) and "levas por tela" in _apretado(celda):
+                return j
+    return None
+
+
 def leer_levas(wb) -> tuple[list[dict], list[dict]]:
     hoja = next((n for n in wb.sheetnames if _apretado(n) == "inventario levas"), None)
     if not hoja:
@@ -616,10 +952,28 @@ def leer_levas(wb) -> tuple[list[dict], list[dict]]:
     if corte is None:
         return [], [{"donde": hoja, "motivo": "No se encontraron los títulos"}]
 
+    # Entre la última columna con título y la tabla de la derecha quedan dos
+    # números sueltos (288 y 490) en una columna SIN título. No son una
+    # fórmula ni tienen nota: nada en la hoja dice qué cuentan, y no coinciden
+    # con ninguna cuenta de las otras tablas. No se inventa un nombre para
+    # guardarlos: salen en descartes para que el mecánico diga qué son, y
+    # recién ahí se les hace columna.
+    ultima = max(mapa.values(), default=-1)
+    tope = _inicio_levas_tela(filas)
+    if tope is None:
+        tope = max((len(f) for f in filas), default=ultima + 1)
+
     salida, descartes, vistas = [], [], set()
-    for fila in filas[corte + 1:]:
+    for n, fila in enumerate(filas[corte + 1:], start=corte + 2):
         if _vacia(fila):
             continue
+        suelto = _juntar(_celdas(fila, range(ultima + 1, tope)))
+        if suelto:
+            descartes.append({
+                "donde": f"{hoja}, fila {n}",
+                "motivo": f"Hay un número sin título al lado de la cantidad "
+                          f"({suelto}): la hoja no dice qué cuenta, así que no "
+                          "se guarda"})
         maquinas = _texto(fila[mapa["maquinas"]]) if "maquinas" in mapa else None
         codigo = _texto(fila[mapa["codigo"]]) if "codigo" in mapa else None
         if not maquinas or not codigo:
@@ -658,16 +1012,7 @@ def leer_levas_tela(wb) -> tuple[list[dict], list[dict]]:
     if not hoja:
         return [], []
     filas = _filas_de(wb[hoja])
-
-    # Dónde empieza la tabla de la derecha: la celda que la titula.
-    inicio = None
-    for fila in filas[:6]:
-        for j, celda in enumerate(fila):
-            if isinstance(celda, str) and "levas por tela" in _apretado(celda):
-                inicio = j
-                break
-        if inicio is not None:
-            break
+    inicio = _inicio_levas_tela(filas)
     if inicio is None:
         return [], []
 

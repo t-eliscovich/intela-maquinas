@@ -78,7 +78,10 @@
         <th class="der">Kilos</th>
         <th class="der">Kilos que faltan</th>
         <th class="oculta-chico">Última {{ (con_tope | first).nombre | lower if con_tope else 'vez' }}</th>
-        {% for t in sin_tope %}<th class="oculta-chico">Último {{ t.nombre | lower }}</th>{% endfor %}
+        {# Los otros mantenimientos van JUNTOS en una columna. Con uno solo
+           entraban al lado; con tres, la tabla se salía de la pantalla y la
+           última columna quedaba cortada. #}
+        {% if sin_tope %}<th class="oculta-chico">Lo último que se le hizo</th>{% endif %}
       </tr>
     </thead>
     <tbody>
@@ -128,20 +131,31 @@
             <span style="font-size:11px">· hace {{ p.dias }} días</span>
           {% else %}—{% endif %}
         </td>
-        {% for t in sin_tope %}
-          {% set o = f.por_tipo.get(t.id) %}
-          <td class="tenue oculta-chico">
-            {% if o and o.desde %}{{ o.desde | fecha_es }}
-              <span style="font-size:11px">· {{ o.kg | num(0) }} kg</span>
-            {% else %}<span class="tenue">nunca</span>{% endif %}
-          </td>
-        {% endfor %}
+        {% if sin_tope %}
+        <td class="tenue oculta-chico" style="min-width:210px">
+          {% set hechos = [] %}
+          {% for t in sin_tope %}
+            {% set o = f.por_tipo.get(t.id) %}
+            {% if o and o.desde %}
+              <div style="font-size:12px;line-height:1.35">
+                <b style="font-weight:600">{{ t.nombre }}</b>
+                {{ o.desde | fecha_es }}
+                <span class="tenue">· {{ o.kg | num(0) }} kg</span>
+              </div>
+              {% set _ = hechos.append(1) %}
+            {% endif %}
+          {% endfor %}
+          {% if not hechos %}<span class="tenue">nunca</span>{% endif %}
+        </td>
+        {% endif %}
       </tr>
     {% endfor %}
     </tbody>
   </table>
-  <div class="nota">El color lo prenden los kilos.{% for t in sin_tope %}
-    <b>{{ t.nombre }}</b> va como fecha: se hace cuando la tela lo pide.{% endfor %}</div>
+  <div class="nota">El color lo prenden los kilos.
+    {% if sin_tope %}{{ sin_tope | map(attribute='nombre') | join(', ') }}
+    {{ 'van' if sin_tope | length > 1 else 'va' }} como fecha: no se
+    {{ 'hacen' if sin_tope | length > 1 else 'hace' }} por desgaste.{% endif %}</div>
 </div>
 {% endif %}
 

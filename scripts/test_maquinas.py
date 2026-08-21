@@ -1813,6 +1813,139 @@ for ruta in ("/archivos/999999", "/maquina?numero=1"):
 check("healthz contesta igual", c.get("/healthz").status_code in (200, 503))
 
 
+# --------------------------------------------------------------------------
+# Lo que se leía a medias de la planilla de ajuste
+# --------------------------------------------------------------------------
+class _FalsoCursor:
+    def __init__(self, guardado): self.guardado = guardado
+    def execute(self, sql, args=()): self.guardado.update(sql=sql, args=args)
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+
+
+class _FalsoConn:
+    """Una conexión de mentira: guarda la consulta en vez de correrla."""
+    def __init__(self, guardado): self.guardado = guardado
+    def cursor(self, **k): return _FalsoCursor(self.guardado)
+    def commit(self): pass
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+
+
+def _hoja_con_dos_tablas():
+    """Una hoja como la MAQ 53: dos tablas pegadas y notas al costado."""
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active; ws.title = "MAQ 1"
+    titulos = ["MQ.  1", "Tipo de  MQ.", "FECHA", "SERIE", "Polea", "Polea",
+               "Polea", "ajuste agujas ", "ESTIRAJE", "TIPO DE TELA", "HILO",
+               "HILO", "HILO", "G /m2   crudo", "Longitud de Malla",
+               "Rendimiento Crudo", "(G/ m2)", "KG/M"]
+    ws.append(["CONTROL DE AGUSTES Y RENDIMIENTOS"])
+    # A la derecha de la tabla, dos columnas sin título (18 y 19) y en la 20
+    # arranca otra tabla entera con los mismos títulos.
+    ws.append(titulos + [None, None, "MQ.  1"] + titulos[1:])
+    ws.append([1, "MAYER 32", datetime(2026, 3, 4), "pro 30", "polea 5", None,
+               None, "lycra pro 6,5", "B/9", "FALSO F", "20/1 KW", None, None,
+               181.5, "29,0 LM", 4.05, None, None,
+               "menos 5 cm solicitado por Oscar 11/8/2020", None,
+               1, "MAYER 30", datetime(2021, 11, 20), None, "polea 115", None,
+               None, None, None, "KIANA", "75F36"])
+    return wb
+
+
+wb_dos = _hoja_con_dos_tablas()
+aj_dos, desc_dos = AJ.leer_ajustes(wb_dos, [MAQS_AJ[0]], hoy=date(2026, 8, 20))
+izq = [a for a in aj_dos if a["orden"] < 1000]
+der = [a for a in aj_dos if a["orden"] >= 1000]
+
+# 1. La nota al costado
+check("la nota de la derecha entra en el ajuste",
+      izq and izq[0]["nota"] == "menos 5 cm solicitado por Oscar 11/8/2020")
+check("la nota no repite lo que ya entro por su columna",
+      izq and "FALSO F" not in (izq[0]["nota"] or "")
+      and izq[0]["tela"] == "FALSO F")
+
+# 3. La segunda tabla
+check("la segunda tabla de la hoja se lee aparte", len(der) == 1)
+check("la segunda tabla no se mete en las filas de la primera",
+      izq and izq[0]["poleas"] == "polea 5" and izq[0]["tela"] == "FALSO F")
+check("las dos tablas de una hoja no comparten (hoja, orden)",
+      len({(a["hoja"], a["orden"]) for a in aj_dos}) == len(aj_dos))
+check("la segunda tabla se avisa en pantalla",
+      any("segunda tabla" in d["motivo"] for d in desc_dos))
+
+# 2. La ficha escrita arriba de la hoja
+def _hojas_con_ficha_escrita():
+    from openpyxl import Workbook
+    wb = Workbook()
+    titulos = ["MQ.", "Tipo de  MQ.", "FECHA", "SERIE", "Polea", "ESTIRAJE",
+               "TIPO DE TELA", "HILO"]
+    ws = wb.active; ws.title = "MAQ 1"
+    ws.append(["MAQUINA MAYER OV 3,2 QC 2016 AGUJAS 2976  DIAMETRO 34 "
+               "GALGA 28  108 ALIMENTADORES  6 TRAK "])
+    ws.append(titulos)
+    # Dos hojas con la MISMA frase: está copiada y pegada.
+    for nombre in ("MAQ 52", "MAQ 53"):
+        otra = wb.create_sheet(nombre)
+        otra.append(["MAQUINA JIUNN LONG  DIAMETRO 36 GALGA 28  "
+                     "100 ALIMENTADORES  6 TRAK "])
+        otra.append(titulos)
+    return wb
+
+
+MAQS_FICHA = MAQS_AJ + [{"id": 12, "numero": 53, "nombre": "TEJEDURIA-MQ 053"}]
+escritas, _ = AJ.leer_fichas_escritas(_hojas_con_ficha_escrita(), MAQS_FICHA)
+una = escritas.get(10) or {}
+check("la ficha escrita arriba de la hoja se lee entera",
+      (una.get("marca"), una.get("diametro"), una.get("galga"),
+       una.get("alimentadores")) == ("MAYER", 34.0, 28, 108))
+# El 2016 de «OV 3,2 QC 2016» es el año: las agujas son las 2976 que dice
+# la palabra AGUJAS. Al revés, la ficha diría que la máquina tiene 2016.
+check("el ano no se guarda como cantidad de agujas",
+      una.get("agujas") == 2976 and una.get("anio") == 2016)
+
+cambios, choques = AJ.completar_ficha(
+    escritas, {10: {"marca": "MAYER", "galga": 24}})
+solo_uno = next((c for c in cambios if c["id_maquina"] == 10), {})
+check("la ficha escrita completa lo vacio y no pisa lo cargado",
+      solo_uno.get("diametro") == 34.0 and "galga" not in solo_uno
+      and any("galga" in d["motivo"] for d in choques))
+check("una frase copiada en varias hojas no completa ninguna ficha",
+      not [c for c in cambios if c["id_maquina"] in (11, 12)])
+
+# Y al guardar, se escribe SÓLO lo que está vacío. Lo hace el motor con
+# `coalesce`: entre leer la ficha y escribirla, alguien puede estar cargándola
+# desde la pantalla, y lo que escribió a mano tiene que ganar siempre.
+_sql = {}
+store._conn = lambda: _FalsoConn(_sql)
+store.completar_ficha_vacia(10, {"marca": "MAYER", "galga": None, "anio": 2016})
+check("completar la ficha no pisa lo que ya esta cargado",
+      "coalesce(marca, %s)" in _sql.get("sql", ""))
+check("y no escribe los campos vacios", "galga" not in _sql.get("sql", ""))
+check("con los valores de la hoja", ("MAYER", 2016) == tuple(_sql["args"][1:3]))
+
+# 4. El número sin título de INVENTARIO LEVAS
+def _levas_con_numero_suelto():
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active; ws.title = "INVENTARIO LEVAS"
+    ws.append(["INVENTARIO DE  LEVAS", None, None, None, None, None, None,
+               None, None, None, None, None, None, None,
+               " CANTIDAD DE LEVAS POR TELA"])
+    ws.append(["MAQUINA ", "CODIGO", "CANTIDAD", "UBICACION", "ACCIONAMIENTO"])
+    ws.append(["MAYER (1-2-3 )", "30-32  274080-1", 142, "cilindro",
+               "ANULACION", 288])
+    return wb
+
+
+levas_sueltas, desc_levas = AJ.leer_levas(_levas_con_numero_suelto())
+check("el numero sin titulo de las levas se avisa",
+      any("288" in d["motivo"] for d in desc_levas))
+check("el numero sin titulo no se guarda como si fuera otra cosa",
+      levas_sueltas and levas_sueltas[0]["cantidad"] == 142
+      and 288 not in levas_sueltas[0].values())
+
 print()
 if fallos:
     print("FALLARON:", ", ".join(fallos)); sys.exit(1)

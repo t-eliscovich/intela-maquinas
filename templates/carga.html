@@ -119,6 +119,34 @@
   </table>
   <p class="nota">Lo que ya estaba se <b>actualiza</b>. No se duplica.</p>
 </div>
+
+{% if fichas_a_completar %}
+{# Trece hojas tienen la ficha escrita arriba, en una frase suelta. Se muestra
+   qué va a completar antes de guardar: son datos de la máquina, no de un
+   ajuste, y tienen que verse aparte. #}
+<div class="bloque">
+  <div class="titulo"><h2>Fichas que se completan</h2>
+    <p>Con lo que dice la hoja arriba de todo · sólo lo que está vacío</p></div>
+  <table>
+    <thead><tr><th>Máquina</th><th>Qué se le carga</th></tr></thead>
+    <tbody>
+    {% for c in fichas_a_completar %}
+      <tr>
+        <td><span class="mq">MQ {{ c.numero }}</span></td>
+        <td class="tenue">
+          {% for campo, valor in c.items() %}
+            {% if campo not in ('id_maquina', 'numero', 'hoja') %}
+              {{ campo }} {{ valor }}{{ ' · ' if not loop.last }}
+            {% endif %}
+          {% endfor %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
 {% elif formato == 'historial' %}
 <div class="bloque">
   <div class="titulo"><h2>Planilla de mantenimiento</h2>

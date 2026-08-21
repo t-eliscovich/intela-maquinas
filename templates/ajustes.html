@@ -88,6 +88,11 @@
           <label class="campo" for="tipo-maquina-nuevo">Tipo de máquina</label>
           <input name="tipo_maquina" id="tipo-maquina-nuevo" placeholder="MAYER 32">
         </div>
+        <div class="ancho">
+          <label class="campo" for="nota-nueva">Nota</label>
+          <input name="nota" id="nota-nueva"
+                 placeholder="por qué se cambió, quién lo pidió">
+        </div>
         <div class="ancho" style="display:flex;gap:12px;align-items:center">
           <button class="btn" type="submit">Guardar</button>
           <span class="ayuda" style="margin:0">La máquina y la tela son lo único
@@ -126,7 +131,10 @@
         </td>
         <td>{% if f.fecha %}{{ f.fecha | fecha_es }}
             {% else %}<span class="tenue">sin fecha</span>{% endif %}</td>
-        <td>{{ f.tela or '—' }}</td>
+        <td>{{ f.tela or '—' }}
+          {% if f.nota %}
+            <div class="tenue" style="font-size:11px">{{ f.nota }}</div>
+          {% endif %}</td>
         <td class="tenue">{{ f.hilos or '—' }}</td>
         <td class="tenue oculta-chico">
           {{ [f.cilindro, f.poleas, f.ajuste_agujas] | select | join(' · ') or '—' }}</td>

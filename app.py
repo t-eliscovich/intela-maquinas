@@ -849,15 +849,37 @@ def _revisar_planilla_ajuste(token, ruta, maquinas, nombres_hojas):
     """Mostrar qué entendió de la planilla de ajuste, y guardar."""
     bloques, descartes = ajustes_excel.leer(ruta, maquinas)
 
+    # Trece hojas tienen la ficha de la máquina escrita en una frase suelta
+    # arriba de todo. Completa lo que esté VACÍO en la ficha y nunca pisa lo
+    # que ya está cargado: la ficha la puso el mecánico y una frase suelta no
+    # le puede ganar.
+    try:
+        libro = ajustes_excel.load_workbook(ruta, data_only=True)
+        try:
+            escritas, avisos = ajustes_excel.leer_fichas_escritas(libro, maquinas)
+        finally:
+            libro.close()
+        cambios, choques = ajustes_excel.completar_ficha(escritas, store.fichas())
+        descartes = descartes + avisos + choques
+    except Exception:  # noqa: BLE001
+        cambios = []
+
     if request.method == "POST" and request.form.get("boton") == "confirmar":
         try:
             if not any(bloques.values()):
                 raise ValueError("No se pudo leer ninguna fila.")
             hecho = store.guardar_planilla_ajuste(bloques)
+            fichas = 0
+            for cambio in cambios:
+                datos = {c: cambio.get(c) for c in store.CAMPOS_FICHA}
+                if store.completar_ficha_vacia(cambio["id_maquina"], datos):
+                    fichas += 1
             os.remove(ruta)
-            flash("Listo. " + ", ".join(
-                f"{n} {ajustes_excel.NOMBRES[k].lower()}"
-                for k, n in hecho.items() if n) + ".", "ok")
+            listo = ", ".join(f"{n} {ajustes_excel.NOMBRES[k].lower()}"
+                              for k, n in hecho.items() if n)
+            if fichas:
+                listo += f", y se completaron {fichas} fichas"
+            flash("Listo. " + listo + ".", "ok")
             return redirect(url_for("ajustes_view"))
         except Exception as exc:  # noqa: BLE001
             flash(str(exc), "error")
@@ -874,6 +896,7 @@ def _revisar_planilla_ajuste(token, ruta, maquinas, nombres_hojas):
         hojas=nombres_hojas,
         bloques=bloques,
         muestras=muestras,
+        fichas_a_completar=cambios,
         nombres=ajustes_excel.NOMBRES,
         descartes=descartes,
         listas=[], hoja=None, titulos=[], mapa={}, campos=[],
@@ -1253,7 +1276,7 @@ def ajustes_view():
 # Lo que se puede escribir a mano en un ajuste. `maquina_nombre`, `hoja` y
 # `orden` no: el nombre sale de Asinfo y los otros dos son de la planilla.
 CAMPOS_AJUSTE_A_MANO = ("tipo_maquina", "cilindro", "poleas", "ajuste_agujas",
-                        "estiraje", "hilos", "malla_manual", "malla")
+                        "estiraje", "hilos", "malla_manual", "malla", "nota")
 # Los números que se cargan a mano: el punto es de miles y la unidad puede
 # venir pegada («180,5», «138 g»).
 CAMPOS_AJUSTE_NUMERO = ("gramaje_crudo", "gramaje_terminado")
