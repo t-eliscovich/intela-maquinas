@@ -994,7 +994,9 @@ def maquina_detalle(id_maquina):
                 "rpm": excel.a_decimal_es(request.form.get("rpm")),
                 "sistemas": (request.form.get("sistemas") or "").strip() or None,
                 "diametro": excel.a_decimal_es(request.form.get("diametro_ef")),
-                "alimentadores": excel.a_numero(request.form.get("alimentadores_ef")),
+                # La columna «F» de la planilla es la galga. Los alimentadores
+                # son los «sistemas», que están en el campo de al lado.
+                "galga": excel.a_numero(request.form.get("galga_ef")),
                 "tamano_rollo": excel.a_kilos(request.form.get("tamano_rollo")),
                 "minutos_rollo": excel.a_decimal_es(request.form.get("minutos_rollo")),
                 "rollos_dia": excel.a_numero(request.form.get("rollos_dia")),

@@ -369,6 +369,24 @@ ESQUEMA = """
             ALTER TABLE mantenimiento.eficiencia
                 ADD COLUMN IF NOT EXISTS kg_dia_24 numeric(10,2);
 
+            -- Y anota lo que la máquina DIO de verdad, al lado del cálculo.
+            -- Es la columna que contesta si está rindiendo o no, y estaba en la
+            -- planilla desde el principio sin que nadie la trajera.
+            ALTER TABLE mantenimiento.eficiencia
+                ADD COLUMN IF NOT EXISTS real_rollos_dia numeric(8,2);
+            ALTER TABLE mantenimiento.eficiencia
+                ADD COLUMN IF NOT EXISTS real_kg_dia numeric(10,2);
+            ALTER TABLE mantenimiento.eficiencia
+                ADD COLUMN IF NOT EXISTS real_rollos_24 numeric(8,2);
+            ALTER TABLE mantenimiento.eficiencia
+                ADD COLUMN IF NOT EXISTS real_kg_24 numeric(10,2);
+
+            -- La columna «F» de la planilla es la galga, no los alimentadores:
+            -- los alimentadores son los «sistemas». La columna vieja queda,
+            -- vacía, para no romper una base que ya existía.
+            ALTER TABLE mantenimiento.eficiencia
+                ADD COLUMN IF NOT EXISTS galga integer;
+
             -- Cuánto hilo lleva cada tela. Una fila por (tela, hilo).
             CREATE TABLE IF NOT EXISTS mantenimiento.consumo_hilo (
                 id           serial PRIMARY KEY,
@@ -923,9 +941,11 @@ CAMPOS_BANDA = ("clase", "maquinas", "cantidad_maquinas", "diametro", "media",
                 "tres_cuartos", "lycra", "banda", "cobrador", "nota")
 CAMPOS_AGUJA_MODELO = ("modelo", "marca_aguja", "codigos", "donde", "platinas",
                        "marca_platina", "nota")
-CAMPOS_EFICIENCIA = ("id_maquina", "rpm", "sistemas", "diametro", "alimentadores",
+CAMPOS_EFICIENCIA = ("id_maquina", "rpm", "sistemas", "diametro", "galga",
                      "tamano_rollo", "minutos_rollo", "rollos_dia", "kg_dia",
-                     "rollos_dia_24", "kg_dia_24")
+                     "rollos_dia_24", "kg_dia_24",
+                     "real_rollos_dia", "real_kg_dia",
+                     "real_rollos_24", "real_kg_24")
 CAMPOS_CONSUMO = ("tela", "hilo", "codigo_hilo", "rendimiento")
 CAMPOS_GRAMAJE = ("id_maquina", "fecha", "tela", "hilos", "peso", "orden")
 

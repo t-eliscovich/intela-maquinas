@@ -1130,7 +1130,10 @@ store.eficiencias = lambda: {10: {"id_maquina": 10, "rpm": 25, "sistemas": "102"
                                   "diametro": 32, "alimentadores": 24,
                                   "tamano_rollo": 1410, "minutos_rollo": 56.4,
                                   "rollos_dia": 12, "kg_dia": 270,
-                                  "rollos_dia_24": 24, "kg_dia_24": 540},
+                                  "rollos_dia_24": 24, "kg_dia_24": 540,
+                                  "galga": 24, "real_rollos_dia": 9,
+                                  "real_kg_dia": 202.5,
+                                  "real_rollos_24": 17, "real_kg_24": 416.5},
                              11: {"id_maquina": 11, "rpm": None, "sistemas": "96",
                                   "diametro": 30, "alimentadores": 28,
                                   "tamano_rollo": None, "minutos_rollo": None,
@@ -1249,7 +1252,10 @@ store.eficiencias = lambda: {10: {"id_maquina": 10, "rpm": 25, "sistemas": "102"
                                   "diametro": 32, "alimentadores": 24,
                                   "tamano_rollo": 1410, "minutos_rollo": 56.4,
                                   "rollos_dia": 12, "kg_dia": 270,
-                                  "rollos_dia_24": 24, "kg_dia_24": 540}}
+                                  "rollos_dia_24": 24, "kg_dia_24": 540,
+                                  "galga": 24, "real_rollos_dia": 9,
+                                  "real_kg_dia": 202.5,
+                                  "real_rollos_24": 17, "real_kg_24": 416.5}}
 store.gramajes = lambda id_maquina=None: [
     {"id": 1, "id_maquina": 10, "fecha": date(2021, 11, 10), "tela": "FALSO F",
      "hilos": "20/1 KW", "peso": 4.39, "orden": 1}]
@@ -1260,6 +1266,10 @@ check("y las que no tienen el calculo se ven aparte",
       "Sin el cálculo" in cuerpo and "MQ 2" in cuerpo)
 # El peso medido estaba cargado y no se veía en ninguna pantalla.
 check("el peso medido de la tela tambien se ve", "4,39" in cuerpo)
+# Lo que la máquina DIO, al lado de lo que debería dar. Estaba en la planilla
+# desde el principio y no se traía.
+check("y lo que dio de verdad, al lado", "202" in cuerpo and "Dio de verdad" in cuerpo)
+check("con el rinde en porcentaje", "75%" in cuerpo)
 check("produccion esta en el menu", "/produccion" in c.get("/").get_data(as_text=True))
 
 # --- 11. la ficha: los ultimos 5 y cuanto deberia dar ----------------------

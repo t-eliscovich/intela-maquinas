@@ -155,7 +155,9 @@ store.eficiencias = lambda: {
     m["id"]: {"id_maquina": m["id"], "rpm": 25, "sistemas": "102", "diametro": 32,
               "alimentadores": 24, "tamano_rollo": 1410, "minutos_rollo": 56.4,
               "rollos_dia": 12, "kg_dia": 270,
-              "rollos_dia_24": 25, "kg_dia_24": 612.5} for m in MAQS}
+              "rollos_dia_24": 25, "kg_dia_24": 612.5, "galga": 24,
+              "real_rollos_dia": 9, "real_kg_dia": 202.5,
+              "real_rollos_24": 17, "real_kg_24": 416.5} for m in MAQS}
 store.agujas_por_modelo = lambda: [
     {"id": 1, "modelo": "MAYER)1-2-3-4-5-7-9-10", "marca_aguja": "GROZ BECKERT",
      "codigos": "VO-LS 140.50 G0036 · VO-LS 140.50 G0037", "donde": "CILINDRO",

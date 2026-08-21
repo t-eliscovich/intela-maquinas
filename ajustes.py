@@ -770,7 +770,8 @@ def leer_eficiencia(wb, maquinas) -> tuple[list[dict], list[dict]]:
     salida, descartes, vistas = [], [], set()
     mapa: dict[str, int] = {}
     for fila in filas:
-        cabecera, repetidas = {}, {"aproximacion": [], "peso kg": []}
+        cabecera, repetidas = {}, {"aproximacion": [], "peso kg": [],
+                                   "produccion real": []}
         for j, celda in enumerate(fila):
             t = _apretado(celda)
             if not t:
@@ -780,7 +781,10 @@ def leer_eficiencia(wb, maquinas) -> tuple[list[dict], list[dict]]:
                     repetidas[etiqueta].append(j)
             for campo, pistas in (("numero", ("maquina",)), ("rpm", ("velocidad",)),
                                   ("sistemas", ("sistema",)), ("diametro", ("diametro",)),
-                                  ("alimentadores", ("f",)), ("tamano_rollo", ("tamano de rollo",)),
+                                  # La columna «F» es la GALGA, no los
+                                  # alimentadores: los alimentadores son los
+                                  # «sistemas» —102, 96, 62— y la F dice 24, 28.
+                                  ("galga", ("f",)), ("tamano_rollo", ("tamano de rollo",)),
                                   ("minutos_rollo", ("tiempo",)), ("rollos_dia", ("aproximacion",)),
                                   ("kg_dia", ("peso kg",))):
                 if campo not in cabecera and any(t == p or t.startswith(p) for p in pistas):
@@ -796,6 +800,15 @@ def leer_eficiencia(wb, maquinas) -> tuple[list[dict], list[dict]]:
                 cabecera["rollos_dia_24"] = repetidas["aproximacion"][2]
             if len(repetidas["peso kg"]) >= 4:
                 cabecera["kg_dia_24"] = repetidas["peso kg"][3]
+            # Lo que la máquina DIO de verdad, medido en planta. Es la columna
+            # más importante de la hoja y no se estaba guardando: al lado del
+            # cálculo dice si la máquina está rindiendo o no. Los kilos van
+            # en la columna de al lado de los rollos.
+            for n, campo in enumerate(("real_rollos_dia", "real_rollos_24")):
+                if len(repetidas["produccion real"]) > n:
+                    columna = repetidas["produccion real"][n]
+                    cabecera[campo] = columna
+                    cabecera[campo.replace("rollos", "kg")] = columna + 1
             mapa = cabecera
             continue
         if not mapa:
@@ -834,13 +847,17 @@ def leer_eficiencia(wb, maquinas) -> tuple[list[dict], list[dict]]:
             "rpm": val("rpm"),
             "sistemas": val("sistemas", _texto),
             "diametro": val("diametro"),
-            "alimentadores": val("alimentadores", _numero),
+            "galga": val("galga", _numero),
             "tamano_rollo": val("tamano_rollo"),
             "minutos_rollo": val("minutos_rollo"),
             "rollos_dia": val("rollos_dia"),
             "kg_dia": kg_dia,
             "rollos_dia_24": rollos_24,
             "kg_dia_24": kg_24,
+            "real_rollos_dia": val("real_rollos_dia"),
+            "real_kg_dia": val("real_kg_dia"),
+            "real_rollos_24": val("real_rollos_24"),
+            "real_kg_24": val("real_kg_24"),
         })
     return salida, descartes
 
