@@ -1563,6 +1563,36 @@ check("lo que no es un numero tambien lo dice",
       "no es un número de kilos"
       in _mensaje_de(lambda: A._kilos_escritos("abc", "Limpieza")))
 
+# El peso del rollo pasa por el mismo control y ademas tiene techo: aca el
+# punto es de miles, asi que «22.5» queriendo decir 22,5 guarda 225 y esa
+# maquina pasa a deber diez veces mas kilos de los que puede dar.
+print("El peso del rollo:")
+check("vacio quiere decir el de la planilla",
+      A._peso_del_rollo("") is None and A._peso_del_rollo(None) is None)
+check("22,5 se guarda como 22,5", A._peso_del_rollo("22,5") == 22.5)
+check("22.5 con punto es 225 y se frena",
+      "va con coma" in _mensaje_de(lambda: A._peso_del_rollo("22.5")))
+check("un rollo no pesa cero",
+      "mayores que cero" in _mensaje_de(lambda: A._peso_del_rollo("0")))
+check("ni nan", "mayores que cero"
+      in _mensaje_de(lambda: A._peso_del_rollo("nan")))
+
+# Los kilos por ano salen de los meses que ya se pidieron. Los anos cortados
+# —el que corre y 2022, que arranca en julio— se marcan: sin la marca parecen
+# una caida de produccion que no existe.
+print("Kilos por ano:")
+_MESES = ([{"anio": 2026, "mes": m, "kg": 100.0, "rollos": 4} for m in range(1, 9)]
+          + [{"anio": 2025, "mes": m, "kg": 200.0, "rollos": 8} for m in range(1, 13)])
+_anual = A._por_anio(_MESES)
+check("un ano por fila, del mas nuevo al mas viejo",
+      [a["anio"] for a in _anual] == [2026, 2025])
+check("suma los kilos del ano", _anual[1]["kg"] == 2400 and _anual[0]["kg"] == 800)
+check("y los rollos", _anual[1]["rollos"] == 96)
+check("el ano de doce meses esta completo", _anual[1]["completo"] is True)
+check("el que va por agosto no", _anual[0]["completo"] is False
+      and _anual[0]["meses"] == 8)
+check("sin meses no hay filas", A._por_anio([]) == [])
+
 # Por que hay que frenarlo en la puerta: una vez guardado ya no hay
 # comparacion que lo agarre.
 _nan = float("nan")

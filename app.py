@@ -168,6 +168,49 @@ def _kilos_escritos(crudo, que):
     return kg
 
 
+def _por_anio(mensual):
+    """Los meses sumados por año, del más nuevo al más viejo.
+
+    Se suma acá y no en Asinfo: los meses ya vinieron en una consulta y pedir
+    lo mismo otra vez agrupado distinto sería un viaje de más a la red.
+
+    Un año al que le faltan meses se marca, y son dos: el que está corriendo y
+    2022, que arranca en julio porque antes Asinfo no anotaba qué máquina
+    tejió cada rollo. Sin la marca, esas dos filas parecen una caída de
+    producción que no existe.
+    """
+    if not mensual:
+        return []
+    años: dict[int, dict] = {}
+    for m in mensual:
+        a = años.setdefault(m["anio"], {"anio": m["anio"], "kg": 0.0,
+                                        "rollos": 0, "meses": 0})
+        a["kg"] += m["kg"] or 0
+        a["rollos"] += m["rollos"] or 0
+        a["meses"] += 1
+    for a in años.values():
+        a["kg"] = round(a["kg"], 2)
+        a["completo"] = a["meses"] >= 12
+    return sorted(años.values(), key=lambda a: -a["anio"])
+
+
+def _peso_del_rollo(crudo):
+    """Cuánto pesa el rollo de una máquina. Vacío es None: usa el de la
+    planilla.
+
+    Pasa por el mismo control que los topes —nada de nan, inf ni negativos— y
+    además tiene techo. Acá el punto es de miles, así que escribir «22.5»
+    queriendo decir 22,5 guarda 225: la máquina pasaría a deber diez veces
+    más kilos de los que puede dar, y el número se ve razonable en la tabla.
+    El rollo más pesado de la planta anda por los 25 kg.
+    """
+    kg = _kilos_escritos(crudo, "El peso del rollo")
+    if kg is not None and kg > 100:
+        raise ValueError("El peso del rollo: 100 kg es demasiado para un "
+                         "rollo. Si quisiste poner 22,5, va con coma.")
+    return kg
+
+
 def _adonde_iba():
     """La pantalla que pedía antes de mandarlo a poner la contraseña.
 
@@ -1111,6 +1154,9 @@ def maquina_detalle(id_maquina):
                 "kg_dia": excel.a_kilos(request.form.get("kg_dia")),
                 "rollos_dia_24": excel.a_numero(request.form.get("rollos_dia_24")),
                 "kg_dia_24": excel.a_kilos(request.form.get("kg_dia_24")),
+                # Cuánto pesa el rollo de ESTA máquina. Vacío = el de la
+                # planilla, que es el promedio de las 43.
+                "peso_rollo": _peso_del_rollo(request.form.get("peso_rollo")),
             })
             flash("Guardado cuánto debería dar.", "ok")
         except Exception as exc:  # noqa: BLE001
@@ -1149,10 +1195,15 @@ def maquina_detalle(id_maquina):
             flash(str(exc), "error")
         return redirect(url_for("maquina_detalle", id_maquina=id_maquina))
 
+    # 60 meses y no 12: con doce, «por año» daría dos años cortados por la
+    # mitad. Asinfo tiene kilos desde julio de 2022, así que entran todos, y
+    # es una sola consulta para las dos tablas.
     try:
-        mensual, _, _ = asinfo.produccion_mensual(id_maquina)
+        todos_los_meses, _, _ = asinfo.produccion_mensual(id_maquina, meses=60)
     except Exception:  # noqa: BLE001
-        mensual = []
+        todos_los_meses = []
+    mensual = todos_los_meses[:12]
+    anual = _por_anio(todos_los_meses)
 
     historial = store.historial(id_maquina, limite=500)
     # Una sola vez, no una por tipo: `topes_por_maquina` trae la tabla entera.
@@ -1165,6 +1216,7 @@ def maquina_detalle(id_maquina):
         historial=historial,
         dias=_dias_de_mantenimiento(id_maquina, historial),
         mensual=mensual,
+        anual=anual,
         ajustes=store.ajustes(id_maquina=id_maquina, limite=30),
         aguja=store.agujas().get(id_maquina),
         eficiencia=store.eficiencias().get(id_maquina),

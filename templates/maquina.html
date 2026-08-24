@@ -213,6 +213,12 @@
           <div><label class="campo" for="galga_ef">Galga</label>
             <input name="galga_ef" id="galga_ef" inputmode="numeric"
                    value="{{ eficiencia.galga | editable if eficiencia else '' }}"></div>
+          {# La planilla trae un solo peso para las 43 máquinas. Acá va el de
+             ésta: vacío sigue usando el de la planilla. #}
+          <div><label class="campo" for="peso_rollo">Kilos del rollo</label>
+            <input name="peso_rollo" id="peso_rollo" inputmode="decimal"
+                   placeholder="22,5"
+                   value="{{ eficiencia.peso_rollo | editable if eficiencia else '' }}"></div>
         </div>
       </div>
 
@@ -254,7 +260,7 @@
   var f = document.getElementById("eficiencia");
   if (!f) { return; }
   var salida = document.getElementById("la-cuenta");
-  var fuentes = ["rpm", "tamano_rollo"];
+  var fuentes = ["rpm", "tamano_rollo", "peso_rollo"];
   var calculados = ["minutos_rollo", "rollos_dia", "kg_dia", "rollos_dia_24", "kg_dia_24"];
 
   function leer(id) {
@@ -282,13 +288,23 @@
   function pesoDe(kg, rollos, porDefecto) {
     return (kg && rollos) ? kg / rollos : porDefecto;
   }
-  var peso12 = pesoDe(leer("kg_dia"), leer("rollos_dia"), PESO_12);
-  var peso24 = pesoDe(leer("kg_dia_24"), leer("rollos_dia_24"), PESO_24);
-
+  // Si el rollo de esta máquina tiene su peso escrito, manda ése y vale para
+  // los dos turnos: un rollo pesa lo que pesa. Los 22,5 y 24,5 de la planilla
+  // son el promedio de las 43, y con diámetros de 30" a 36" no son el rollo
+  // de ninguna.
+  function pesos() {
+    var propio = leer("peso_rollo");
+    if (propio) { return [propio, propio]; }
+    return [pesoDe(leer("kg_dia"), leer("rollos_dia"), PESO_12),
+            pesoDe(leer("kg_dia_24"), leer("rollos_dia_24"), PESO_24)];
+  }
   // Al abrir la pantalla la cuenta sólo se MUESTRA. Pisar los kilos que hay
   // cargados sin que nadie toque nada sería cambiarle el número al mecánico
   // por atrás.
   function cuenta(escribiendo) {
+    // Los pesos se leen acá adentro y no una vez al abrir: si no, escribir el
+    // peso del rollo no cambiaba nada hasta recargar la pantalla.
+    var p = pesos(), peso12 = p[0], peso24 = p[1];
     var rpm = leer("rpm"), vueltas = leer("tamano_rollo");
     if (!rpm || !vueltas) { salida.textContent = ""; return; }
     var minutos = vueltas / rpm;
@@ -350,6 +366,38 @@
     <a href="{{ url_for('ajustes_view', maquina=maquina.numero if maquina else '') }}">
       Ver todos los ajustes de esta máquina →</a>
   </p>
+</details>
+{% endif %}
+
+{% if anual %}
+{# Por año antes que por mes: es la escala en la que se mira si una máquina
+   viene tejiendo más o menos que antes. Doce filas de meses no contestan eso. #}
+{% set techo_anual = anual | map(attribute='kg') | max %}
+<details open>
+  <summary>Cuánto tejió por año</summary>
+  <table>
+    <thead><tr><th>Año</th><th class="der">Kilos</th>
+               <th class="der oculta-chico">Rollos</th>
+               <th style="width:45%"></th></tr></thead>
+    <tbody>
+    {% for a in anual %}
+      <tr>
+        <td>{{ a.anio }}
+          {% if not a.completo %}
+            <span class="tenue" style="font-size:11px">{{ a.meses }}
+              {{ 'mes' if a.meses == 1 else 'meses' }}</span>
+          {% endif %}</td>
+        <td class="der">{{ a.kg | num(0) }}</td>
+        <td class="der tenue oculta-chico">{{ a.rollos | num(0) }}</td>
+        <td><div class="progreso" style="margin:0"><span
+            style="width:{{ (a.kg / techo_anual * 100) if techo_anual else 0 }}%;background:var(--acento)"></span></div></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="nota">Los kilos los mide Asinfo cuando el rollo entra a bodega. El
+    año que dice cuántos meses tiene está incompleto: esa barra no se compara
+    con las otras.</p>
 </details>
 {% endif %}
 

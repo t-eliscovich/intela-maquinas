@@ -210,9 +210,20 @@ asinfo.acumulados = lambda pares: (
 # mantenimientos da un numero positivo, como en la realidad.
 asinfo.kilos_desde = lambda id_maquina, fechas: {
     str(f)[:10]: float((hoy - f).days * 480) for f in fechas if f}
-asinfo.produccion_mensual = lambda id_maquina, meses=12: (
-    [{"anio": 2026, "mes": mes, "kg": 8000 + (id_maquina * mes * 37) % 9000,
-      "rollos": 300 + mes} for mes in range(8, 0, -1)], datetime.utcnow(), True)
+# Cuatro años, con 2026 por agosto y 2022 desde julio: son los dos años
+# cortados que la tabla por año tiene que marcar.
+def _meses_falsos(id_maquina, meses=12):
+    filas = []
+    for anio, desde, hasta in ((2026, 1, 8), (2025, 1, 12), (2024, 1, 12),
+                               (2023, 1, 12), (2022, 7, 12)):
+        for mes in range(hasta, desde - 1, -1):
+            filas.append({"anio": anio, "mes": mes,
+                          "kg": 8000 + (id_maquina * mes * 37) % 9000,
+                          "rollos": 300 + mes})
+    return filas[:meses], datetime.utcnow(), True
+
+
+asinfo.produccion_mensual = _meses_falsos
 A.ERROR_ARRANQUE = None
 
 destino = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "vista")

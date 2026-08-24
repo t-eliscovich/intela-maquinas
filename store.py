@@ -436,6 +436,14 @@ ESQUEMA = """
             ALTER TABLE mantenimiento.eficiencia
                 ADD COLUMN IF NOT EXISTS kg_dia_24 numeric(10,2);
 
+            -- Cuánto pesa el rollo DE ESTA MÁQUINA. La planilla trae un solo
+            -- número para las 43 —22,5 kg— que es el promedio de todas, y con
+            -- diámetros de 30" a 36" ese promedio no es el rollo de ninguna.
+            -- Vacío quiere decir «usá el de la planilla», que es lo que hacía
+            -- siempre.
+            ALTER TABLE mantenimiento.eficiencia
+                ADD COLUMN IF NOT EXISTS peso_rollo numeric(8,2);
+
             -- Y anota lo que la máquina DIO de verdad, al lado del cálculo.
             -- Es la columna que contesta si está rindiendo o no, y estaba en la
             -- planilla desde el principio sin que nadie la trajera.
@@ -1160,7 +1168,13 @@ def borrar_repuesto(cuadro: str, clave) -> None:
     _ejecutar(f"DELETE FROM {c['tabla']} WHERE {c['clave']} = %s", (clave,))
 
 
-CAMPOS_EFICIENCIA_EDIT = tuple(c for c in CAMPOS_EFICIENCIA if c != "id_maquina")
+# El peso del rollo se edita en la ficha y NO está en `CAMPOS_EFICIENCIA`: esa
+# tupla es la que usa la carga de la planilla, y la planilla no trae el peso de
+# cada máquina. Si estuviera ahí, recargar el Excel le borraría al mecánico el
+# número que puso a mano — que es la trampa que ya se pagó con los
+# mantenimientos.
+CAMPOS_EFICIENCIA_EDIT = tuple(
+    c for c in CAMPOS_EFICIENCIA if c != "id_maquina") + ("peso_rollo",)
 
 
 def guardar_eficiencia(id_maquina: int, datos: dict) -> None:
