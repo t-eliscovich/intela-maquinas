@@ -127,6 +127,14 @@
   .codigo + .codigo{margin-top:1px}
 
   /* ---------- ordenar una tabla tocando el título ---------- */
+  /* El ancho tiene que ir a la columna que tiene los datos. En la tabla de
+     ajustes los titulos largos —«Cilindro y poleas», «g/m² terminado»— no
+     pueden partirse, asi que se quedaban con 513 px entre cuatro columnas
+     que tienen dato en 1, 2, 5 y 1 de 33 filas, mientras los hilos —que
+     estan en 32 de 33— vivian en 127 px y salian en tres renglones. Aca los
+     titulos se parten y los hilos tienen piso. */
+  .tabla-ajustes th{white-space:normal}
+  .tabla-ajustes td.hilos{min-width:230px}
   th.ordena{cursor:pointer;-webkit-user-select:none;user-select:none}
   th.ordena:hover{color:var(--azul)}
   th.ordena.ordenada{color:var(--azul)}

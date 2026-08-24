@@ -118,7 +118,7 @@
       {% if filas[0].tipo_maquina %}· {{ filas[0].tipo_maquina }}{% endif %}
     </p>
   {% endif %}
-  <table>
+  <table class="tabla-ajustes">
     <thead>
       <tr>
         {% if not una %}<th>Máquina</th>{% endif %}
@@ -154,7 +154,7 @@
             <div class="tenue" style="font-size:11px">{{ f.nota }}</div>
           {% endif %}</td>
         {% if 'hilos' in con_dato %}
-          <td class="tenue">{{ f.hilos or '—' }}</td>{% endif %}
+          <td class="tenue hilos">{{ f.hilos or '—' }}</td>{% endif %}
         {% if 'cilindro' in con_dato %}
         <td class="tenue oculta-chico">
           {{ [f.cilindro, f.poleas, f.ajuste_agujas] | select | join(' · ') or '—' }}</td>
