@@ -97,7 +97,11 @@
             {% if f.estado == 'vencido' %}Vencida
             {% elif f.estado == 'por_vencer' %}Falta poco
             {% elif f.estado == 'ok' %}En regla
-            {% elif f.estado == 'sin_arrancar' %}Sin arrancar
+            {% elif f.estado == 'sin_arrancar' %}
+              {# «Sin arrancar» junta dos cosas muy distintas: la que teje y
+                 nadie le anotó un mantenimiento —la más urgente que hay— y la
+                 que no tejió nunca, que no necesita nada. #}
+              {% if f.nunca_tejio %}Nunca tejió{% else %}Sin arrancar{% endif %}
             {% else %}Sin tope{% endif %}
           </span>
           {% if p %}<span class="tenue" style="font-size:11px">{{ p.tipo.nombre }}</span>{% endif %}

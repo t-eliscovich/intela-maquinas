@@ -56,7 +56,15 @@ FICHA_FALSA = {"marca": "Mayer", "modelo": "MV4-3.2", "galga": 24, "diametro": 3
                "alimentadores": 96, "agujas": 2260, "anio": 2015,
                "serie": "73830", "tipo_agujas": "VO LS 140.50 G0036", "nota": None}
 store.ficha = lambda id_maquina: FICHA_FALSA
-store.fichas = lambda: {m["id"]: FICHA_FALSA for m in MAQS}
+# La MQ 30 tiene la ficha vacía, como la de verdad: es la que encabezaba
+# «fichas a medias» con ocho campos sin llenar, arriba de máquinas que tejen.
+# La MQ 4 (id 104) tiene la ficha a medias y SÍ teje: con una sola ficha
+# incompleta no se veía que la MQ 30 queda debajo de ella.
+FICHA_A_MEDIAS = dict(FICHA_FALSA, modelo=None, anio=None, alimentadores=None)
+store.fichas = lambda: {
+    m["id"]: ({} if m["id"] == 130 else
+              FICHA_A_MEDIAS if m["id"] == 104 else FICHA_FALSA)
+    for m in MAQS}
 store.responsables = lambda: list(store.ENCARGADOS)
 store.archivos = lambda id_maquina=None: [
     {"id": 1, "id_maquina": 101, "nombre": "R01-MANTENIMIENTO.xlsx",
@@ -87,7 +95,10 @@ store.historial = lambda id_maquina=None, limite=200: [
 store.ultimos_por_maquina_y_tipo = lambda: {
     (m["id"], t["id"]): {"fecha": hoy - timedelta(days=30 + (m["id"] % 90)),
                          "hecho_por": "Roberto"}
-    for m in MAQS for t in TIPOS if not (m["id"] == 115 and t["id"] == 1)
+    # La MQ 30 (id 130) no tiene ningún mantenimiento anotado, como la de
+    # verdad: sale en «sin arrancar», y como tampoco tejió nunca, va al fondo.
+    for m in MAQS for t in TIPOS
+    if not (m["id"] == 115 and t["id"] == 1) and m["id"] != 130
 }
 AJUSTES_FALSOS = [
     {"id": i, "id_maquina": 100 + (i % 12) + 1, "maquina_nombre": "TEJEDURIA-MQ 001",
@@ -204,8 +215,11 @@ store.gramajes = lambda id_maquina=None: [
      "hilos": "20/1 WARIL · 16/1 PERAL", "peso": 4.39, "orden": 1}]
 
 asinfo.maquinas = lambda: (MAQS, datetime.utcnow(), True)
+# La MQ 30 (id 130) no tejió nunca un kilo, como la de verdad: así se ve que
+# va al fondo del semáforo y del final de «qué falta», y no arriba de todo.
 asinfo.acumulados = lambda pares: (
-    {(m, t): (_kg(m, t), int(_kg(m, t) / 22)) for m, t, _ in pares}, datetime.utcnow(), True)
+    {(m, t): ((0.0, 0) if m == 130 else (_kg(m, t), int(_kg(m, t) / 22)))
+     for m, t, _ in pares}, datetime.utcnow(), True)
 # Cuanto mas vieja la fecha, mas kilos lleva encima: asi la resta entre dos
 # mantenimientos da un numero positivo, como en la realidad.
 asinfo.kilos_desde = lambda id_maquina, fechas: {

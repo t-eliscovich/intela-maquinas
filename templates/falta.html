@@ -41,7 +41,8 @@
     {% endfor %}
   </div>
   <p class="nota">Si no se sabe cuándo fue el último, se pone hoy. Nunca una
-    fecha vieja estimada: pinta un rojo que no existe.</p>
+    fecha vieja estimada: pinta un rojo que no existe. Las que nunca tejieron
+    un kilo van al final: ésas no hay que arrancarlas.</p>
 </div>
 {% endif %}
 
@@ -59,7 +60,12 @@
     {% for f in ficha_a_medias %}
       <tr>
         <td><a href="{{ url_for('maquina_detalle', id_maquina=f.maquina.id) }}#editar"
-               class="mq" style="text-decoration:none">{{ f.maquina | mq }}</a></td>
+               class="mq" style="text-decoration:none">{{ f.maquina | mq }}</a>
+          {# Que la ficha esté vacía deja de ser un pendiente si la máquina no
+             tejió nunca. Va al final de la lista y lo dice. #}
+          {% if f.nunca_tejio %}
+            <span class="tenue" style="font-size:11px">nunca tejió</span>
+          {% endif %}</td>
         <td class="der">{{ f.campos | length }}</td>
         <td class="tenue">{{ f.campos | join(', ') }}</td>
       </tr>

@@ -256,6 +256,39 @@ def tope_de(topes, id_maquina, tipo):
     return (float(tipo["cada_kg"]), False) if tipo["cada_kg"] else (None, False)
 
 
+# El tipo con el que se pregunta «¿esta máquina tejió alguna vez?». No es un
+# tipo de mantenimiento: es una llave para que la respuesta venga en su propia
+# fila, en la misma consulta que ya se hace.
+_TIPO_NUNCA = 0
+
+
+def nunca_tejieron(maquinas) -> set:
+    """Los ids de las máquinas que no tejieron un kilo en toda la historia.
+
+    Una máquina que está en Asinfo pero nunca tejió no es un pendiente: es una
+    máquina que nadie usa. Mezclada con las demás ocupa el lugar de las que sí
+    hay que mirar — la MQ 30 encabezaba «fichas a medias» con ocho campos
+    vacíos, arriba de máquinas que están tejiendo.
+
+    Y al revés, que es lo que importa: una máquina que SÍ está tejiendo y no
+    tiene ningún mantenimiento anotado no puede irse al fondo. Ésa es la más
+    urgente que hay, no la menos. Por eso se pregunta por los kilos en vez de
+    suponer que «sin arrancar» quiere decir «parada».
+    """
+    if not maquinas:
+        return set()
+    pares = [(m["id"], _TIPO_NUNCA, config.FECHA_PISO) for m in maquinas]
+    try:
+        acum, _, _ = asinfo.acumulados(pares)
+    except Exception:  # noqa: BLE001
+        # Sin Asinfo no se sabe, y no saber no es «nunca tejió»: quedan todas
+        # donde estaban. Mandar una máquina al fondo por un problema de red
+        # es esconderla.
+        return set()
+    return {m["id"] for m in maquinas
+            if not acum.get((m["id"], _TIPO_NUNCA), (0.0, 0))[0]}
+
+
 def armar_semaforo():
     """Una fila por MÁQUINA.
 
@@ -352,7 +385,15 @@ def armar_semaforo():
             "pct": principal["pct"] if principal else None,
         })
 
-    filas.sort(key=lambda f: (f["pct"] is None, -(f["pct"] or 0)))
+    # Las que no arrancaron: hay que saber si están tejiendo o si nadie las
+    # usa. Se pregunta sólo por ésas, que son una o dos, y no por las 43.
+    nunca = nunca_tejieron([f["maquina"] for f in filas if f["principal"] is None])
+    for f in filas:
+        f["nunca_tejio"] = f["maquina"]["id"] in nunca
+
+    # Primero las que están por vencerse, después las que no tienen tope, y
+    # al fondo las que nunca tejieron: no hay nada que hacerles.
+    filas.sort(key=lambda f: (f["pct"] is None, f["nunca_tejio"], -(f["pct"] or 0)))
     return filas, pendientes, leido_en, fresco
 
 
@@ -1496,14 +1537,23 @@ def falta():
         if faltan:
             ficha_a_medias.append({"maquina": m, "campos": faltan})
 
+    # Una máquina que nunca tejió va al fondo de las tres listas: no es un
+    # pendiente, es una máquina que nadie usa. Sin esto, la MQ 30 encabezaba
+    # «fichas a medias» con sus ocho campos vacíos, arriba de máquinas que
+    # están tejiendo todos los días.
+    nunca = nunca_tejieron(maquinas)
     for lista in (sin_tope, sin_arrancar):
-        lista.sort(key=lambda m: (m["numero"] is None, m["numero"] or 0))
+        lista.sort(key=lambda m: (m["id"] in nunca,
+                                  m["numero"] is None, m["numero"] or 0))
     # Las más incompletas primero: a casi todas les falta el mismo dato —los
     # alimentadores, que la planilla no trae— y las que están de verdad a
     # medias se perdían en el medio de la lista.
-    ficha_a_medias.sort(key=lambda f: (-len(f["campos"]),
+    ficha_a_medias.sort(key=lambda f: (f["maquina"]["id"] in nunca,
+                                       -len(f["campos"]),
                                        f["maquina"]["numero"] is None,
                                        f["maquina"]["numero"] or 0))
+    for f in ficha_a_medias:
+        f["nunca_tejio"] = f["maquina"]["id"] in nunca
 
     try:
         no_entro = store.descartes()

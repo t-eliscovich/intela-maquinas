@@ -215,6 +215,36 @@ filas, _, _, _ = A.armar_semaforo()
 check("sin ningun mantenimiento la maquina esta sin arrancar",
       all(f["estado"] == "sin_arrancar" and f["principal"] is None for f in filas))
 
+# --- 3d. la que nunca tejio va al fondo ------------------------------------
+# «Sin arrancar» junta dos cosas opuestas: la maquina que teje y no tiene
+# ningun mantenimiento anotado —la mas urgente que hay— y la que no tejio
+# nunca, que no necesita nada. Se distinguen preguntando por los kilos.
+print("La que nunca tejio:")
+store.ultimos_por_maquina_y_tipo = lambda: {}
+# La 12 nunca tejio un kilo; la 10 y la 11 si.
+asinfo.acumulados = lambda pares: (
+    {(m, t): ((0.0, 0) if m == 12 else (KG[m], 5)) for m, t, d in pares},
+    datetime.utcnow(), True)
+asinfo._cache.clear()
+filas, _, _, _ = A.armar_semaforo()
+check("la que nunca tejio queda ultima", filas[-1]["maquina"]["id"] == 12)
+check("y se marca como tal", filas[-1]["nunca_tejio"] is True)
+check("la que teje sin mantenimiento anotado NO se va al fondo",
+      all(f["nunca_tejio"] is False for f in filas[:-1]))
+# Si Asinfo no contesta no se sabe, y no saber no es «nunca tejio»: mandar una
+# maquina al fondo por un problema de red es esconderla.
+def _asinfo_caido(pares):
+    raise asinfo.AsinfoNoDisponible("sin red")
+
+
+asinfo.acumulados = _asinfo_caido
+asinfo._cache.clear()
+check("sin Asinfo no se manda a nadie al fondo",
+      A.nunca_tejieron(MAQS) == set())
+asinfo.acumulados = lambda pares: (
+    {(m, t): (KG[m], int(KG[m] / 20)) for m, t, d in pares}, datetime.utcnow(), True)
+asinfo._cache.clear()
+
 store.tipos = lambda incluir_inactivos=False: TIPOS
 store.ultimos_por_maquina_y_tipo = lambda: {
     (m["id"], 1): {"fecha": hoy - timedelta(days=30), "hecho_por": "x"} for m in MAQS
