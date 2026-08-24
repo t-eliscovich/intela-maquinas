@@ -92,5 +92,29 @@
 </div>
 {% endif %}
 
+{% if mirar %}
+{# Hojas raras que SÍ entraron. Estaban en la lista de arriba, y ahí decían
+   que la planilla no las pudo leer: no era cierto y mandaba a corregir un
+   Excel que está bien. #}
+<div class="bloque">
+  <div class="titulo"><h2>Entró, pero conviene mirarlo · {{ cuantos_mirar }}</h2>
+    <p>El dato está cargado. Sólo hay que pasarle el ojo</p></div>
+  <table>
+    <thead><tr><th>Planilla</th><th>Dónde</th><th>Qué pasó</th></tr></thead>
+    <tbody>
+    {% for planilla, filas in mirar.items() %}
+      {% for d in filas %}
+        <tr>
+          <td>{% if loop.first %}<b>{{ planilla }}</b>{% endif %}</td>
+          <td class="tenue">{{ d.donde or '—' }}</td>
+          <td class="tenue">{{ d.motivo }}</td>
+        </tr>
+      {% endfor %}
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
 {% include "_ordenar.html" %}
 {% endblock %}

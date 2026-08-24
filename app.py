@@ -1285,7 +1285,45 @@ def ajustes_view():
                            consumo=store.consumo_hilo(),
                            maquinas=maquinas, hoy=date.today().isoformat(),
                            abrir_nuevo=request.args.get("nuevo"),
-                           escrito=escrito, tela=tela)
+                           escrito=escrito, tela=tela,
+                           una=_una_maquina(filas),
+                           con_dato=_columnas_con_dato(filas))
+
+
+# Columnas de la tabla de ajustes que a veces están vacías enteras. Cada una
+# es una lista porque en la pantalla van juntas: las poleas son tres celdas de
+# la planilla en una sola columna.
+_COLUMNAS_AJUSTE = {
+    "hilos": ("hilos",),
+    "cilindro": ("cilindro", "poleas", "ajuste_agujas"),
+    "estiraje": ("estiraje",),
+    "malla": ("malla", "malla_manual"),
+    "gramaje_crudo": ("gramaje_crudo",),
+    "gramaje_terminado": ("gramaje_terminado",),
+}
+
+
+def _columnas_con_dato(filas) -> set:
+    """Cuáles de esas columnas tienen algo en las filas que se están viendo.
+
+    La MQ 1 no anota poleas, ni estiraje, ni gramaje terminado: cuatro
+    columnas de rayas ocupaban media pantalla y empujaban los hilos a una
+    columna tan angosta que cada fila salía en cuatro renglones. Se muestran
+    sólo las que tienen dato. La tabla no cambia de forma sola: cambia con lo
+    que se está mirando, que es lo que se preguntó.
+    """
+    return {nombre for nombre, campos in _COLUMNAS_AJUSTE.items()
+            if any(f.get(c) not in (None, "") for f in filas for c in campos)}
+
+
+def _una_maquina(filas):
+    """La máquina, si todas las filas son de la misma. Si no, None.
+
+    Buscando «MQ 1» la columna Máquina repetía «MQ 1» treinta y tres veces:
+    es la pregunta, no la respuesta. Va arriba, en el título, una vez.
+    """
+    ids = {f["id_maquina"] for f in filas}
+    return filas[0]["maquina"] if len(ids) == 1 and filas[0].get("maquina") else None
 
 
 # Lo que se puede escribir a mano en un ajuste. `maquina_nombre`, `hoja` y
@@ -1393,15 +1431,22 @@ def falta():
         no_entro = store.descartes()
     except Exception:  # noqa: BLE001
         no_entro = []
-    por_planilla = {}
+    # Lo que se perdió y lo que entró igual son dos listas distintas. Juntas,
+    # la pantalla decía que la planilla no pudo leer cosas que sí leyó —los
+    # ajustes de la segunda tabla de la MQ 53, por ejemplo— y el que la mira
+    # sale a corregir un Excel que está bien.
+    por_planilla, mirar = {}, {}
     for d in no_entro:
-        por_planilla.setdefault(d["planilla"], []).append(d)
+        donde = mirar if d.get("entro") else por_planilla
+        donde.setdefault(d["planilla"], []).append(d)
 
     return render_template("falta.html", sin_tope=sin_tope,
                            sin_arrancar=sin_arrancar,
                            ficha_a_medias=ficha_a_medias,
                            no_entro=por_planilla,
-                           cuantos=len(no_entro))
+                           cuantos=sum(len(f) for f in por_planilla.values()),
+                           mirar=mirar,
+                           cuantos_mirar=sum(len(f) for f in mirar.values()))
 
 
 # --------------------------------------------------------------------------

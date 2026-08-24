@@ -1128,6 +1128,15 @@ h7.append([None, None, "LYCRA 20/1  29 %"])
 h7.append([])
 h7.append([None, None, "HILO 30/1 82%"])
 h7.append(["TELA FLEECEC 200(galga 22)", None, "HILO 75F36 18%"])
+# Tres telas tienen los hilos a lo ancho en UNA fila y los rendimientos abajo.
+# La columna del costado dice cual es cual, asi que no hay nada que adivinar.
+h7.append([])
+h7.append(["PIQUE 200", "22/1 KW", "MICRO  150F144", None, 0.765, "22/1 KW"])
+h7.append([None, None, None, None, 0.235, "150F144"])
+# Y si el nombre del costado no coincide con ninguno, NO se elige uno.
+h7.append([])
+h7.append(["TELA RARA", "20/1 KW", "MICRO 90F30", None, 0.6, "20/1 KW"])
+h7.append([None, None, None, None, 0.4, "ALGO QUE NO ESTA"])
 buf7 = _io.BytesIO(); wb7.save(buf7); buf7.seek(0)
 ruta7 = _os.path.join(_tmp.gettempdir(), "consumo.xlsx")
 open(ruta7, "wb").write(buf7.getvalue())
@@ -1145,6 +1154,18 @@ check("y el hilo queda sin el porcentaje pegado", _fl["hilo"] == "HILO 22/1")
 # Una tela tiene el nombre escrito en la SEGUNDA linea de su bloque.
 check("la tela nombrada al medio vale para todo el bloque",
       sum(1 for c in _con if c["tela"] == "TELA FLEECEC 200(galga 22)") == 2)
+# Los hilos escritos a lo ancho: antes salia UNA fila con los dos pegados
+# —«22/1 KW · MICRO 150F144»— y el segundo rendimiento se perdia.
+_pq = {c["hilo"]: c["rendimiento"] for c in _con if c["tela"] == "PIQUE 200"}
+check("los hilos escritos a lo ancho se separan en uno por hilo",
+      _pq == {"22/1 KW": 0.765, "MICRO 150F144": 0.235})
+check("y ninguno queda con los dos hilos pegados",
+      not any(" · " in h for h in _pq))
+# El freno: si el nombre del costado no aparece en ningun hilo, no se elige.
+_rara = [c for c in _con if c["tela"] == "TELA RARA"]
+check("un nombre del costado que no coincide no se adivina", len(_rara) == 1)
+check("y ese rendimiento se avisa",
+      any("no dice de qué hilo es" in d["motivo"] for d in _dc))
 
 # --- 8e-septies. la planilla subida queda guardada ------------------------
 # El archivo temporal se borra a las dos horas. Cada vez que el lector aprendia

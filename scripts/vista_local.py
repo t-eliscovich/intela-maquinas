@@ -101,7 +101,32 @@ AJUSTES_FALSOS = [
      "rendimiento": 4.05, "kg_m": None, "hoja": f"MAQ {i}", "orden": i}
     for i in range(1, 26)
 ]
-store.ajustes = lambda id_maquina=None, tela=None, limite=400: AJUSTES_FALSOS
+# Una máquina como la MQ 1 de verdad: no anota poleas, ni estiraje, ni
+# gramajes. Son cuatro columnas vacías enteras, y sin una máquina así en la
+# vista no se ve si la tabla las esconde bien. Va sola en su número —la 20—
+# para que ninguna fila de arriba le llene una columna.
+AJUSTES_FALSOS += [
+    {"id": 900 + i, "id_maquina": 120, "maquina_nombre": "TEJEDURIA-MQ 020",
+     "fecha": hoy - timedelta(days=i * 40), "tipo_maquina": "MAYER",
+     "cilindro": None, "poleas": None, "ajuste_agujas": None, "estiraje": None,
+     "tela": ["FALSO LYCRA", "FALSO F JOS", "FALSO F WEARIT"][i % 3],
+     "hilos": "22/1HY · 24/1 KW RIZO · LYCRA 40", "gramaje_crudo": None,
+     "malla_manual": None, "malla": "33,4 LM", "gramaje_terminado": None,
+     "rendimiento": None, "kg_m": None, "hoja": f"MAQ 20 ({i})", "orden": i}
+    for i in range(1, 9)
+]
+
+
+def _ajustes_falsos(id_maquina=None, tela=None, limite=400):
+    filas = AJUSTES_FALSOS
+    if id_maquina is not None:
+        filas = [f for f in filas if f["id_maquina"] == id_maquina]
+    if tela:
+        filas = [f for f in filas if f["tela"] == tela]
+    return filas[:limite]
+
+
+store.ajustes = _ajustes_falsos
 store.telas = lambda: [
     {"tela": t, "veces": 40 - i * 7, "maquinas": 9 - i, "ultima": hoy - timedelta(days=i * 30)}
     for i, t in enumerate(["FALSO F. KW", "TANIA SPUN LYCRA", "PIQUE", "BOXER"])]
@@ -205,6 +230,7 @@ for nombre, ruta in [("semaforo", "/"), ("semaforo-vencidas", "/?solo=vencidas")
                      ("arranque", "/arranque"), ("subir-excel", "/carga"),
                      ("maquinas", "/maquinas"), ("ficha-maquina", "/maquina/101"),
                      ("ajustes", "/ajustes"), ("ajustes-por-tela", "/ajustes?tela=PIQUE"),
+                     ("ajustes-una-maquina", "/ajustes?maquina=20"),
                      ("repuestos", "/repuestos"),
                      ("repuestos-levas", "/repuestos?ver=levas"),
                      ("repuestos-editando", "/repuestos?ver=levas&editar=1"),

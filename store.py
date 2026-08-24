@@ -305,6 +305,14 @@ ESQUEMA = """
                 creado_en timestamptz NOT NULL DEFAULT now()
             );
 
+            -- No todo lo que se avisa es algo que se perdió. Hay hojas raras
+            -- que ENTRARON igual y sobre las que hay que pasar el ojo: la
+            -- segunda tabla de la MQ 53, la hoja sin títulos de la MQ 52.
+            -- Mientras estuvieron mezcladas, la pantalla decía que la
+            -- planilla no las pudo leer, y no era cierto.
+            ALTER TABLE mantenimiento.descarte
+                ADD COLUMN IF NOT EXISTS entro boolean NOT NULL DEFAULT false;
+
             -- Qué aguja lleva cada máquina. Una fila por máquina.
             CREATE TABLE IF NOT EXISTS mantenimiento.aguja_maquina (
                 id_maquina   integer PRIMARY KEY,
@@ -743,10 +751,12 @@ def guardar_descartes(planilla: str, filas: list[dict]) -> int:
                     (planilla,))
         if filas:
             cur.executemany(
-                """INSERT INTO mantenimiento.descarte (planilla, donde, motivo)
-                   VALUES (%s, %s, %s)""",
+                """INSERT INTO mantenimiento.descarte
+                       (planilla, donde, motivo, entro)
+                   VALUES (%s, %s, %s, %s)""",
                 [(planilla, str(f.get("donde") or f.get("fila") or "")[:200],
-                  str(f.get("motivo") or "")[:500]) for f in filas],
+                  str(f.get("motivo") or "")[:500], bool(f.get("entro")))
+                 for f in filas],
             )
         con.commit()
     return len(filas)

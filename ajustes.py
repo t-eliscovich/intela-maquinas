@@ -424,9 +424,10 @@ def leer_ajustes(wb, maquinas, hoy=None) -> tuple[list[dict], list[dict]]:
                                      1000, False)
                 descartes.append({
                     "donde": nombre_hoja,
+                    "entro": True,
                     "motivo": f"La hoja tiene una segunda tabla pegada a la "
-                              f"derecha: {otras} ajustes más de la MQ {suya}. "
-                              "Conviene mirarlos."})
+                              f"derecha: entraron sus {otras} ajustes, y son "
+                              f"de la MQ {suya}. Conviene mirarlos."})
                 leidas += otras
 
         if not leidas:
@@ -435,8 +436,9 @@ def leer_ajustes(wb, maquinas, hoy=None) -> tuple[list[dict], list[dict]]:
         elif por_posicion:
             descartes.append({
                 "donde": nombre_hoja,
-                "motivo": f"La hoja no tiene títulos: se leyeron {leidas} filas "
-                          "por posición. Conviene mirarlas."})
+                "entro": True,
+                "motivo": f"La hoja no tiene títulos: entraron {leidas} filas, "
+                          "leídas por posición. Conviene mirarlas."})
 
     return salida, descartes
 
@@ -874,6 +876,7 @@ def leer_agujas(wb, maquinas) -> tuple[list[dict], list[dict]]:
             previo["nota"] = "La planilla le pone dos juegos, uno por galga"
             descartes.append({
                 "donde": f"{hoja}, MQ {numero}",
+                "entro": True,
                 "motivo": "La máquina aparece dos veces: los dos juegos se guardan juntos"})
             continue
         vistas.add(maquina["id"])
@@ -1420,6 +1423,25 @@ def _nombre_de_tela(fila) -> str | None:
     return t if t and _apretado(t) != "tela" else None
 
 
+def _hilo_de_la_etiqueta(hilos: list[str], etiqueta) -> str | None:
+    """Cuál de los hilos escritos a lo ancho es el de este rendimiento.
+
+    Tres telas tienen los hilos escritos a lo ancho en una sola fila —«24/1
+    KW», «MICRO 110F72», «LYCRA 20/2»— y los rendimientos abajo, uno por
+    fila. Cuál va con cuál NO hay que adivinarlo: la columna del costado lo
+    dice con el nombre corto («110F72», «LYCRA»), que se busca adentro del
+    nombre largo.
+
+    Si ese nombre no aparece en ninguno, o aparece en más de uno, no se
+    elige: ahí sí sería adivinar, y el renglón vuelve a los descartes.
+    """
+    corta = _apretado(etiqueta).upper()
+    if not corta:
+        return None
+    iguales = [h for h in hilos if corta in _apretado(h).upper()]
+    return iguales[0] if len(iguales) == 1 else None
+
+
 def _bloques_de_hilo(filas, desde: int):
     """Las filas agrupadas por bloque: lo que hay entre dos filas vacías."""
     bloque = []
@@ -1453,10 +1475,14 @@ def leer_consumo_hilo(wb) -> tuple[list[dict], list[dict]]:
         (FLEECEC 200, galga 22). Arrastrando sólo hacia abajo, su primer hilo
         —el 82 %— se caía. Cuando en un bloque hay una sola tela nombrada, esa
         tela vale para todo el bloque, esté escrita arriba o al medio.
-      * **Cuatro renglones traen el rendimiento sin el nombre del hilo**: son
-        las telas que tienen los hilos escritos a lo ancho (tres columnas) y
-        los rendimientos a lo largo. No se puede saber qué número va con qué
-        hilo sin adivinar, así que van a descartes y los muestra la pantalla.
+      * **Tres telas tienen los hilos escritos a lo ancho** y los
+        rendimientos a lo largo: JERSEY LYCRA 3,30 BOXER, PIQUE 200 y ESPINA
+        DE PESCADO. Parecía que había que adivinar qué número va con qué
+        hilo, y no: la columna del costado lo dice con el nombre corto
+        —«110F72», «LYCRA»—. Se busca ese nombre adentro del largo. Antes se
+        guardaba UNA fila con los tres hilos pegados y los otros cuatro
+        rendimientos se perdían; ahora son ocho hilos, y en las tres telas
+        los rendimientos suman 1,00.
 
     Devuelve (filas, descartes).
     """
@@ -1480,18 +1506,38 @@ def leer_consumo_hilo(wb) -> tuple[list[dict], list[dict]]:
         nombradas = [n for _, f in bloque if (n := _nombre_de_tela(f))]
         unica = nombradas[0] if len(nombradas) == 1 else None
         tela = unica
+        a_lo_ancho: list[str] = []
         for n, fila in bloque:
             if not unica and (nombre := _nombre_de_tela(fila)):
                 tela = nombre
-            hilo = _juntar(_celdas(fila, (1, 2, 3)))
+            escritos = [h for h in (_texto(c) for c in _celdas(fila, (1, 2, 3)))
+                        if h]
+            etiqueta = fila[5] if len(fila) > 5 else None
             rendimiento = _decimal(fila[4] if len(fila) > 4 else None)
+            # Las tres columnas HILO son tres lugares donde puede estar UN
+            # hilo, y así están las 72 telas. Tres lo hacen al revés: los
+            # hilos de la tela van a lo ancho en una sola fila y los
+            # rendimientos bajan por las de abajo. Juntar las tres columnas
+            # ahí no daba un hilo, daba los tres pegados —«24/1 KW · MICRO
+            # 110F72 · LYCRA 20/2»— con el primer rendimiento puesto encima,
+            # y los otros dos se perdían.
+            if len(escritos) > 1:
+                a_lo_ancho = escritos
+            if a_lo_ancho and len(escritos) != 1:
+                hilo = _hilo_de_la_etiqueta(a_lo_ancho, etiqueta)
+            else:
+                hilo = _juntar(escritos)
             if not hilo:
                 if rendimiento is not None:
                     descartes.append({
                         "donde": f"{hoja} · {tela or 'sin tela'}, fila {n + 1}",
-                        "motivo": f"Hay un rendimiento ({rendimiento}) sin el "
-                                  "nombre del hilo: la tela tiene los hilos "
-                                  "escritos a lo ancho"})
+                        "motivo": (
+                            f"El rendimiento ({rendimiento}) no dice de qué "
+                            "hilo es: el nombre del costado no coincide con "
+                            "ninguno de los hilos de la tela"
+                            if a_lo_ancho else
+                            f"Hay un rendimiento ({rendimiento}) sin el "
+                            "nombre del hilo")})
                 continue
             if not tela:
                 descartes.append({"donde": f"{hoja}, fila {n + 1}",
@@ -1515,7 +1561,32 @@ def leer_consumo_hilo(wb) -> tuple[list[dict], list[dict]]:
             vistas.add((tela, hilo))
             salida.append({"tela": tela, "hilo": hilo, "codigo_hilo": codigo,
                            "rendimiento": rendimiento, "porcentaje": porcentaje})
+    descartes += _telas_dos_veces(hoja, salida)
     return salida, descartes
+
+
+def _telas_dos_veces(hoja: str, filas: list[dict]) -> list[dict]:
+    """Las telas que están escritas dos veces en la hoja.
+
+    Los rendimientos de una tela reparten el kilo entre sus hilos: suman 1.
+    De 31 telas, 28 suman 1 y tres suman 2 —BELTIS, JAMES y PIQUE 200—
+    porque están cargadas dos veces, con los hilos escritos distinto cada
+    vez («22/1 KW» y «HILO22/1 KW»), así que no se reconocen entre ellas.
+
+    Las dos versiones entran: cuál de las dos vale lo dice el mecánico, no
+    el programa. Lo que no puede pasar es que no se note.
+    """
+    suma: dict[str, float] = {}
+    for f in filas:
+        if f["rendimiento"] is not None:
+            tela = f["tela"].strip()
+            suma[tela] = suma.get(tela, 0.0) + float(f["rendimiento"])
+    return [{"donde": f"{hoja} · {tela}",
+             "entro": True,
+             "motivo": f"Los rendimientos de esta tela suman {total:.2f} en "
+                       "vez de 1: está cargada dos veces, con los hilos "
+                       "escritos distinto"}
+            for tela, total in sorted(suma.items()) if total > 1.5]
 
 
 def leer_gramajes(wb, maquinas, hoy=None) -> tuple[list[dict], list[dict]]:
@@ -1607,6 +1678,7 @@ def leer(ruta: str, maquinas: list[dict], hoy=None) -> tuple[dict, list[dict]]:
     if repetidos:
         d8.append({
             "donde": "AGUSTES",
+            "entro": True,
             "motivo": f"{repetidos} ajustes de la hoja vieja ya estaban en las "
                       "hojas de cada máquina"})
 

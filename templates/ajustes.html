@@ -108,20 +108,37 @@
       <p>Se cargan acá arriba, de a uno, o subiendo la planilla de control de ajuste.</p>
     </div>
   {% else %}
+  {# Sólo las columnas que tienen algo, y la máquina una vez arriba en vez de
+     en cada renglón. La MQ 1 tenía cuatro columnas de rayas ocupando media
+     pantalla, y los hilos apretados en cuatro renglones por fila. #}
+  {% if una %}
+    <p class="nota" style="margin:0 0 10px">
+      Todos de la <a href="{{ url_for('maquina_detalle', id_maquina=filas[0].id_maquina) }}"
+                     class="mq" style="text-decoration:none">{{ una | mq }}</a>
+      {% if filas[0].tipo_maquina %}· {{ filas[0].tipo_maquina }}{% endif %}
+    </p>
+  {% endif %}
   <table>
     <thead>
       <tr>
-        <th>Máquina</th><th>Fecha</th><th>Tela</th><th>Hilos</th>
-        <th class="oculta-chico">Cilindro y poleas</th>
-        <th class="oculta-chico">Estiraje</th>
-        <th class="oculta-chico">Malla</th>
-        <th class="der oculta-chico">g/m² crudo</th>
-        <th class="der oculta-chico">g/m² terminado</th>
+        {% if not una %}<th>Máquina</th>{% endif %}
+        <th>Fecha</th><th>Tela</th>
+        {% if 'hilos' in con_dato %}<th>Hilos</th>{% endif %}
+        {% if 'cilindro' in con_dato %}
+          <th class="oculta-chico">Cilindro y poleas</th>{% endif %}
+        {% if 'estiraje' in con_dato %}
+          <th class="oculta-chico">Estiraje</th>{% endif %}
+        {% if 'malla' in con_dato %}<th class="oculta-chico">Malla</th>{% endif %}
+        {% if 'gramaje_crudo' in con_dato %}
+          <th class="der oculta-chico">g/m² crudo</th>{% endif %}
+        {% if 'gramaje_terminado' in con_dato %}
+          <th class="der oculta-chico">g/m² terminado</th>{% endif %}
       </tr>
     </thead>
     <tbody>
     {% for f in filas %}
       <tr>
+        {% if not una %}
         <td>
           {% if f.maquina %}
             <a href="{{ url_for('maquina_detalle', id_maquina=f.id_maquina) }}"
@@ -129,25 +146,35 @@
           {% else %}<span class="mq">{{ f.hoja }}</span>{% endif %}
           <span class="tenue" style="font-size:11px">{{ f.tipo_maquina or '' }}</span>
         </td>
-        <td>{% if f.fecha %}{{ f.fecha | fecha_es }}
+        {% endif %}
+        <td style="white-space:nowrap">{% if f.fecha %}{{ f.fecha | fecha_es }}
             {% else %}<span class="tenue">sin fecha</span>{% endif %}</td>
         <td>{{ f.tela or '—' }}
           {% if f.nota %}
             <div class="tenue" style="font-size:11px">{{ f.nota }}</div>
           {% endif %}</td>
-        <td class="tenue">{{ f.hilos or '—' }}</td>
+        {% if 'hilos' in con_dato %}
+          <td class="tenue">{{ f.hilos or '—' }}</td>{% endif %}
+        {% if 'cilindro' in con_dato %}
         <td class="tenue oculta-chico">
           {{ [f.cilindro, f.poleas, f.ajuste_agujas] | select | join(' · ') or '—' }}</td>
-        <td class="oculta-chico">{{ f.estiraje or '—' }}</td>
+        {% endif %}
+        {% if 'estiraje' in con_dato %}
+          <td class="oculta-chico">{{ f.estiraje or '—' }}</td>{% endif %}
+        {% if 'malla' in con_dato %}
         <td class="tenue oculta-chico">
           {{ [f.malla, f.malla_manual] | select | join(' · ') or '—' }}</td>
-        <td class="der oculta-chico">{{ f.gramaje_crudo | num(2) }}</td>
-        <td class="der oculta-chico">{{ f.gramaje_terminado | num(2) }}</td>
+        {% endif %}
+        {% if 'gramaje_crudo' in con_dato %}
+          <td class="der oculta-chico">{{ f.gramaje_crudo | num(2) }}</td>{% endif %}
+        {% if 'gramaje_terminado' in con_dato %}
+          <td class="der oculta-chico">{{ f.gramaje_terminado | num(2) }}</td>{% endif %}
       </tr>
     {% endfor %}
     </tbody>
   </table>
-  <p class="nota">Las poleas y los hilos van juntos porque así están anotados en la planilla.</p>
+  <p class="nota">Las poleas y los hilos van juntos porque así están anotados en
+    la planilla. Las columnas que no tiene ninguno de estos ajustes no se muestran.</p>
   {% endif %}
 </div>
 
