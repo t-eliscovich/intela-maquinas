@@ -1014,6 +1014,50 @@ r = c.post("/ajustes", data={"maquina": "1", "tela": "PIQUE",
                              "gramaje_crudo": "un poco"})
 check("un gramaje que no es numero no entra", not _ajuste)
 
+# --- 8e-bis. borrar un ajuste con la X ------------------------------------
+# La planilla ya se cargo y no se vuelve a cargar, asi que borrar es borrar.
+print("Borrar un ajuste:")
+_borrados = []
+
+
+def _borrar_falso(id_ajuste):
+    _borrados.append(id_ajuste)
+    if id_ajuste == 7:
+        return {"id": 7, "tela": "PIQUE", "fecha": date(2026, 3, 4)}
+    return None
+
+
+store.borrar_ajuste = _borrar_falso
+r = c.post("/ajustes/7/borrar", data={"maquina": "2", "tela": ""})
+check("la X borra ese ajuste y no otro", _borrados == [7])
+check("y vuelve a la busqueda que estaba mirando",
+      r.status_code == 302 and "maquina=2" in r.headers["Location"])
+_borrados.clear()
+r = c.post("/ajustes/7/borrar", data={"maquina": "", "tela": "PIQUE"})
+check("buscando por tela, vuelve a la tela",
+      "tela=PIQUE" in r.headers["Location"]
+      and "maquina=" not in r.headers["Location"])
+# Apretar dos veces la X, o volver atras y apretarla de nuevo, no puede
+# romper ni decir que borro algo que ya no estaba.
+r = c.post("/ajustes/999/borrar", data={})
+check("borrar uno que ya no esta no rompe", r.status_code == 302)
+check("y lo dice sin inventar",
+      "ya no estaba" in c.get("/ajustes").get_data(as_text=True))
+# La X tiene que estar en la pantalla, con la pregunta antes.
+store.ajustes = lambda id_maquina=None, tela=None, limite=400: [
+    {"id": 7, "id_maquina": 10, "maquina_nombre": "TEJEDURIA-MQ 001",
+     "fecha": date(2026, 3, 4), "tela": "JERSEY 3,0 M", "hilos": "20/1 KW",
+     "tipo_maquina": None, "cilindro": None, "poleas": None,
+     "ajuste_agujas": None, "estiraje": None, "malla": None,
+     "malla_manual": None, "gramaje_crudo": None, "gramaje_terminado": None,
+     "nota": None, "hoja": None, "orden": 1}]
+_pagina = c.get("/ajustes").get_data(as_text=True)
+check("la fila trae su X", "/ajustes/7/borrar" in _pagina)
+check("y pregunta antes de borrar", "confirm(" in _pagina)
+check("la tela con comilla no rompe el javascript",
+      "this.dataset.que" in _pagina and "JERSEY 3,0 M" in _pagina)
+store.ajustes = lambda id_maquina=None, tela=None, limite=400: []
+
 # --- 8e-ter. la segunda tabla de INVENTARIO LEVAS -------------------------
 # La hoja tiene DOS tablas al lado: el inventario de levas y, pegada a la
 # derecha, cuántas levas lleva cada tela. Esa segunda eran cuarenta renglones

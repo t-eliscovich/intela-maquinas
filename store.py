@@ -972,6 +972,23 @@ def crear_ajuste(datos: dict) -> None:
     )
 
 
+def borrar_ajuste(id_ajuste: int) -> dict | None:
+    """Borra un ajuste y devuelve cómo era, para poder decir cuál se borró.
+
+    Devuelve None si ese ajuste ya no está: apretar dos veces la X, o volver
+    atrás con el navegador y apretarla de nuevo, no tiene que romper nada ni
+    decir que borró algo que no existía.
+    """
+    # Con conexión propia y `commit` a mano: `_todos` no commitea —es para
+    # leer— y un DELETE que sale por ahí se va en el rollback sin avisar.
+    with _conn() as con, con.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("DELETE FROM mantenimiento.ajuste WHERE id = %s RETURNING *",
+                    (id_ajuste,))
+        fila = cur.fetchone()
+        con.commit()
+    return dict(fila) if fila else None
+
+
 def guardar_ajustes(filas: list[dict]) -> int:
     """Guarda los ajustes en UNA transacción.
 

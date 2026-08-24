@@ -1378,6 +1378,32 @@ def _una_maquina(filas):
     return filas[0]["maquina"] if len(ids) == 1 and filas[0].get("maquina") else None
 
 
+@app.route("/ajustes/<int:id_ajuste>/borrar", methods=["POST"])
+@requiere_login
+def ajuste_borrar(id_ajuste):
+    """Saca un ajuste de la lista.
+
+    Vuelve a la misma búsqueda que estaba mirando —la máquina o la tela—: si
+    volviera a la lista entera, borrar tres seguidos obligaría a buscar de
+    nuevo cada vez.
+    """
+    try:
+        borrado = store.borrar_ajuste(id_ajuste)
+    except Exception as exc:  # noqa: BLE001
+        flash(str(exc), "error")
+        borrado = None
+    else:
+        if borrado is None:
+            flash("Ese ajuste ya no estaba.", "ok")
+        else:
+            flash(f"Borrado el ajuste de {borrado.get('tela') or 'sin tela'}"
+                  + (f" del {borrado['fecha'].strftime('%d/%m/%Y')}"
+                     if borrado.get("fecha") else "") + ".", "ok")
+    return redirect(url_for("ajustes_view",
+                            maquina=request.form.get("maquina") or None,
+                            tela=request.form.get("tela") or None))
+
+
 # Lo que se puede escribir a mano en un ajuste. `maquina_nombre`, `hoja` y
 # `orden` no: el nombre sale de Asinfo y los otros dos son de la planilla.
 CAMPOS_AJUSTE_A_MANO = ("tipo_maquina", "cilindro", "poleas", "ajuste_agujas",

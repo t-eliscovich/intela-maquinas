@@ -133,6 +133,7 @@
           <th class="der oculta-chico">g/m² crudo</th>{% endif %}
         {% if 'gramaje_terminado' in con_dato %}
           <th class="der oculta-chico">g/m² terminado</th>{% endif %}
+        <th></th>
       </tr>
     </thead>
     <tbody>
@@ -169,6 +170,22 @@
           <td class="der oculta-chico">{{ f.gramaje_crudo | num(2) }}</td>{% endif %}
         {% if 'gramaje_terminado' in con_dato %}
           <td class="der oculta-chico">{{ f.gramaje_terminado | num(2) }}</td>{% endif %}
+        {# Borrar de a uno. Pregunta con la tela y la fecha adentro: en una
+           tabla de 33 filas iguales, «¿borrar este ajuste?» no dice cuál. #}
+        <td class="der">
+          {# Qué se borra va en un `data-`, no adentro del confirm: ahí lo
+             escapa Jinja solo. Pegado en el JavaScript, una tela con una
+             comilla —«JERSEY 3,0 M»— rompía la pantalla. #}
+          <form method="POST" style="display:inline"
+                action="{{ url_for('ajuste_borrar', id_ajuste=f.id) }}"
+                data-que="{{ f.tela or 'sin tela' }}{% if f.fecha %} del {{ f.fecha | fecha_es }}{% endif %}"
+                onsubmit="return confirm('¿Borrar el ajuste de ' + this.dataset.que + '?')">
+            <input type="hidden" name="maquina" value="{{ escrito }}">
+            <input type="hidden" name="tela" value="{{ tela }}">
+            <button class="borrar-fila" type="submit" title="Borrar este ajuste"
+                    aria-label="Borrar este ajuste">×</button>
+          </form>
+        </td>
       </tr>
     {% endfor %}
     </tbody>

@@ -133,6 +133,12 @@
      que tienen dato en 1, 2, 5 y 1 de 33 filas, mientras los hilos —que
      estan en 32 de 33— vivian en 127 px y salian en tres renglones. Aca los
      titulos se parten y los hilos tienen piso. */
+  /* La X de borrar una fila: roja, para que se vea que borra. Al pasarle por
+     encima se llena, así se sabe cuál se está por apretar. */
+  .borrar-fila{border:0;background:none;cursor:pointer;font-family:inherit;
+     color:var(--rojo);font-size:17px;line-height:1;padding:2px 6px;
+     border-radius:6px}
+  .borrar-fila:hover{color:#fff;background:var(--rojo)}
   .tabla-ajustes th{white-space:normal}
   .tabla-ajustes td.hilos{min-width:230px}
   th.ordena{cursor:pointer;-webkit-user-select:none;user-select:none}
