@@ -37,6 +37,33 @@ try {
     exit 0    # sin internet no es un error nuestro; se reintenta en 2 min
 }
 
+# --- 0. El lanzador sin PowerShell (05/09/2026, plan de memoria de PC) -------
+# Si la carpeta que anda ya trae launch.py y la tarea todavia arranca
+# powershell.exe -File launch.ps1, se le cambia la accion a python launch.py
+# y se reinicia. Va ANTES del chequeo de SHA porque la primera vez que corre
+# el updater nuevo el commit ya llego (lo bajo el updater viejo) y no hay
+# "commit nuevo" que lo dispare. Idempotente: la segunda vez no hace nada.
+try {
+    $t = Get-ScheduledTask -TaskName $tarea -ErrorAction SilentlyContinue
+    if ($t -and (Test-Path "$app\launch.py") -and ($t.Actions[0].Execute -notlike '*python*')) {
+        Escribir "la tarea arrancaba con $($t.Actions[0].Execute): pasa a python launch.py"
+        $accion = New-ScheduledTaskAction -Execute 'C:\Python312\python.exe' -Argument 'launch.py' -WorkingDirectory $app
+        Set-ScheduledTask -TaskName $tarea -Action $accion | Out-Null
+        Stop-ScheduledTask -TaskName $tarea -ErrorAction SilentlyContinue
+        Start-Sleep 3
+        foreach ($idProceso in @(Get-NetTCPConnection -LocalPort $puerto -State Listen -ErrorAction SilentlyContinue |
+                                 Select-Object -ExpandProperty OwningProcess -Unique)) {
+            Stop-Process -Id $idProceso -Force -ErrorAction SilentlyContinue
+        }
+        Start-Sleep 2
+        Start-ScheduledTask -TaskName $tarea
+        Start-Sleep 15
+        $c = (Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:$puerto/healthz" -TimeoutSec 15).StatusCode
+        Escribir "lanzador cambiado; healthz $c"
+        if (Test-Path "$app\launch.ps1") { Remove-Item "$app\launch.ps1" -Force -EA SilentlyContinue }
+    }
+} catch { Escribir "no pude cambiar el lanzador: $($_ | Out-String)" }
+
 $actual = if (Test-Path $marca) { (Get-Content $marca -Raw).Trim() } else { "" }
 if ($sha -eq $actual) { exit 0 }        # nada nuevo: salir en silencio
 
@@ -78,10 +105,11 @@ try {
             }
         }
     }
-    # Freno duro: sin launch.ps1 la version nueva no puede arrancar. Mejor no
-    # tocar nada que dejar la app abajo.
-    if (-not (Test-Path "$staging\launch.ps1")) {
-        throw "no encontre launch.ps1 ni en $app ni en $viejo - no toco nada"
+    # Freno duro: sin lanzador la version nueva no puede arrancar. Mejor no
+    # tocar nada que dejar la app abajo. Desde el 05/09/2026 el lanzador es
+    # launch.py (viene en el repo); launch.ps1 queda como el de antes.
+    if (-not (Test-Path "$staging\launch.py") -and -not (Test-Path "$staging\launch.ps1")) {
+        throw "no encontre launch.py ni launch.ps1 - no toco nada"
     }
 
     # Que version es esta, adentro de la carpeta. El archivo .commit se escribe

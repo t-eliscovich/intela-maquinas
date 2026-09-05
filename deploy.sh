@@ -81,29 +81,18 @@ if (-not [System.Environment]::GetEnvironmentVariable('MAQUINAS_SECRET_KEY','Mac
 [Environment]::SetEnvironmentVariable('MAQUINAS_PORT', '$PUERTO', 'Machine'); \
 'contrasena: ' + \$(if ([System.Environment]::GetEnvironmentVariable('MAQUINAS_PASSWORD','Machine')) { 'ya existe, se respeta' } else { 'SIN CONTRASENA - poner una antes de publicar' })"
 
-echo "=== 6. Launcher con log ==="
-LAUNCH=$(cat <<'PS1'
-$ErrorActionPreference = "Continue"
-foreach ($v in 'MAQUINAS_DATABASE_URL','MAQUINAS_SECRET_KEY','MAQUINAS_PASSWORD','MAQUINAS_PORT','METABASE_URL','METABASE_USERNAME','METABASE_PASSWORD','ASINFO_DB_ID') {
-    $val = [System.Environment]::GetEnvironmentVariable($v, 'Machine')
-    if ($val) { Set-Item -Path "env:$v" -Value $val }
-}
-$logs = "C:\maquinas_app\logs"
-if (-not (Test-Path $logs)) { New-Item -ItemType Directory -Path $logs | Out-Null }
-Get-ChildItem $logs -Filter *.log | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-14) } | Remove-Item -Force
-$log = Join-Path $logs ("maquinas-" + (Get-Date -Format "yyyy-MM-dd") + ".log")
-"=== arranque $(Get-Date -Format o) ===" | Out-File -Append $log
-Set-Location C:\maquinas_app
-& 'C:\Python312\python.exe' -m waitress --host=127.0.0.1 --port=$env:MAQUINAS_PORT app:app *>> $log
-"=== SALIO $(Get-Date -Format o) codigo $LASTEXITCODE ===" | Out-File -Append $log
-PS1
-)
-B64=$(printf '%s' "$LAUNCH" | base64 | tr -d '\n')
-correr "[System.IO.File]::WriteAllBytes('$DESTINO\\launch.ps1', [Convert]::FromBase64String('$B64')); 'launch.ps1 OK'"
+echo "=== 6. Launcher ==="
+# TMT 2026-09-05 (plan de memoria de Programa Core, fase 3): el launcher ya
+# no es un powershell.exe de 70 MB que se queda esperando toda la vida del
+# programa; es launch.py, que viene en el tarball y hace lo mismo (variables
+# de máquina del registro, logs rotados, waitress + supervisor) en el mismo
+# proceso que sirve. El launch.ps1 viejo del server se borra para que no
+# quede una segunda forma de arrancar.
+correr "if (Test-Path '$DESTINO\\launch.ps1') { Remove-Item '$DESTINO\\launch.ps1' -Force }; if (Test-Path '$DESTINO\\launch.py') { 'launch.py OK' } else { 'FALTA launch.py' }"
 
 echo "=== 7. Re-registrar y arrancar ==="
 correr "Get-ScheduledTask -TaskName '$TASK' -EA SilentlyContinue | Unregister-ScheduledTask -Confirm:\$false; \
-\$a=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -File $DESTINO\\launch.ps1' -WorkingDirectory '$DESTINO'; \
+\$a=New-ScheduledTaskAction -Execute 'C:\\Python312\\python.exe' -Argument 'launch.py' -WorkingDirectory '$DESTINO'; \
 \$t=New-ScheduledTaskTrigger -AtStartup; \
 \$s=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1); \
 \$p=New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest; \
