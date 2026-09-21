@@ -113,7 +113,7 @@
      pantalla, y los hilos apretados en cuatro renglones por fila. #}
   {% if una %}
     <p class="nota" style="margin:0 0 10px">
-      Todos de la <a href="{{ url_for('maquina_detalle', id_maquina=filas[0].id_maquina) }}"
+      Todos de la <a href="{{ url_maquina(filas[0].id_maquina) }}"
                      class="mq" style="text-decoration:none">{{ una | mq }}</a>
       {% if filas[0].tipo_maquina %}· {{ filas[0].tipo_maquina }}{% endif %}
     </p>
@@ -142,7 +142,7 @@
         {% if not una %}
         <td>
           {% if f.maquina %}
-            <a href="{{ url_for('maquina_detalle', id_maquina=f.id_maquina) }}"
+            <a href="{{ url_maquina(f.id_maquina) }}"
                class="mq" style="text-decoration:none">{{ f.maquina | mq }}</a>
           {% else %}<span class="mq">{{ f.hoja }}</span>{% endif %}
           <span class="tenue" style="font-size:11px">{{ f.tipo_maquina or '' }}</span>

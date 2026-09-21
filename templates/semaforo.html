@@ -89,7 +89,7 @@
       {% set p = f.principal %}
       <tr class="{{ f.estado }}">
         <td>
-          <a href="{{ url_for('maquina_detalle', id_maquina=f.maquina.id) }}"
+          <a href="{{ url_maquina(f.maquina.id) }}"
              class="mq" style="text-decoration:none;color:inherit">{{ f.maquina | mq }}</a>
         </td>
         <td>

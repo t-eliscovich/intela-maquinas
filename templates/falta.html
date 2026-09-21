@@ -22,7 +22,7 @@
   <div class="relleno" style="padding:10px 14px">
     {% for m in sin_tope %}
       <a class="btn chico suave" style="margin:0 4px 4px 0"
-         href="{{ url_for('maquina_detalle', id_maquina=m.id) }}#editar">{{ m | mq }}</a>
+         href="{{ url_maquina(m.id) }}#editar">{{ m | mq }}</a>
     {% endfor %}
   </div>
   <p class="nota">El número lo pone el mecánico, en la ficha de cada máquina.
@@ -59,7 +59,7 @@
     <tbody>
     {% for f in ficha_a_medias %}
       <tr>
-        <td><a href="{{ url_for('maquina_detalle', id_maquina=f.maquina.id) }}#editar"
+        <td><a href="{{ url_maquina(f.maquina.id) }}#editar"
                class="mq" style="text-decoration:none">{{ f.maquina | mq }}</a>
           {# Que la ficha esté vacía deja de ser un pendiente si la máquina no
              tejió nunca. Va al final de la lista y lo dice. #}

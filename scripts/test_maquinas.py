@@ -118,6 +118,10 @@ KG = {10: 80000.0, 11: 46000.0, 12: 1000.0}   # pasado / falta poco / tranquilo
 
 store.tipos = lambda incluir_inactivos=False: TIPOS
 store.historial = lambda id_maquina=None, limite=200: []
+store.ultimos_cargados = lambda limite=25: []
+store.id_por_numero = lambda numero: {1: 10, 2: 11, 3: 12}.get(numero)
+_CAMBIOS_REAL = store.cambios
+store.cambios = lambda limite=100: []
 store.responsables = lambda: []
 store.ficha = lambda id_maquina: {}
 store.topes_por_maquina = lambda: {}
@@ -706,6 +710,154 @@ r = c.post("/registrar", data={"maquina": "", "tipo_id": "1",
                                "fecha": hoy.isoformat(), "hecho_por": "Luis"})
 check("sin numero pide el numero", "Poné el número" in r.get_data(as_text=True))
 
+# --- 8b2. corregir, borrar y deshacer ---------------------------------------
+# En planta se cargan las horas en la máquina equivocada y se borra la fila
+# que no era. Todo lo que se toca a mano se puede corregir entero —la máquina
+# también— y queda anotado para poder deshacerlo.
+print("Corregir y deshacer:")
+from decimal import Decimal as _D
+SERVICIO = {"id": 5, "id_maquina": 10, "maquina_nombre": "TEJEDURIA-MQ 001",
+            "tipo_id": 1, "tipo_nombre": "Cambio de agujas", "fecha": hoy,
+            "hecho_por": "Roberto", "horas": _D("20.00"), "repuestos": None,
+            "nota": None, "hoja": None, "orden": None, "creado_en": None}
+tocado = {}
+store.service_por_id = lambda i: dict(SERVICIO) if i == 5 else None
+store.actualizar_service = lambda i, datos: (tocado.update(id=i, datos=datos),
+                                             {**SERVICIO, **datos})[1]
+store.borrar_service = lambda i: (tocado.update(borrado=i), dict(SERVICIO))[1] if i == 5 else None
+
+r = c.get("/mantenimiento/5")
+cuerpo = r.get_data(as_text=True)
+check("la pantalla de corregir abre con lo que tenia puesto",
+      r.status_code == 200 and 'value="20"' in cuerpo and 'value="Roberto"' in cuerpo)
+check("la maquina va con su numero de planta, no con el id", 'value="1"' in cuerpo)
+check("un mantenimiento que ya no esta vuelve y lo dice",
+      c.get("/mantenimiento/999").status_code == 302)
+
+r = c.post("/mantenimiento/5", data={"maquina": "1", "tipo_id": "1", "fecha": hoy.isoformat(),
+                                     "hecho_por": "Roberto", "horas": "10"})
+check("corrige las horas", tocado.get("datos", {}).get("horas") == 10.0
+      and tocado["datos"]["id_maquina"] == 10)
+check("y vuelve a la ficha de la maquina, por su numero",
+      r.status_code == 302 and r.headers["Location"].endswith("/maquina/1"))
+tocado.clear()
+r = c.post("/mantenimiento/5", data={"maquina": "MQ 2", "tipo_id": "1", "fecha": hoy.isoformat(),
+                                     "hecho_por": "Roberto", "horas": "10", "volver": "registrar"})
+check("se puede mover a otra maquina, escribiendo su numero",
+      tocado["datos"]["id_maquina"] == 11 and tocado["datos"]["maquina_nombre"] == "TEJEDURIA-MQ 002")
+check("si se vino de Cargar, vuelve a Cargar", r.headers["Location"].endswith("/registrar"))
+tocado.clear()
+r = c.post("/mantenimiento/5", data={"maquina": "1", "tipo_id": "1", "fecha": hoy.isoformat(),
+                                     "hecho_por": "Roberto"})
+check("a uno cargado a mano le sigue exigiendo las horas",
+      not tocado and "cuánto llevó" in r.get_data(as_text=True))
+r = c.post("/mantenimiento/5", data={"maquina": "1", "tipo_id": "1",
+                                     "fecha": (hoy + timedelta(days=1)).isoformat(),
+                                     "hecho_por": "Roberto", "horas": "1"})
+check("no acepta una fecha futura", not tocado and "futura" in r.get_data(as_text=True))
+r = c.post("/mantenimiento/5", data={"maquina": "77", "tipo_id": "1", "fecha": hoy.isoformat(),
+                                     "hecho_por": "Roberto", "horas": "1"})
+check("una maquina que no existe se avisa", not tocado and "No hay ninguna máquina 77" in r.get_data(as_text=True))
+# Uno que vino de la planilla no trae horas: se le corrige la nota sin inventarlas.
+store.service_por_id = lambda i: {**SERVICIO, "horas": None, "hoja": "MQ 1", "orden": 3}
+r = c.post("/mantenimiento/5", data={"maquina": "1", "tipo_id": "1", "fecha": hoy.isoformat(),
+                                     "hecho_por": "Roberto", "nota": "se cambio el plato"})
+check("a uno de la planilla no le inventa horas para corregirle la nota",
+      tocado.get("datos", {}).get("nota") == "se cambio el plato" and tocado["datos"]["horas"] is None)
+store.service_por_id = lambda i: dict(SERVICIO) if i == 5 else None
+
+r = c.post("/mantenimiento/5/borrar", data={})
+check("borrar borra y vuelve a la ficha por el numero",
+      tocado.get("borrado") == 5 and r.headers["Location"].endswith("/maquina/1"))
+r = c.post("/mantenimiento/999/borrar", data={}, follow_redirects=True)
+check("borrar dos veces no rompe", "ya no estaba" in r.get_data(as_text=True))
+
+# El historial de cambios: qué se cargó, corrigió o borró, y deshacer de a uno.
+ANTES = {"id": 5, "id_maquina": 10, "maquina_nombre": "TEJEDURIA-MQ 001", "tipo_id": 1,
+         "fecha": "2026-08-31", "hecho_por": "Roberto", "horas": "20.00",
+         "repuestos": None, "nota": None, "hoja": None, "orden": None,
+         "creado_en": "2026-09-21 14:00:00+00:00"}
+DESPUES = {**ANTES, "horas": "10.00", "fecha": "2026-09-21", "id_maquina": 11,
+           "maquina_nombre": "TEJEDURIA-MQ 002"}
+FILAS_CAMBIO = [
+    {"id": 3, "service_id": 5, "que": "editado", "antes": ANTES, "despues": DESPUES,
+     "cuando": datetime(2026, 9, 21, 15), "deshecho_en": None,
+     "tipo_antes": "Cambio de agujas", "tipo_despues": "Cambio de agujas"},
+    {"id": 2, "service_id": 5, "que": "cargado", "antes": None, "despues": ANTES,
+     "cuando": datetime(2026, 9, 21, 14), "deshecho_en": None,
+     "tipo_antes": None, "tipo_despues": "Cambio de agujas"},
+    {"id": 1, "service_id": 4, "que": "borrado", "antes": {**ANTES, "id": 4}, "despues": None,
+     "cuando": datetime(2026, 9, 21, 13), "deshecho_en": datetime(2026, 9, 21, 13, 5),
+     "tipo_antes": "Cambio de agujas", "tipo_despues": None},
+]
+_todos_real = store._todos
+store._todos = lambda sql, args=(): [dict(f) for f in FILAS_CAMBIO]
+store.cambios = _CAMBIOS_REAL
+lista = store.cambios()
+check("el cambio mas nuevo de un mantenimiento se puede deshacer",
+      next(f for f in lista if f["id"] == 3)["se_puede_deshacer"])
+check("el mas viejo no: primero hay que deshacer el de arriba",
+      not next(f for f in lista if f["id"] == 2)["se_puede_deshacer"])
+check("uno ya deshecho no se vuelve a deshacer",
+      not next(f for f in lista if f["id"] == 1)["se_puede_deshacer"])
+check("deshacer el viejo primero lo dice",
+      "más nuevo" in _mensaje_de(lambda: store.deshacer_cambio(2)))
+check("deshacer uno ya deshecho lo dice", "ya se deshizo" in _mensaje_de(lambda: store.deshacer_cambio(1)))
+check("un cambio que no existe lo dice", "no está" in _mensaje_de(lambda: store.deshacer_cambio(99)))
+corridas_undo = []
+store._ejecutar = lambda sql, args=(): corridas_undo.append((" ".join(sql.split()), args))
+store._una_escribiendo = lambda sql, args=(): corridas_undo.append((" ".join(sql.split()), args))
+store.deshacer_cambio(3)
+check("deshacer una correccion vuelve a como estaba",
+      any("UPDATE mantenimiento.service SET" in sql and args[0] == 10 and args[-1] == 5
+          for sql, args in corridas_undo)
+      and any("deshecho_en = now()" in sql for sql, _ in corridas_undo))
+corridas_undo.clear()
+FILAS_CAMBIO[0]["deshecho_en"] = datetime(2026, 9, 21, 16)
+store.deshacer_cambio(2)
+check("deshacer una carga borra el mantenimiento",
+      any("DELETE FROM mantenimiento.service" in sql and args == (5,) for sql, args in corridas_undo))
+corridas_undo.clear()
+FILAS_CAMBIO[2]["deshecho_en"] = None
+store.deshacer_cambio(1)
+check("deshacer un borrado lo vuelve a poner CON EL MISMO id",
+      any("INSERT INTO mantenimiento.service" in sql and "ON CONFLICT (id) DO NOTHING" in sql
+          and args[0] == 4 for sql, args in corridas_undo))
+check("las fechas y los decimales van al JSON como texto",
+      '"fecha": "2026-08-31"' in store._json({"fecha": date(2026, 8, 31), "horas": _D("20.00")})
+      and '"horas": "20.00"' in store._json({"fecha": date(2026, 8, 31), "horas": _D("20.00")}))
+store._todos = _todos_real
+
+FILAS_CAMBIO[0]["deshecho_en"] = None
+FILAS_CAMBIO[2]["deshecho_en"] = datetime(2026, 9, 21, 13, 5)
+store.cambios = lambda limite=100: [dict(f, se_puede_deshacer=(f["id"] == 3)) for f in FILAS_CAMBIO]
+r = c.get("/cambios")
+cuerpo = r.get_data(as_text=True)
+check("la pantalla Que cambio abre y cuenta en castellano",
+      r.status_code == 200 and "horas: 20 h → 10 h" in cuerpo
+      and "fecha: 31/08/2026 → 21/09/2026" in cuerpo and "máquina: MQ 1 → MQ 2" in cuerpo)
+check("el boton Deshacer esta solo en el que se puede", cuerpo.count("Deshacer</button>") == 1)
+check("el deshecho dice Deshecho", "Deshecho" in cuerpo)
+deshechos = []
+store.deshacer_cambio = lambda i: (deshechos.append(i), dict(FILAS_CAMBIO[0]))[1]
+r = c.post("/cambios/3/deshacer", follow_redirects=True)
+check("deshacer desde la pantalla deshace y lo dice",
+      deshechos == [3] and "Deshecho: se corrigió" in r.get_data(as_text=True))
+store.cambios = lambda limite=100: []
+
+# Los links a la ficha van por el NUMERO de planta: la MQ 18 es /maquina/18.
+with A.app.test_request_context("/"):
+    check("url_maquina con el id de Asinfo da el numero de planta",
+          A._url_maquina(10) == "/maquina/1" and A._url_maquina(MAQS[1]) == "/maquina/2")
+    check("con abrir= lo lleva", A._url_maquina(10, abrir="deberia") == "/maquina/1?abrir=deberia")
+check("los ultimos cargados van por cuando ENTRARON, no por la fecha",
+      "ORDER BY s.creado_en DESC" in open(store.__file__, encoding="utf-8").read())
+store.ultimos_cargados = lambda limite=25: [dict(SERVICIO)]
+cuerpo = c.get("/registrar").get_data(as_text=True)
+check("cada ultimo cargado tiene su lapicito",
+      "/mantenimiento/5?volver=registrar" in cuerpo)
+store.ultimos_cargados = lambda limite=25: []
+
 # --- 8c. archivos ----------------------------------------------------------
 print("Archivos:")
 guardados = {}
@@ -749,12 +901,12 @@ store.agujas = lambda: {}
 store.eficiencias = lambda: {}
 store.archivos = lambda id_maquina=None: []
 store.ficha = lambda id_maquina: {c: None for c in store.CAMPOS_FICHA}
-r = c.post("/maquina/10", data={"marca": "Mayer", "tope_1": "250.000"})
+r = c.post("/maquina/1", data={"marca": "Mayer", "tope_1": "250.000"})
 check("guarda el tope de esa maquina", r.status_code == 302 and puestos.get((10, 1)) == 250000)
 puestos.clear()
-c.post("/maquina/10", data={"marca": "Mayer", "tope_1": ""})
+c.post("/maquina/1", data={"marca": "Mayer", "tope_1": ""})
 check("el vacio borra el numero propio", puestos.get((10, 1)) is None)
-r = c.post("/maquina/10", data={"marca": "Mayer", "tope_1": "-5"},
+r = c.post("/maquina/1", data={"marca": "Mayer", "tope_1": "-5"},
            follow_redirects=True)
 check("rechaza un numero que no es kilos", "mayores que cero" in r.get_data(as_text=True))
 
@@ -1435,7 +1587,7 @@ store.gramajes = lambda id_maquina=None: []
 store.fichas = lambda: {10: {"marca": "Mayer", "modelo": "Relanit", "galga": 24,
                             "diametro": 32, "alimentadores": 96, "agujas": 2460,
                             "anio": 2017, "serie": "7", "tipo_agujas": None, "nota": None}}
-for ruta in ("/", "/registrar", "/tipos", "/arranque", "/carga", "/maquina/10",
+for ruta in ("/", "/registrar", "/tipos", "/arranque", "/carga", "/maquina/1",
              "/maquinas", "/archivos", "/ajustes", "/ajustes?tela=FALSO",
              "/ajustes?maquina=1", "/repuestos", "/repuestos?ver=levas",
              "/repuestos?ver=motor", "/repuestos?ver=stock",
@@ -1451,7 +1603,7 @@ check("la pestaña de maquinas las lista con su ficha",
 # El buscador de la ficha no es una pantalla: lleva a la máquina que se escribió.
 r = c.get("/maquina?numero=1")
 check("/maquina?numero=1 lleva a la ficha de la 1",
-      r.status_code == 302 and r.headers["Location"].endswith("/maquina/10"))
+      r.status_code == 302 and r.headers["Location"].endswith("/maquina/1"))
 r = c.get("/maquina?numero=77", follow_redirects=True)
 # Un dato que falta se muestra como «—»: Jinja devuelve Undefined cuando no
 # está la clave, y sin este freno una pantalla entera se caía con un 500.
@@ -1464,7 +1616,7 @@ check("una maquina que no esta en Asinfo vuelve al listado, no rompe",
 
 check("un numero que no existe vuelve al listado y lo dice",
       "No hay ninguna máquina 77" in r.get_data(as_text=True))
-cuerpo = c.get("/maquina/10").get_data(as_text=True)
+cuerpo = c.get("/maquina/1").get_data(as_text=True)
 check("la ficha muestra los dias, no los registros sueltos",
       "Limpieza" in cuerpo and "Cambio de agujas" in cuerpo)
 
@@ -1568,14 +1720,14 @@ store.historial = lambda id_maquina=None, limite=200: [
     {"fecha": date(2026, 8, 20) - timedelta(days=30 * i), "tipo_nombre": "Limpieza",
      "hecho_por": "Roberto", "nota": f"parada {i}", "repuestos": None, "horas": 1,
      "maquina_nombre": "TEJEDURIA-MQ 001"} for i in range(9)]
-cuerpo = c.get("/maquina/10").get_data(as_text=True)
+cuerpo = c.get("/maquina/1").get_data(as_text=True)
 check("se muestran los 5 mas nuevos y el resto atras de la flecha",
       "parada 4" in cuerpo and "Ver los 4 anteriores" in cuerpo)
 
 guardado = {}
 store.guardar_eficiencia = lambda id_maquina, datos: guardado.update(
     {"id": id_maquina, **datos})
-r = c.post("/maquina/10", data={"que": "eficiencia", "rpm": "25,0",
+r = c.post("/maquina/1", data={"que": "eficiencia", "rpm": "25,0",
                                 "sistemas": "102", "tamano_rollo": "1.410",
                                 "minutos_rollo": "56,4", "rollos_dia": "12",
                                 "kg_dia": "270", "rollos_dia_24": "25",
@@ -1677,12 +1829,12 @@ check("y dividir por infinito da cero, que es verde",
 
 # Y por la pantalla: no se guarda nada y se avisa.
 puestos.clear()
-r = c.post("/maquina/10", data={"marca": "Mayer", "tope_1": "nan"},
+r = c.post("/maquina/1", data={"marca": "Mayer", "tope_1": "nan"},
            follow_redirects=True)
 check("la ficha no guarda un tope nan",
       not puestos and "mayores que cero" in r.get_data(as_text=True))
 puestos.clear()
-c.post("/maquina/10", data={"marca": "Mayer", "tope_1": "1e400"}, follow_redirects=True)
+c.post("/maquina/1", data={"marca": "Mayer", "tope_1": "1e400"}, follow_redirects=True)
 check("ni uno infinito", not puestos)
 
 # Los topes se revisan TODOS antes de escribir ninguno: uno malo no puede
@@ -1692,11 +1844,11 @@ _DOS_TIPOS = [{"id": 1, "nombre": "Limpieza", "cada_kg": None, "activo": True},
 _tipos_antes = store.tipos
 store.tipos = lambda incluir_inactivos=False: _DOS_TIPOS
 puestos.clear()
-c.post("/maquina/10", data={"marca": "Mayer", "tope_1": "20.000", "tope_2": "nan"},
+c.post("/maquina/1", data={"marca": "Mayer", "tope_1": "20.000", "tope_2": "nan"},
        follow_redirects=True)
 check("un tope malo no deja los otros a medio guardar", not puestos)
 puestos.clear()
-c.post("/maquina/10", data={"marca": "Mayer", "tope_1": "20.000", "tope_2": "8.000"},
+c.post("/maquina/1", data={"marca": "Mayer", "tope_1": "20.000", "tope_2": "8.000"},
        follow_redirects=True)
 check("y los dos buenos entran juntos",
       puestos.get((10, 1)) == 20000 and puestos.get((10, 2)) == 8000)
@@ -1760,8 +1912,8 @@ try:
     for afuera in ("//otro.com", "https://otro.com", "http://otro.com/x"):
         with A.app.test_request_context(f"/login?next={afuera}"):
             check(f"{afuera} no es una pantalla de acá", A._adonde_iba() is None)
-    with A.app.test_request_context("/login?next=/maquina/10"):
-        check("una pantalla de acá si", A._adonde_iba() == "/maquina/10")
+    with A.app.test_request_context("/login?next=/maquina/1"):
+        check("una pantalla de acá si", A._adonde_iba() == "/maquina/1")
     r = puerta.get("/salir")
     check("salir cierra la sesion",
           r.status_code == 302 and puerta.get("/").status_code == 302)
@@ -1923,7 +2075,7 @@ check("202,5 de 270 es 75%", "75%" in cuerpo)
 check("la que no tiene el calculo sale igual y no divide por cero",
       "MQ 2" in cuerpo and "%" in cuerpo)
 check("la ficha de la maquina tambien abre con Decimales",
-      c.get("/maquina/10").status_code == 200)
+      c.get("/maquina/1").status_code == 200)
 
 # --- 22. con todo apagado, ninguna pantalla se cae -------------------------
 # Asinfo no contesta y todavia no hay ningun tipo cargado: es exactamente como
@@ -1958,7 +2110,7 @@ store.gramajes = lambda i=None: []
 store.filas_de = lambda cuadro: []
 for ruta in ("/", "/registrar", "/tipos", "/arranque", "/carga", "/maquinas",
              "/archivos", "/ajustes", "/repuestos", "/repuestos?ver=bandas",
-             "/produccion", "/maquina/10", "/?solo=vencidas"):
+             "/produccion", "/maquina/1", "/?solo=vencidas"):
     check(f"{ruta} abre igual", c.get(ruta).status_code == 200)
 check("y el semaforo dice por que esta vacio",
       "Asinfo" in c.get("/").get_data(as_text=True))

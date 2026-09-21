@@ -35,7 +35,7 @@
         {# Sólo «MQ 3»: el nombre de Asinfo es «TEJEDURIA-MQ 003» y repetirlo
            debajo hacía de cada renglón dos. #}
         <td>
-          <a href="{{ url_for('maquina_detalle', id_maquina=f.maquina.id) }}"
+          <a href="{{ url_maquina(f.maquina.id) }}"
              class="mq" style="text-decoration:none;color:inherit">{{ f.maquina | mq }}</a>
         </td>
         {# Cada cuántos kilos hay que limpiarla. Es el número que hace andar

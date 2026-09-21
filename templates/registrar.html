@@ -93,21 +93,29 @@
 
 {% if historial %}
 <div class="bloque">
-  <div class="titulo"><h2>Últimos cargados</h2></div>
+  {# En el orden en que ENTRARON, no por fecha: el que carga uno del mes
+     pasado lo tiene que ver arriba para confirmar que se guardó. #}
+  <div class="titulo"><h2>Últimos cargados</h2>
+    <p>Los últimos que entraron, el más reciente arriba.
+       Con «Editar» se corrige o se borra.
+       <a href="{{ url_for('cambios_view') }}">Qué cambió</a></p></div>
   <table>
     <thead><tr><th>Fecha</th><th>Máquina</th><th>Mantenimiento</th><th>Quién</th>
                <th class="oculta-chico">Repuestos</th><th class="der oculta-chico">Horas</th>
-               <th class="oculta-chico">Nota</th></tr></thead>
+               <th class="oculta-chico">Nota</th><th></th></tr></thead>
     <tbody>
     {% for h in historial %}
       <tr>
         <td>{{ h.fecha | fecha_es }}</td>
-        <td>{{ h.maquina_nombre | mq }}</td>
+        <td><a href="{{ url_maquina(h.id_maquina) }}">{{ h.maquina_nombre | mq }}</a></td>
         <td>{{ h.tipo_nombre }}</td>
         <td>{{ h.hecho_por }}</td>
         <td class="tenue oculta-chico">{{ h.repuestos or '—' }}</td>
         <td class="der tenue oculta-chico">{{ h.horas | num(1) if h.horas else '—' }}</td>
         <td class="tenue oculta-chico">{{ h.nota or '—' }}</td>
+        <td class="der" style="white-space:nowrap">
+          <a class="lapiz" href="{{ url_for('mantenimiento_editar', id_service=h.id, volver='registrar') }}"
+             title="Corregir o borrar">✎ Editar</a></td>
       </tr>
     {% endfor %}
     </tbody>

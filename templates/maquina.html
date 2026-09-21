@@ -138,6 +138,17 @@
       {% if d.horas %}{{ d.horas | num(1) }} h{% else %}—{% endif %}</td>
     <td class="tenue oculta-chico">{{ d.repuestos | join(' · ') or '—' }}</td>
     <td class="tenue oculta-chico">{{ d.notas | join(' · ') or '—' }}</td>
+    {# Un «Editar» por registro, con palabra y no sólo un dibujito: en planta
+       un lapicito chico no lo ve nadie. Si el mismo día se hicieron dos
+       cosas, son dos, cada uno con su nombre. Lleva a corregir la fecha, las
+       horas, qué se hizo, la máquina, o a borrarlo. #}
+    <td class="der" style="white-space:nowrap">
+      {% set varios = d.registros | selectattr('id') | list | length > 1 %}
+      {% for r in d.registros if r.id %}
+        <a class="lapiz" href="{{ url_for('mantenimiento_editar', id_service=r.id) }}"
+           title="Corregir o borrar {{ r.tipo | lower }}">✎ Editar{{ (' ' ~ r.tipo | lower) if varios }}</a>
+      {% endfor %}
+    </td>
   </tr>
 {%- endmacro %}
 
@@ -147,6 +158,7 @@
     <th class="der">Horas</th>
     <th class="oculta-chico">Repuestos</th>
     <th class="oculta-chico">Anotado</th>
+    <th></th>
   </tr></thead>
 {%- endmacro %}
 

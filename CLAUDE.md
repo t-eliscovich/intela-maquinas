@@ -48,6 +48,22 @@ prende nada: no se hace por tiempo ni por desgaste, lo pide la tela, asi que va
 al lado como fecha. Antes la misma maquina salia dos veces con dos colores
 distintos.
 
+**La ficha va por el NÚMERO de planta: `/maquina/18` es la MQ 18.** El id de
+Asinfo (27 para la 18) no lo conoce nadie y no sale en ningún link. En los
+templates los links se arman con `url_maquina(m)` (acepta la máquina entera o
+su id), nunca con `url_for('maquina_detalle', ...)` a mano.
+
+**Todo lo que se toca a mano en un mantenimiento queda en
+`mantenimiento.cambio`** (cargado / editado / borrado, con antes y después en
+JSON) y se deshace desde `/cambios`, de a uno y del más nuevo para atrás. Un
+mantenimiento se corrige ENTERO desde `/mantenimiento/<id>` —la máquina
+también—: los kilos se calculan al vuelo, así que moverlo no deja nada
+colgado. La planilla no pasa por ahí: ésa se recarga entera.
+
+**«Últimos cargados» va por cuándo ENTRÓ, no por la fecha.** Ordenaba por la
+fecha del mantenimiento y uno del mes pasado cargado hoy quedaba enterrado
+fuera de los 25: parecía que no se había guardado.
+
 **Nunca inventar un tope de kilos.** Los define el mecanico, y se cargan en la
 ficha de cada maquina (dentro de «Editar la ficha y los kilos»), no en una
 pantalla aparte: el numero es de la maquina.

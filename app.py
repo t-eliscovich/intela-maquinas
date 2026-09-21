@@ -6,7 +6,7 @@ Las pantallas:
     /registrar   cargar un mantenimiento hecho
     /carga       subir el Excel de planta (fechas, kilos y ficha, de una vez)
     /tipos       los tipos de mantenimiento y cada cuántos kilos van
-    /maquina/N   la ficha de una máquina
+    /maquina/N   la ficha de la MQ N (el número de planta, no el id de Asinfo)
 
 Los kilos NO se cargan a mano: salen de Asinfo, que ya registra cada rollo de
 tela cruda con la máquina que lo tejió.
@@ -472,6 +472,12 @@ def semaforo():
     )
 
 
+def _buscar_numero(escrito):
+    """El número que se escribió, o None si no hay uno solo."""
+    encontrados = {int(n) for n in re.findall(r"\d+", str(escrito or ""))}
+    return encontrados.pop() if len(encontrados) == 1 else None
+
+
 def _buscar_maquina(escrito, maquinas):
     """Acepta el número con el que la llaman en planta: 1, 01, MQ 1, MQ 001.
 
@@ -507,35 +513,14 @@ def registrar():
     if request.method == "POST":
         try:
             id_maquina = _buscar_maquina(request.form.get("maquina"), maquinas)
-            tipo_id = _tipo_elegido(request.form.get("tipo_id"), tipos)
-            fecha = request.form.get("fecha") or date.today().isoformat()
-            hecho_por = request.form.get("hecho_por", "").strip()
-            if not hecho_por:
-                raise ValueError("Falta poner quién lo hizo.")
-            if datetime.strptime(fecha, "%Y-%m-%d").date() > date.today():
-                raise ValueError("La fecha no puede ser futura.")
-
-            # Cuánto llevó NO es opcional: sin las horas no se sabe cuánto
-            # cuesta parar una máquina, que es media razón por la que esto se
-            # anota. Decisión de la dueña, 20/08/2026.
-            crudo = (request.form.get("horas") or "").strip().replace(",", ".")
-            if not crudo:
-                raise ValueError("Falta poner cuánto llevó, en horas.")
-            try:
-                horas = float(crudo)
-            except ValueError:
-                raise ValueError("Las horas tienen que ser un número. Por ejemplo 2,5.")
-            if not (0 < horas <= 200):
-                raise ValueError("Las horas tienen que ser un número razonable.")
-
+            datos = _mantenimiento_escrito(request.form, tipos)
             nombre = next(
                 (m["nombre"] for m in maquinas if m["id"] == id_maquina), str(id_maquina)
             )
             store.registrar_service(
-                id_maquina, nombre, tipo_id, fecha, hecho_por,
-                request.form.get("nota"),
-                repuestos=request.form.get("repuestos"),
-                horas=horas,
+                id_maquina, nombre, datos["tipo_id"], datos["fecha"],
+                datos["hecho_por"], datos["nota"],
+                repuestos=datos["repuestos"], horas=datos["horas"],
             )
             flash(f"Cargado en {nombre}. Los kilos vuelven a cero.", "ok")
             return redirect(url_for("semaforo"))
@@ -551,8 +536,261 @@ def registrar():
         tipos=tipos,
         hoy=date.today().isoformat(),
         responsables=store.responsables(),
-        historial=store.historial(limite=25),
+        # En el orden en que se CARGARON, no por la fecha del mantenimiento:
+        # el que carga hoy uno del mes pasado lo tiene que ver arriba de todo.
+        historial=store.ultimos_cargados(limite=25),
     )
+
+
+def _mantenimiento_escrito(form, tipos, horas_obligatorias=True) -> dict:
+    """Lo que se escribió en el formulario de un mantenimiento, revisado.
+
+    Es el mismo control para cargar uno nuevo y para corregir uno cargado:
+    dos controles distintos serían dos lugares donde equivocarse.
+    """
+    tipo_id = _tipo_elegido(form.get("tipo_id"), tipos)
+    fecha = form.get("fecha") or date.today().isoformat()
+    hecho_por = (form.get("hecho_por") or "").strip()
+    if not hecho_por:
+        raise ValueError("Falta poner quién lo hizo.")
+    try:
+        escrita = datetime.strptime(fecha, "%Y-%m-%d").date()
+    except ValueError:
+        raise ValueError("La fecha no se entiende.")
+    if escrita > date.today():
+        raise ValueError("La fecha no puede ser futura.")
+
+    # Cuánto llevó NO es opcional: sin las horas no se sabe cuánto cuesta
+    # parar una máquina, que es media razón por la que esto se anota.
+    # Decisión de la dueña, 20/08/2026. La excepción es corregir uno que vino
+    # de la planilla, que no traía horas: no se le puede exigir para tocarle
+    # la nota.
+    crudo = (form.get("horas") or "").strip().replace(",", ".")
+    if not crudo:
+        if horas_obligatorias:
+            raise ValueError("Falta poner cuánto llevó, en horas.")
+        horas = None
+    else:
+        try:
+            horas = float(crudo)
+        except ValueError:
+            raise ValueError("Las horas tienen que ser un número. Por ejemplo 2,5.")
+        if not (0 < horas <= 200):
+            raise ValueError("Las horas tienen que ser un número razonable.")
+
+    return {
+        "tipo_id": tipo_id,
+        "fecha": fecha,
+        "hecho_por": hecho_por,
+        "horas": horas,
+        "repuestos": (form.get("repuestos") or "").strip() or None,
+        "nota": (form.get("nota") or "").strip() or None,
+    }
+
+
+def _adonde_volver(servicio):
+    """Después de tocar un mantenimiento se vuelve a donde se estaba: a la
+    ficha de la máquina, o a Cargar mantenimiento si se vino de ahí."""
+    if request.form.get("volver") == "registrar":
+        return redirect(url_for("registrar"))
+    numero = _numero_de(servicio["id_maquina"], servicio.get("maquina_nombre"))
+    if numero is None:
+        return redirect(url_for("registrar"))
+    return redirect(url_for("maquina_detalle", numero=numero))
+
+
+@app.route("/mantenimiento/<int:id_service>", methods=["GET", "POST"])
+@requiere_login
+def mantenimiento_editar(id_service):
+    """Corregir un mantenimiento ya cargado. TODO se puede corregir: la
+    máquina, qué se le hizo, la fecha, quién, las horas, los repuestos y la
+    nota. Los kilos se calculan al vuelo, así que mover un mantenimiento de
+    máquina o de fecha no deja nada colgado — y cómo estaba queda anotado en
+    «Qué cambió», por si hay que volver atrás."""
+    servicio = store.service_por_id(id_service)
+    if servicio is None:
+        flash("Ese mantenimiento ya no está.", "error")
+        return redirect(url_for("registrar"))
+    tipos = store.tipos()
+    maquinas = _maquinas_o_nada()
+    numero = _numero_de(servicio["id_maquina"], servicio.get("maquina_nombre"))
+
+    if request.method == "POST":
+        try:
+            # Uno de la planilla no trae horas y se le puede corregir la nota
+            # sin inventárselas. A uno cargado a mano sí se le exigen.
+            datos = _mantenimiento_escrito(request.form, tipos,
+                                           horas_obligatorias=servicio.get("hoja") is None)
+            datos["id_maquina"] = servicio["id_maquina"]
+            datos["maquina_nombre"] = servicio["maquina_nombre"]
+            # La máquina sólo se cambia si se escribió OTRO número: con Asinfo
+            # caído no hay lista contra qué buscar, y dejar la que estaba no
+            # puede romper nada.
+            escrito = (request.form.get("maquina") or "").strip()
+            if escrito and maquinas:
+                otro = _buscar_maquina(escrito, maquinas)
+                if otro != servicio["id_maquina"]:
+                    datos["id_maquina"] = otro
+                    datos["maquina_nombre"] = next(
+                        m["nombre"] for m in maquinas if m["id"] == otro)
+            elif escrito and not maquinas and _buscar_numero(escrito) != numero:
+                raise ValueError("No se pudo leer la lista de máquinas de Asinfo: "
+                                 "la máquina no se puede cambiar ahora.")
+            despues = store.actualizar_service(id_service, datos)
+            flash(f"Corregido el mantenimiento de {_mq(despues['maquina_nombre'])}.", "ok")
+            return _adonde_volver(despues)
+        except Exception as exc:  # noqa: BLE001
+            flash(str(exc), "error")
+
+    return render_template(
+        "mantenimiento.html",
+        servicio=servicio,
+        tipos=tipos,
+        hoy=date.today().isoformat(),
+        responsables=store.responsables(),
+        volver=request.args.get("volver") or request.form.get("volver"),
+        numero=numero,
+        nombres_maquinas={str(m["numero"]): m["nombre"] for m in maquinas
+                          if m.get("numero") is not None},
+    )
+
+
+@app.route("/mantenimiento/<int:id_service>/borrar", methods=["POST"])
+@requiere_login
+def mantenimiento_borrar(id_service):
+    try:
+        borrado = store.borrar_service(id_service)
+    except Exception as exc:  # noqa: BLE001
+        flash(str(exc), "error")
+        return redirect(url_for("registrar"))
+    if borrado is None:
+        flash("Ese mantenimiento ya no estaba.", "ok")
+        return redirect(url_for("registrar"))
+    flash(f"Borrado el mantenimiento de {_mq(borrado['maquina_nombre'])} del "
+          f"{borrado['fecha'].strftime('%d/%m/%Y')}. Se puede deshacer desde "
+          f"«Qué cambió».", "ok")
+    return _adonde_volver(borrado)
+
+
+@app.route("/cambios")
+@requiere_login
+def cambios_view():
+    """Qué se cargó, corrigió o borró a mano, con un botón para deshacerlo."""
+    cambios = store.cambios(limite=100)
+    for c in cambios:
+        c["detalle"] = _describir_cambio(c)
+    return render_template("cambios.html", cambios=cambios)
+
+
+# Cómo se llama cada campo cuando se cuenta qué cambió.
+_NOMBRE_CAMPO = {"maquina_nombre": "máquina", "tipo_id": "qué se hizo",
+                 "fecha": "fecha", "hecho_por": "quién", "horas": "horas",
+                 "repuestos": "repuestos", "nota": "nota"}
+
+
+def _describir_cambio(c):
+    """«horas: 20 → 10 · fecha: 31/08/2026 → 21/09/2026», en castellano.
+
+    Las filas de antes y después vienen del JSON, así que las fechas y las
+    horas son texto: se les da la forma de la pantalla a mano.
+    """
+    def ver(campo, fila):
+        v = (fila or {}).get(campo)
+        if v in (None, ""):
+            return "—"
+        if campo == "fecha":
+            try:
+                return datetime.strptime(str(v)[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+            except ValueError:
+                return str(v)
+        if campo == "horas":
+            return _editable(Decimal(str(v))) + " h"
+        if campo == "maquina_nombre":
+            return _mq(v)
+        if campo == "tipo_id":
+            return c.get("tipo_antes" if fila is c.get("antes") else "tipo_despues") or str(v)
+        return str(v)
+
+    if c["que"] != "editado":
+        fila = c.get("antes") or c.get("despues") or {}
+        partes = [ver("fecha", fila), c.get("tipo_antes") or c.get("tipo_despues") or ""]
+        if fila.get("horas"):
+            partes.append(ver("horas", fila))
+        if fila.get("hecho_por"):
+            partes.append(fila["hecho_por"])
+        return " · ".join(p for p in partes if p)
+    cambiados = []
+    for campo, nombre in _NOMBRE_CAMPO.items():
+        if campo == "maquina_nombre":
+            distinto = c["antes"].get("id_maquina") != c["despues"].get("id_maquina")
+        else:
+            distinto = ver(campo, c["antes"]) != ver(campo, c["despues"])
+        if distinto:
+            cambiados.append(f"{nombre}: {ver(campo, c['antes'])} → {ver(campo, c['despues'])}")
+    return " · ".join(cambiados) or "sin cambios"
+
+
+@app.route("/cambios/<int:id_cambio>/deshacer", methods=["POST"])
+@requiere_login
+def cambio_deshacer(id_cambio):
+    try:
+        cambio = store.deshacer_cambio(id_cambio)
+    except Exception as exc:  # noqa: BLE001
+        flash(str(exc), "error")
+    else:
+        fila = cambio.get("antes") or cambio.get("despues") or {}
+        flash(f"Deshecho: {QUE_CAMBIO.get(cambio['que'], cambio['que'])} el "
+              f"mantenimiento de {_mq(fila.get('maquina_nombre'))}.", "ok")
+    return redirect(url_for("cambios_view"))
+
+
+# Cómo se dice cada cambio en pantalla.
+QUE_CAMBIO = {"cargado": "se cargó", "editado": "se corrigió", "borrado": "se borró"}
+
+
+def _numero_de(id_maquina, nombre=None):
+    """El número de planta de una máquina, a partir de su id de Asinfo.
+
+    Si Asinfo no contesta y se tiene el nombre guardado («TEJEDURIA-MQ 018»),
+    el número sale de ahí: es lo que ya hace el filtro `mq`.
+    """
+    for m in _maquinas_o_nada():
+        if m["id"] == id_maquina:
+            return m.get("numero")
+    if nombre:
+        encontrado = re.search(r"(\d+)\s*$", nombre)
+        if encontrado:
+            return int(encontrado.group(1))
+    return None
+
+
+def _maquinas_o_nada():
+    """Las máquinas de Asinfo, una vez por request. Vacío si no contesta."""
+    if not hasattr(g, "_maquinas"):
+        try:
+            g._maquinas, _, _ = asinfo.maquinas()
+        except asinfo.AsinfoNoDisponible:
+            g._maquinas = []
+    return g._maquinas
+
+
+@app.template_global("url_maquina")
+def _url_maquina(maquina, **extra):
+    """El link a la ficha, por el NÚMERO de planta: /maquina/18 es la MQ 18.
+
+    Acepta la máquina entera o sólo su id de Asinfo, que es lo que guardan
+    las tablas propias. Antes el link llevaba el id (la MQ 18 era
+    /maquina/27) y nadie entendía qué máquina estaba mirando.
+    """
+    if isinstance(maquina, dict):
+        numero = maquina.get("numero")
+        if numero is None:
+            numero = _numero_de(maquina.get("id"), maquina.get("nombre"))
+    else:
+        numero = _numero_de(maquina)
+    if numero is None:
+        return url_for("maquinas_lista")
+    return url_for("maquina_detalle", numero=numero, **extra)
 
 
 @app.route("/tipos", methods=["GET", "POST"])
@@ -1160,19 +1398,28 @@ def maquinas_lista():
 # --------------------------------------------------------------------------
 # Ficha de una máquina
 # --------------------------------------------------------------------------
-@app.route("/maquina/<int:id_maquina>", methods=["GET", "POST"])
+@app.route("/maquina/<int:numero>", methods=["GET", "POST"])
 @requiere_login
-def maquina_detalle(id_maquina):
-    try:
-        maquinas, _, _ = asinfo.maquinas()
-    except asinfo.AsinfoNoDisponible:
-        maquinas = []
-    maquina = next((m for m in maquinas if m["id"] == id_maquina), None)
+def maquina_detalle(numero):
+    """La ficha, por el número con el que la llaman en planta: /maquina/18 es
+    la MQ 18. El id de Asinfo (27 para la 18) no lo conoce nadie; se resuelve
+    acá adentro y no sale en ningún link."""
+    maquinas = _maquinas_o_nada()
+    maquina = next((m for m in maquinas if m.get("numero") == numero), None)
     # Una máquina que no está en Asinfo no tiene ficha que mostrar. Se vuelve
     # al listado diciéndolo, en vez de dibujar media pantalla vacía.
     if not maquina and maquinas:
-        flash("Esa máquina no está en Asinfo.", "error")
+        flash(f"No hay ninguna máquina {numero}.", "error")
         return redirect(url_for("maquinas_lista"))
+    if maquina:
+        id_maquina = maquina["id"]
+    else:
+        # Asinfo no contesta. El id sale de lo que ya se cargó acá: media
+        # pantalla (los mantenimientos) es mejor que ninguna.
+        id_maquina = store.id_por_numero(numero)
+        if id_maquina is None:
+            flash("No se pudo leer la lista de máquinas de Asinfo.", "error")
+            return redirect(url_for("maquinas_lista"))
 
     tipos = store.tipos()
     if request.method == "POST" and request.form.get("que") == "eficiencia":
@@ -1202,7 +1449,7 @@ def maquina_detalle(id_maquina):
             flash("Guardado cuánto debería dar.", "ok")
         except Exception as exc:  # noqa: BLE001
             flash(str(exc), "error")
-        return redirect(url_for("maquina_detalle", id_maquina=id_maquina,
+        return redirect(url_for("maquina_detalle", numero=numero,
                                 abrir="deberia") + "#deberia")
 
     if request.method == "POST":
@@ -1234,7 +1481,7 @@ def maquina_detalle(id_maquina):
             flash("Ficha guardada.", "ok")
         except Exception as exc:  # noqa: BLE001
             flash(str(exc), "error")
-        return redirect(url_for("maquina_detalle", id_maquina=id_maquina))
+        return redirect(url_for("maquina_detalle", numero=numero))
 
     # 60 meses y no 12: con doce, «por año» daría dos años cortados por la
     # mitad. Asinfo tiene kilos desde julio de 2022, así que entran todos, y
@@ -1280,7 +1527,7 @@ def ir_a_maquina():
     except ValueError as exc:
         flash(str(exc), "error")
         return redirect(url_for("maquinas_lista"))
-    return redirect(url_for("maquina_detalle", id_maquina=id_maquina))
+    return redirect(_url_maquina(id_maquina))
 
 
 def _dias_de_mantenimiento(id_maquina, historial):
@@ -1296,9 +1543,12 @@ def _dias_de_mantenimiento(id_maquina, historial):
         d = por_dia.setdefault(h["fecha"], {"fecha": h["fecha"], "tipos": [],
                                             "notas": [], "repuestos": [],
                                             "quien": set(), "kg": None,
-                                            "horas": None})
+                                            "horas": None, "registros": []})
         if h["tipo_nombre"] not in d["tipos"]:
             d["tipos"].append(h["tipo_nombre"])
+        # Cada registro con su id: el lapicito de la fila lleva a corregirlo.
+        # Si el mismo día hay dos, son dos lapicitos.
+        d["registros"].append({"id": h.get("id"), "tipo": h["tipo_nombre"]})
         # Si el mismo día se hicieron dos cosas, la máquina estuvo parada la
         # suma de las dos: lo que se pregunta es cuánto estuvo sin tejer.
         if h.get("horas"):

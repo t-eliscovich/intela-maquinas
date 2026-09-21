@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block titulo %}Qué cambió{% endblock %}
+{% block contenido %}
+<h1>Qué cambió
+  <small>Lo que se cargó, se corrigió o se borró a mano. Cada cosa se puede deshacer.</small></h1>
+
+{% if not cambios %}
+<div class="bloque"><div class="vacio">
+  <h3>Todavía no hay cambios anotados</h3>
+  <p>Acá va a quedar cada mantenimiento que se cargue, se corrija o se borre
+     desde el programa.</p>
+</div></div>
+{% else %}
+<div class="bloque">
+  <div class="titulo"><h2>{{ cambios | length | num(0) }} cambios</h2>
+    <p>El más nuevo arriba. Se deshace de a uno, empezando por el más nuevo.</p></div>
+  <table>
+    <thead><tr>
+      <th>Cuándo</th><th>Qué pasó</th><th>Máquina</th>
+      <th class="oculta-chico">Detalle</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for c in cambios %}
+      {% set fila = c.antes or c.despues or {} %}
+      <tr class="{{ 'tenue' if c.deshecho_en }}">
+        <td>{{ c.cuando.strftime('%d/%m/%Y %H:%M') if c.cuando else '—' }}</td>
+        <td>
+          {% if c.que == 'cargado' %}<span class="etiqueta limpieza">Se cargó</span>
+          {% elif c.que == 'editado' %}<span class="etiqueta agujas">Se corrigió</span>
+          {% else %}<span class="etiqueta" style="background:#fee2e2;color:#b91c1c">Se borró</span>{% endif %}
+        </td>
+        <td>
+          {% if fila.id_maquina %}
+            <a href="{{ url_maquina(fila.id_maquina | int) }}">{{ fila.maquina_nombre | mq }}</a>
+          {% else %}—{% endif %}
+        </td>
+        <td class="tenue oculta-chico">{{ c.detalle }}</td>
+        <td class="der">
+          {% if c.deshecho_en %}
+            <span class="tenue">Deshecho</span>
+          {% elif c.se_puede_deshacer %}
+            <form method="POST" action="{{ url_for('cambio_deshacer', id_cambio=c.id) }}" style="display:inline">
+              <button class="btn suave" type="submit">Deshacer</button>
+            </form>
+          {% else %}
+            <span class="tenue" title="Se volvió a tocar después: deshacé primero el más nuevo.">—</span>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<p class="nota"><a href="{{ url_for('registrar') }}">← Cargar mantenimiento</a></p>
+{% endblock %}

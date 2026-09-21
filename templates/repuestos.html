@@ -16,7 +16,7 @@
 {% macro celda(f, c) -%}
   {% if c.tipo == 'maquina' %}
     {% set m = maquinas_por_id.get(f[c.campo]) %}
-    <a href="{{ url_for('maquina_detalle', id_maquina=f[c.campo]) }}"
+    <a href="{{ url_maquina(f[c.campo]) }}"
        class="mq" style="text-decoration:none">{{ m | mq }}</a>
   {% elif c.tipo in ('entero', 'decimal') %}
     {{ f[c.campo] | num(c.decimales or 0) }}{{ c.sufijo if f[c.campo] is not none }}

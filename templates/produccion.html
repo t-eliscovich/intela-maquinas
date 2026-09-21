@@ -36,7 +36,7 @@
     <tbody>
     {% for f in filas %}
       <tr>
-        <td><a href="{{ url_for('maquina_detalle', id_maquina=f.maquina.id) }}"
+        <td><a href="{{ url_maquina(f.maquina.id) }}"
                class="mq" style="text-decoration:none">{{ f.maquina | mq }}</a></td>
         <td class="der">{{ f.e.rpm | num(1) }}</td>
         <td class="der tenue oculta-chico">{{ f.e.sistemas or '—' }}</td>
@@ -75,7 +75,7 @@
   <div class="relleno" style="padding:10px 14px">
     {% for m in sin_dato %}
       <a class="btn chico suave" style="margin:0 4px 4px 0"
-         href="{{ url_for('maquina_detalle', id_maquina=m.id, abrir='deberia') }}#deberia"
+         href="{{ url_maquina(m.id, abrir='deberia') }}#deberia"
       >{{ m | mq }}</a>
     {% endfor %}
   </div>

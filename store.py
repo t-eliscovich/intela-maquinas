@@ -8,6 +8,8 @@ Programa Core: el deploy no corre migraciones.
 """
 from __future__ import annotations
 
+import json
+import re
 from contextlib import contextmanager
 
 import psycopg2
@@ -487,6 +489,23 @@ ESQUEMA = """
             );
             CREATE UNIQUE INDEX IF NOT EXISTS gramaje_orden_idx
                 ON mantenimiento.gramaje (orden);
+
+            -- Qué se cargó, se corrigió o se borró a mano en los
+            -- mantenimientos, con cómo estaba antes y cómo quedó. Existe para
+            -- poder DESHACER: en planta se cargan las horas en la máquina
+            -- equivocada, se borra la fila que no era, y sin esto no hay
+            -- vuelta atrás. La planilla no pasa por acá: ésa se recarga entera.
+            CREATE TABLE IF NOT EXISTS mantenimiento.cambio (
+                id           serial PRIMARY KEY,
+                service_id   integer NOT NULL,
+                que          text NOT NULL,
+                antes        jsonb,
+                despues      jsonb,
+                cuando       timestamptz NOT NULL DEFAULT now(),
+                deshecho_en  timestamptz
+            );
+            CREATE INDEX IF NOT EXISTS cambio_service_idx
+                ON mantenimiento.cambio (service_id, id DESC);
 """
 
 
@@ -517,15 +536,176 @@ def editar_tipo(tipo_id, nombre, cada_kg, cada_rollos, cada_dias, activo) -> Non
 
 # --- Services hechos -------------------------------------------------------
 def registrar_service(id_maquina, maquina_nombre, tipo_id, fecha, hecho_por, nota,
-                      repuestos=None, horas=None) -> None:
-    _ejecutar(
+                      repuestos=None, horas=None) -> int | None:
+    """Guarda un mantenimiento cargado a mano y devuelve su id.
+
+    Anota el alta en el historial de cambios, así se puede deshacer: en
+    planta se carga en la máquina equivocada más seguido de lo que uno cree.
+    """
+    fila = _una_escribiendo(
         """INSERT INTO mantenimiento.service
                (id_maquina, maquina_nombre, tipo_id, fecha, hecho_por, nota,
                 repuestos, horas)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+           RETURNING *""",
         (id_maquina, maquina_nombre, tipo_id, fecha, hecho_por.strip(),
          (nota or "").strip() or None, (repuestos or "").strip() or None, horas),
     )
+    if not fila:
+        return None
+    anotar_cambio(fila["id"], "cargado", None, fila)
+    return fila["id"]
+
+
+def _una_escribiendo(sql: str, args: tuple = ()) -> dict | None:
+    """Ejecuta una sentencia que escribe y devuelve la fila del RETURNING.
+
+    Con conexión propia y `commit` a mano: `_todos` no commitea —es para leer—
+    y un INSERT o un DELETE que sale por ahí se va en el rollback sin avisar.
+    """
+    with _conn() as con, con.cursor(cursor_factory=RealDictCursor) as cur:
+        try:
+            cur.execute(sql, args)
+            fila = cur.fetchone()
+            con.commit()
+        except Exception:
+            con.rollback()
+            raise
+    return dict(fila) if fila else None
+
+
+# Lo que se puede corregir de un mantenimiento ya cargado: todo menos de qué
+# hoja y fila de la planilla salió. Los kilos se calculan al vuelo, así que
+# cambiarle la máquina o la fecha no deja nada colgado.
+CAMPOS_SERVICE = ("id_maquina", "maquina_nombre", "tipo_id", "fecha", "hecho_por",
+                  "horas", "repuestos", "nota")
+
+
+def service_por_id(id_service: int) -> dict | None:
+    filas = _todos(
+        """SELECT s.*, t.nombre AS tipo_nombre
+             FROM mantenimiento.service s
+             JOIN mantenimiento.tipo_service t ON t.id = s.tipo_id
+            WHERE s.id = %s""",
+        (id_service,),
+    )
+    return filas[0] if filas else None
+
+
+def actualizar_service(id_service: int, datos: dict) -> dict | None:
+    """Corrige un mantenimiento y deja anotado cómo estaba.
+
+    Devuelve cómo quedó, o None si ya no existe. Sólo escribe los campos de
+    CAMPOS_SERVICE: la máquina, la hoja y la fila de la planilla no se tocan.
+    """
+    antes = _todos("SELECT * FROM mantenimiento.service WHERE id = %s", (id_service,))
+    if not antes:
+        return None
+    antes = antes[0]
+    sets = ", ".join(f"{c} = %s" for c in CAMPOS_SERVICE)
+    despues = _una_escribiendo(
+        f"UPDATE mantenimiento.service SET {sets} WHERE id = %s RETURNING *",
+        tuple(datos.get(c) for c in CAMPOS_SERVICE) + (id_service,),
+    )
+    if despues and any(str(antes.get(c)) != str(despues.get(c)) for c in CAMPOS_SERVICE):
+        anotar_cambio(id_service, "editado", antes, despues)
+    return despues
+
+
+def borrar_service(id_service: int) -> dict | None:
+    """Borra un mantenimiento y devuelve cómo era, para decir cuál se borró y
+    para poder volver a ponerlo. None si ya no estaba: apretar dos veces no
+    tiene que romper nada."""
+    fila = _una_escribiendo(
+        "DELETE FROM mantenimiento.service WHERE id = %s RETURNING *", (id_service,))
+    if fila:
+        anotar_cambio(id_service, "borrado", fila, None)
+    return fila
+
+
+def _restaurar_service(fila: dict) -> None:
+    """Vuelve a poner un mantenimiento borrado, con el MISMO id: los cambios
+    anotados apuntan a ese id, y con otro quedarían colgados."""
+    columnas = [c for c in fila if c != "creado_en"] + ["creado_en"]
+    _ejecutar(
+        f"""INSERT INTO mantenimiento.service ({", ".join(columnas)})
+            VALUES ({", ".join(["%s"] * len(columnas))})
+            ON CONFLICT (id) DO NOTHING""",
+        tuple(fila.get(c) for c in columnas),
+    )
+
+
+# --- Qué cambió, para poder deshacer ---------------------------------------
+def _json(fila: dict | None) -> str | None:
+    """Una fila como texto JSON. Fechas y decimales van como texto: Postgres
+    los vuelve a leer igual al restaurar."""
+    if fila is None:
+        return None
+    return json.dumps({k: (v if isinstance(v, (int, float, str, type(None)))
+                           else str(v)) for k, v in fila.items()})
+
+
+def anotar_cambio(service_id: int, que: str, antes: dict | None,
+                  despues: dict | None) -> None:
+    _ejecutar(
+        """INSERT INTO mantenimiento.cambio (service_id, que, antes, despues)
+           VALUES (%s, %s, %s::jsonb, %s::jsonb)""",
+        (service_id, que, _json(antes), _json(despues)),
+    )
+
+
+def cambios(limite: int = 100) -> list[dict]:
+    """Los últimos cambios hechos a mano, el más nuevo primero. Trae el nombre
+    del tipo de antes y de después, para decir «Limpieza» y no «tipo 3»."""
+    filas = _todos(
+        """SELECT c.*,
+                  ta.nombre AS tipo_antes, td.nombre AS tipo_despues
+             FROM mantenimiento.cambio c
+             LEFT JOIN mantenimiento.tipo_service ta
+                    ON ta.id = (c.antes->>'tipo_id')::integer
+             LEFT JOIN mantenimiento.tipo_service td
+                    ON td.id = (c.despues->>'tipo_id')::integer
+            ORDER BY c.id DESC LIMIT %s""",
+        (limite,),
+    )
+    ultimo_vivo = set()
+    for f in filas:  # vienen del más nuevo al más viejo
+        # Se deshace de a uno y del más nuevo para atrás: deshacer una
+        # corrección vieja pisaría la que vino después.
+        f["se_puede_deshacer"] = (f["deshecho_en"] is None
+                                  and f["service_id"] not in ultimo_vivo)
+        if f["deshecho_en"] is None:
+            ultimo_vivo.add(f["service_id"])
+    return filas
+
+
+def deshacer_cambio(id_cambio: int) -> dict:
+    """Vuelve atrás un cambio: lo cargado se borra, lo borrado se vuelve a
+    poner, lo editado vuelve a como estaba. Devuelve el cambio deshecho."""
+    cambio = next((c for c in cambios(limite=500) if c["id"] == id_cambio), None)
+    if cambio is None:
+        raise ValueError("Ese cambio no está en el historial.")
+    if cambio["deshecho_en"] is not None:
+        raise ValueError("Ese cambio ya se deshizo.")
+    if not cambio["se_puede_deshacer"]:
+        raise ValueError("Ese mantenimiento se volvió a tocar después. "
+                         "Deshacé primero el cambio más nuevo.")
+    que = cambio["que"]
+    if que == "cargado":
+        _una_escribiendo("DELETE FROM mantenimiento.service WHERE id = %s RETURNING id",
+                         (cambio["service_id"],))
+    elif que == "borrado":
+        _restaurar_service(cambio["antes"])
+    elif que == "editado":
+        antes = cambio["antes"]
+        sets = ", ".join(f"{c} = %s" for c in CAMPOS_SERVICE)
+        _ejecutar(f"UPDATE mantenimiento.service SET {sets} WHERE id = %s",
+                  tuple(antes.get(c) for c in CAMPOS_SERVICE) + (cambio["service_id"],))
+    else:
+        raise ValueError(f"No sé deshacer «{que}».")
+    _ejecutar("UPDATE mantenimiento.cambio SET deshecho_en = now() WHERE id = %s",
+              (id_cambio,))
+    return cambio
 
 
 def registrar_muchos(filas: list[tuple]) -> int:
@@ -669,6 +849,38 @@ def historial(id_maquina: int | None = None, limite: int = 200) -> list[dict]:
             ORDER BY s.fecha DESC, s.id DESC LIMIT %s""",
         (id_maquina, limite),
     )
+
+
+def ultimos_cargados(limite: int = 25) -> list[dict]:
+    """Los últimos mantenimientos que ENTRARON, en el orden en que se cargaron.
+
+    Es distinto de `historial`, que ordena por la fecha del mantenimiento:
+    el que carga hoy uno del 31/08 lo tiene que ver arriba de todo, para
+    confirmar que entró — con la fecha del mantenimiento quedaba enterrado
+    entre los de septiembre y parecía que no se había guardado.
+    """
+    return _todos(
+        """SELECT s.*, t.nombre AS tipo_nombre
+             FROM mantenimiento.service s
+             JOIN mantenimiento.tipo_service t ON t.id = s.tipo_id
+            ORDER BY s.creado_en DESC, s.id DESC LIMIT %s""",
+        (limite,),
+    )
+
+
+def id_por_numero(numero: int) -> int | None:
+    """El id de Asinfo de la MQ `numero`, sacado de lo que ya se cargó acá.
+
+    Es el plan B para cuando Asinfo no contesta: los mantenimientos guardan el
+    nombre de la máquina, y del nombre sale el número. No sirve para una
+    máquina que nunca tuvo nada cargado — ésa sin Asinfo no se encuentra.
+    """
+    for f in _todos("""SELECT DISTINCT id_maquina, maquina_nombre
+                         FROM mantenimiento.service"""):
+        encontrados = re.findall(r"\d+", f["maquina_nombre"] or "")
+        if encontrados and int(encontrados[-1]) == int(numero):
+            return f["id_maquina"]
+    return None
 
 
 # Los encargados de mantenimiento de tejeduria. Estan fijos porque son ellos:

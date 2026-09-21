@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block titulo %}Corregir mantenimiento{% endblock %}
+{% block contenido %}
+<h1>Corregir mantenimiento
+  <small>{{ servicio.maquina_nombre | mq }} · {{ servicio.tipo_nombre }} del {{ servicio.fecha | fecha_es }}.
+    Cómo estaba queda anotado en <a href="{{ url_for('cambios_view') }}">Qué cambió</a>.</small></h1>
+
+<div class="bloque"><div class="relleno">
+  {# Los mismos campos y en el mismo orden que Cargar mantenimiento, con lo
+     que ya tiene puesto. Todo se puede corregir, la máquina también: los
+     kilos se calculan al vuelo, así que moverlo no deja nada colgado. #}
+  <form method="POST" class="formulario">
+    <input type="hidden" name="volver" value="{{ volver or '' }}">
+    <div>
+      <label class="campo" for="maquina">Máquina</label>
+      <input name="maquina" id="maquina" inputmode="numeric" autocomplete="off"
+             value="{{ numero if numero is not none else '' }}" placeholder="1">
+    </div>
+
+    <div>
+      <label class="campo" for="tipo_id">Qué se le hizo</label>
+      <select name="tipo_id" id="tipo_id" required>
+        {% for t in tipos %}
+          <option value="{{ t.id }}" {{ 'selected' if t.id == servicio.tipo_id }}>{{ t.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label class="campo" for="fecha">Cuándo</label>
+      <input type="date" name="fecha" id="fecha" value="{{ servicio.fecha.isoformat() }}"
+             max="{{ hoy }}" required>
+    </div>
+
+    <div>
+      <label class="campo" for="hecho_por">Quién lo hizo</label>
+      <input name="hecho_por" id="hecho_por" list="responsables" required
+             value="{{ servicio.hecho_por or '' }}" autocomplete="off">
+      <datalist id="responsables">
+        {% for r in responsables %}<option value="{{ r }}">{% endfor %}
+      </datalist>
+    </div>
+
+    <div>
+      <label class="campo" for="horas">Horas</label>
+      <input name="horas" id="horas" inputmode="decimal" placeholder="2,5"
+             value="{{ servicio.horas | editable if servicio.horas else '' }}"
+             {{ 'required' if servicio.hoja is none }}>
+    </div>
+
+    <p class="ayuda ancho" style="margin:0" id="nombre-maquina"></p>
+
+    <div class="ancho" style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+      <div style="flex:1;min-width:150px">
+        <label class="campo" for="repuestos">Repuestos</label>
+        <input name="repuestos" id="repuestos" value="{{ servicio.repuestos or '' }}">
+      </div>
+      <div style="flex:2;min-width:180px">
+        <label class="campo" for="nota">Nota</label>
+        <input name="nota" id="nota" value="{{ servicio.nota or '' }}">
+      </div>
+      <button class="btn" type="submit">Guardar</button>
+    </div>
+  </form>
+</div></div>
+
+<div class="nota" style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+  <span>
+    {% if volver == 'registrar' %}
+      <a href="{{ url_for('registrar') }}">← Volver a cargar mantenimiento</a>
+    {% else %}
+      <a href="{{ url_maquina(servicio.id_maquina) }}">← Volver a la {{ servicio.maquina_nombre | mq }}</a>
+    {% endif %}
+  </span>
+  {# Borrar pregunta con la máquina y la fecha adentro, para que se sepa cuál.
+     Lo que se borra se puede volver a poner desde Qué cambió. #}
+  <form method="POST" action="{{ url_for('mantenimiento_borrar', id_service=servicio.id) }}"
+        data-que="{{ servicio.maquina_nombre | mq }} del {{ servicio.fecha | fecha_es }}"
+        onsubmit="return confirm('¿Borrar el mantenimiento de ' + this.dataset.que + '?')">
+    <input type="hidden" name="volver" value="{{ volver or '' }}">
+    <button class="btn suave" type="submit" style="color:var(--rojo)">Borrar este mantenimiento</button>
+  </form>
+</div>
+
+{# El nombre de Asinfo, mientras se escribe el número: igual que en Cargar. #}
+<script>
+(function () {
+  var nombres = {{ nombres_maquinas | tojson }};
+  var campo = document.getElementById('maquina');
+  var salida = document.getElementById('nombre-maquina');
+  if (!campo || !salida) return;
+  function mostrar() {
+    var escrito = (campo.value || '').replace(/[^0-9]/g, '');
+    if (!escrito) { salida.textContent = ''; return; }
+    var numero = parseInt(escrito, 10);
+    var nombre = nombres[String(numero)];
+    salida.textContent = nombre || ('No existe la máquina ' + numero + '. Fijate el número.');
+  }
+  campo.addEventListener('input', mostrar);
+  mostrar();
+})();
+</script>
+{% endblock %}
