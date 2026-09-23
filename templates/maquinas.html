@@ -16,14 +16,18 @@
   {% if not filas %}
     <div class="vacio"><h3>No hay máquinas para mostrar</h3></div>
   {% else %}
-  <table>
+  {# Con los tipos de mantenimiento son 13 columnas: en una pantalla angosta
+     la última quedaba cortada por el borde del bloque. Ahora los títulos de
+     los tipos van en dos renglones y, si igual no entra, la tabla se corre. #}
+  <div class="desliza">
+  <table class="tabla-maquinas">
     <thead>
       <tr>
         <th>Máquina</th><th class="der">Tope kg</th><th>Marca</th><th>Modelo</th>
         <th class="der">Diámetro</th><th class="der">Galga</th>
         <th class="der oculta-chico">Alimentadores</th><th class="der oculta-chico">Agujas</th>
         <th class="der oculta-chico">Año</th>
-        {% for t in tipos %}<th class="oculta-chico">{{ t.nombre }}</th>{% endfor %}
+        {% for t in tipos %}<th class="oculta-chico tipo">{{ t.nombre }}</th>{% endfor %}
       </tr>
     </thead>
     <tbody>
@@ -58,6 +62,7 @@
     {% endfor %}
     </tbody>
   </table>
+  </div>
   {% endif %}
 </div>
 {% endblock %}
