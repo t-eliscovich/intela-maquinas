@@ -1391,7 +1391,12 @@ def maquinas_lista():
         })
     filas.sort(key=lambda f: (f["maquina"]["numero"] is None, f["maquina"]["numero"] or 0))
 
-    return render_template("maquinas.html", filas=filas, tipos=tipos, error=error,
+    # La limpieza va primera, pegada al tope: es la que prende el semáforo y la
+    # que el mecánico mira. Los otros tipos quedan al final.
+    es_limpieza = lambda t: (t["nombre"] or "").strip().lower() == "limpieza"
+    return render_template("maquinas.html", filas=filas, error=error,
+                           tipos_primero=[t for t in tipos if es_limpieza(t)],
+                           tipos_resto=[t for t in tipos if not es_limpieza(t)],
                            faltan=sum(1 for f in filas if f["falta"]))
 
 

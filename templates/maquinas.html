@@ -23,11 +23,13 @@
   <table class="tabla-maquinas">
     <thead>
       <tr>
-        <th>Máquina</th><th class="der">Tope kg</th><th>Marca</th><th>Modelo</th>
+        <th>Máquina</th><th class="der">Tope kg</th>
+        {% for t in tipos_primero %}<th class="oculta-chico tipo">{{ t.nombre }}</th>{% endfor %}
+        <th>Marca</th><th>Modelo</th>
         <th class="der">Diámetro</th><th class="der">Galga</th>
         <th class="der oculta-chico">Alimentadores</th><th class="der oculta-chico">Agujas</th>
         <th class="der oculta-chico">Año</th>
-        {% for t in tipos %}<th class="oculta-chico tipo">{{ t.nombre }}</th>{% endfor %}
+        {% for t in tipos_resto %}<th class="oculta-chico tipo">{{ t.nombre }}</th>{% endfor %}
       </tr>
     </thead>
     <tbody>
@@ -48,6 +50,9 @@
           {% if f.tope %}{{ f.tope | num(0) }}
           {% else %}<span class="marca-estado sin_tope">falta</span>{% endif %}
         </td>
+        {% for t in tipos_primero %}
+          <td class="tenue oculta-chico">{{ f.ultimos[t.id] | fecha_es }}</td>
+        {% endfor %}
         <td>{{ f.ficha.marca or '—' }}</td>
         <td>{{ f.ficha.modelo or '—' }}</td>
         <td class="der">{{ f.ficha.diametro | num(0) if f.ficha.diametro else '—' }}</td>
@@ -55,7 +60,7 @@
         <td class="der oculta-chico">{{ f.ficha.alimentadores or '—' }}</td>
         <td class="der oculta-chico">{{ f.ficha.agujas | num(0) if f.ficha.agujas else '—' }}</td>
         <td class="der oculta-chico">{{ f.ficha.anio or '—' }}</td>
-        {% for t in tipos %}
+        {% for t in tipos_resto %}
           <td class="tenue oculta-chico">{{ f.ultimos[t.id] | fecha_es }}</td>
         {% endfor %}
       </tr>
