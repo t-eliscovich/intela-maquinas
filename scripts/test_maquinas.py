@@ -1240,6 +1240,46 @@ check("la tela con comilla no rompe el javascript",
       "this.dataset.que" in _pagina and "JERSEY 3,0 M" in _pagina)
 store.ajustes = lambda id_maquina=None, tela=None, limite=400: []
 
+# --- 8e-bis2. composición de tela ------------------------------------------
+# La pestaña «Composición de tela» sale de la hoja «consumo de hilo». Antes
+# estaba plegada al pie de los ajustes y no la encontraba nadie.
+print("Composición de tela:")
+store.ajustes = lambda id_maquina=None, tela=None, limite=400: [
+    {"id": 1, "id_maquina": 10, "fecha": hoy, "tela": "Falso F", "hoja": "MAQ 1"},
+    {"id": 2, "id_maquina": 10, "fecha": hoy, "tela": "FALSO F. KW", "hoja": "MAQ 1"}]
+store.telas = lambda: [{"tela": "FALSO F", "veces": 3, "maquinas": 1, "ultima": hoy}]
+store.consumo_hilo = lambda: [
+    {"tela": "FALSO F", "hilo": "20/1 peinado 65/35", "codigo_hilo": "20/1 KW",
+     "rendimiento": 0.6691, "porcentaje": None},
+    {"tela": "FALSO F", "hilo": "16/1 oponen", "codigo_hilo": "16/1 EP",
+     "rendimiento": 0.3308, "porcentaje": None},
+    {"tela": "FALSO LYCRA", "hilo": "HILO 22/1", "codigo_hilo": None,
+     "rendimiento": None, "porcentaje": 71},
+    {"tela": "BELTIS", "hilo": "22/1 KW", "codigo_hilo": None,
+     "rendimiento": 1.0, "porcentaje": None},
+    {"tela": "BELTIS", "hilo": "HILO22/1 KW", "codigo_hilo": None,
+     "rendimiento": 1.0, "porcentaje": None}]
+_h = c.get("/ajustes").get_data(as_text=True)
+check("ajustes trae la pestaña de composición", "Composición de tela" in _h)
+check("cada ajuste muestra de qué hilos es su tela",
+      "67 %" in _h and "20/1 KW" in _h)
+check("una tela parecida NO hereda la composición de otra",
+      _h.count('class="composicion"') == 2)
+_h = c.get("/ajustes?ver=composicion").get_data(as_text=True)
+check("la pestaña lista una tarjeta por tela",
+      _h.count('class="tarjeta-composicion"') == 3)
+check("con el porcentaje de cada hilo", "66,9 %" in _h or "66.9 %" in _h)
+check("el % escrito en el nombre del hilo se muestra tal cual", "71" in _h)
+check("una tela anotada dos veces avisa que no suma 100", "suma 200 %" in _h)
+_h = c.get("/ajustes?ver=composicion&tela=lycra").get_data(as_text=True)
+check("se busca por tela", _h.count('class="tarjeta-composicion"') == 1)
+store.consumo_hilo = lambda: []
+_h = c.get("/ajustes?ver=composicion").get_data(as_text=True)
+check("sin composiciones cargadas dice de dónde salen", "consumo de hilo" in _h
+      and "Todavía no hay" in _h)
+store.ajustes = lambda id_maquina=None, tela=None, limite=400: []
+store.telas = lambda: []
+
 # --- 8e-ter. la segunda tabla de INVENTARIO LEVAS -------------------------
 # La hoja tiene DOS tablas al lado: el inventario de levas y, pegada a la
 # derecha, cuántas levas lleva cada tela. Esa segunda eran cuarenta renglones

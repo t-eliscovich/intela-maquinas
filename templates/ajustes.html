@@ -1,9 +1,93 @@
 {% extends "base.html" %}
-{% block titulo %}Ajustes{% endblock %}
+{% block titulo %}Ajustes de tela{% endblock %}
+{# La composición de la tela, de la hoja «consumo de hilo»: qué hilos lleva y
+   cuánto de cada uno. Va en una línea chica abajo del nombre, no en una
+   columna: en el celular otra columna empuja la tabla fuera de la pantalla. #}
+{% macro composicion(lista) -%}
+  {%- for h in lista -%}
+    {%- if not loop.first %} · {% endif -%}
+    {%- if h.pct is not none -%}
+      <b>{{ h.pct | num(1 if h.pct < 10 else 0) }} %</b>&nbsp;
+    {%- endif -%}
+    {{ h.codigo or h.hilo }}
+  {%- endfor -%}
+{%- endmacro %}
+
 {% block contenido %}
 
-<h1>Ajustes de máquina
-  <small>Cómo se puso cada máquina para tejer cada tela</small></h1>
+<h1>Ajustes de tela
+  <small>Cómo se puso cada máquina para tejer cada tela, y de qué hilos está hecha</small></h1>
+
+<div class="pestanas">
+  {% for p in pestanas %}
+    <a href="{{ url_for('ajustes_view', ver=p.clave) if p.clave != 'ajustes' else url_for('ajustes_view') }}"
+       class="{{ 'activa' if p.clave == ver }}">{{ p.titulo }}</a>
+  {% endfor %}
+</div>
+
+{% if ver == 'composicion' %}
+{# La hoja «consumo de hilo» de la planilla de control de ajuste, una tela por
+   cuadro. Tarjetas y no una tabla de cinco columnas: en el celular la tabla se
+   salía de la pantalla. #}
+<div class="bloque">
+  <div class="titulo" style="align-items:center;flex-wrap:wrap;gap:8px">
+    <div>
+      <h2>{{ grupos | length }} telas{% if tela %} de {{ total_telas }}{% endif %}</h2>
+      <p>De la hoja «consumo de hilo» de la planilla de control de ajuste</p>
+    </div>
+    <form method="GET" style="display:flex;gap:6px;align-items:center">
+      <input type="hidden" name="ver" value="composicion">
+      <input name="tela" value="{{ tela }}" placeholder="Tela" list="telas-consumo"
+             aria-label="Tela" style="width:150px;height:28px">
+      <datalist id="telas-consumo">
+        {% for t in telas_consumo %}<option value="{{ t }}">{% endfor %}
+      </datalist>
+      <button class="btn chico" type="submit">Buscar</button>
+      {% if tela %}
+        <a class="btn chico suave" href="{{ url_for('ajustes_view', ver='composicion') }}">Ver todas</a>
+      {% endif %}
+    </form>
+  </div>
+
+  {% if not total_telas %}
+    <div class="vacio">
+      <h3>Todavía no hay composiciones cargadas</h3>
+      <p>Salen de la hoja «consumo de hilo». Se cargan subiendo la planilla de
+         control de ajuste en <a href="{{ url_for('carga') }}">Cargar</a>.</p>
+    </div>
+  {% elif not grupos %}
+    <div class="vacio"><h3>Ninguna tela se llama «{{ tela }}»</h3></div>
+  {% else %}
+  <div class="tarjetas-composicion">
+    {% for g in grupos %}
+      <div class="tarjeta-composicion">
+        <div class="nombre">
+          <a href="{{ url_for('ajustes_view', tela=g.tela) }}"
+             title="Ver los ajustes de esta tela">{{ g.tela }}</a>
+          {% if g.suma is not none and (g.suma < 98 or g.suma > 102) %}
+            <span class="aviso-suma" title="Los hilos de esta tela no suman 100 %">
+              suma {{ g.suma | num(0) }} %</span>
+          {% endif %}
+        </div>
+        <table>
+          {% for h in g.hilos %}
+            <tr>
+              <td class="der pct">{% if h.pct is not none %}{{ h.pct | num(1) }} %{% else %}—{% endif %}</td>
+              <td>{{ h.hilo }}
+                {% if h.codigo and h.codigo != h.hilo %}
+                  <span class="tenue">· {{ h.codigo }}</span>{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </table>
+      </div>
+    {% endfor %}
+  </div>
+  <p class="nota">El porcentaje es cuánto de cada kilo de tela es de ese hilo. Si
+    una tela no suma 100 %, casi siempre está anotada dos veces en la hoja con
+    los hilos escritos distinto: se corrige en el Excel y se vuelve a subir.</p>
+  {% endif %}
+</div>
+{% else %}
 
 {# El buscador va en la misma línea del título del cuadro: es un renglón de dos
    casilleros, no merece un bloque propio con aire arriba y abajo. #}
@@ -102,6 +186,17 @@
     </div>
   </details>
 
+  {% if tela %}
+    <div class="caja-composicion">
+      <span class="campo" style="margin:0">Composición de {{ tela | upper }}</span>
+      {% if composicion_buscada %}
+        <div>{{ composicion(composicion_buscada) }}</div>
+      {% else %}
+        <div class="tenue">La hoja «consumo de hilo» no trae esta tela.</div>
+      {% endif %}
+    </div>
+  {% endif %}
+
   {% if not filas %}
     <div class="vacio">
       <h3>No hay ningún ajuste cargado</h3>
@@ -151,6 +246,9 @@
         <td style="white-space:nowrap">{% if f.fecha %}{{ f.fecha | fecha_es }}
             {% else %}<span class="tenue">sin fecha</span>{% endif %}</td>
         <td>{{ f.tela or '—' }}
+          {% if f.composicion %}
+            <div class="composicion">{{ composicion(f.composicion) }}</div>
+          {% endif %}
           {% if f.nota %}
             <div class="tenue" style="font-size:11px">{{ f.nota }}</div>
           {% endif %}</td>
@@ -204,7 +302,10 @@
     <tbody>
     {% for t in telas[:12] %}
       <tr>
-        <td><a href="{{ url_for('ajustes_view', tela=t.tela) }}">{{ t.tela }}</a></td>
+        <td><a href="{{ url_for('ajustes_view', tela=t.tela) }}">{{ t.tela }}</a>
+          {% if t.composicion %}
+            <div class="composicion">{{ composicion(t.composicion) }}</div>
+          {% endif %}</td>
         <td class="der">{{ t.veces | num(0) }}</td>
         <td class="der">{{ t.maquinas | num(0) }}</td>
         <td class="tenue oculta-chico">{{ t.ultima | fecha_es }}</td>
@@ -218,36 +319,6 @@
 </div>
 {% endif %}
 
-{% if consumo %}
-{# El consumo de hilo estaba en una pantalla aparte. Es la misma pregunta que
-   los ajustes — cómo se teje una tela — así que va acá, plegado. #}
-<div class="bloque">
-  <details>
-    <summary>Consumo de hilo · {{ consumo | length }} telas</summary>
-    <table>
-      <thead><tr><th>Tela</th><th>Hilo</th><th class="oculta-chico">Código</th>
-                 <th class="der">Rendimiento</th>
-                 <th class="der">Del total</th></tr></thead>
-      <tbody>
-      {% for c in consumo %}
-        <tr>
-          <td>{{ c.tela }}</td>
-          <td class="tenue">{{ c.hilo }}</td>
-          <td class="tenue oculta-chico">{{ c.codigo_hilo or '—' }}</td>
-          <td class="der">{{ c.rendimiento | num(4) }}</td>
-          {# Ocho telas tienen el porcentaje escrito adentro del nombre del
-             hilo en vez del rendimiento. Se muestra como está escrito: 71 % y
-             0,71 son la misma idea y pasarlo de una a otra sería corregir la
-             planilla. #}
-          <td class="der">
-            {% if c.porcentaje %}{{ c.porcentaje | num(0) }} %
-            {% else %}<span class="tenue">—</span>{% endif %}</td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </details>
-</div>
 {% endif %}
 
 {% endblock %}

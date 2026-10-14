@@ -1613,6 +1613,8 @@ def ajustes_view():
 
     escrito = (request.args.get("maquina") or "").strip()
     tela = (request.args.get("tela") or "").strip()
+    if request.args.get("ver") == "composicion":
+        return _composicion_view(tela)
     id_maquina = None
     if escrito:
         try:
@@ -1622,20 +1624,101 @@ def ajustes_view():
 
     filas = store.ajustes(id_maquina=id_maquina, tela=tela or None)
     nombres = {m["id"]: m for m in maquinas}
+    consumo = store.consumo_hilo()
+    composiciones = _composiciones(consumo)
     for f in filas:
         f["maquina"] = nombres.get(f["id_maquina"])
+        f["composicion"] = composiciones.get(_clave_tela(f.get("tela")))
+    telas = store.telas()
+    for t in telas:
+        t["composicion"] = composiciones.get(_clave_tela(t.get("tela")))
 
-    # El consumo de hilo vive acá y no en una pantalla propia: la pregunta es
-    # la misma — cómo se teje una tela — y tenerla partida en dos obligaba a
-    # cambiar de pantalla para contestar media.
-    return render_template("ajustes.html", filas=filas, telas=store.telas(),
+    # La composición entera va en su pestaña («Composición de tela»); acá cada
+    # ajuste trae la de su tela en una línea chica, cuando el nombre coincide.
+    return render_template("ajustes.html", ver="ajustes",
+                           pestanas=PESTANAS_AJUSTES, filas=filas, telas=telas,
                            resumen=store.resumen_ajustes(),
-                           consumo=store.consumo_hilo(),
+                           composicion_buscada=composiciones.get(_clave_tela(tela)),
                            maquinas=maquinas, hoy=date.today().isoformat(),
                            abrir_nuevo=request.args.get("nuevo"),
                            escrito=escrito, tela=tela,
                            una=_una_maquina(filas),
                            con_dato=_columnas_con_dato(filas))
+
+
+PESTANAS_AJUSTES = [
+    {"clave": "ajustes", "titulo": "Ajustes"},
+    {"clave": "composicion", "titulo": "Composición de tela"},
+]
+
+
+def _composicion_view(buscada: str):
+    """La pestaña «Composición de tela»: de qué hilos está hecha cada tela.
+
+    Sale de la hoja «consumo de hilo» de la planilla de control de ajuste, tal
+    como vino. Una tela por cuadro, los hilos del que más lleva al que menos.
+    Si los porcentajes de una tela no suman 100 se avisa al lado: casi siempre
+    es que la tela está anotada dos veces en la planilla, con los hilos
+    escritos distinto, y eso se arregla en el Excel, no acá.
+    """
+    consumo = store.consumo_hilo()
+    grupos: dict[str, dict] = {}
+    for c in consumo:
+        clave = _clave_tela(c.get("tela"))
+        if not clave:
+            continue
+        g = grupos.setdefault(clave, {"tela": c.get("tela"), "hilos": []})
+        g["hilos"].append(c)
+    composiciones = _composiciones(consumo)
+    salida = []
+    for clave, g in grupos.items():
+        if buscada and _clave_tela(buscada) not in clave:
+            continue
+        hilos = composiciones.get(clave, [])
+        con_pct = [h["pct"] for h in hilos if h["pct"] is not None]
+        g["hilos"] = hilos
+        g["suma"] = sum(con_pct) if con_pct else None
+        salida.append(g)
+    salida.sort(key=lambda g: (g["tela"] or "").upper())
+    return render_template("ajustes.html", ver="composicion",
+                           pestanas=PESTANAS_AJUSTES, grupos=salida,
+                           total_telas=len(grupos), tela=buscada, escrito="",
+                           telas_consumo=sorted(g["tela"] for g in grupos.values()))
+
+
+def _clave_tela(nombre) -> str:
+    """El nombre de la tela para cruzar el ajuste con el consumo de hilo.
+
+    Sólo se sacan mayúsculas, espacios y puntuación: «Falso F» y «FALSO F» son
+    la misma tela. Nada más: «FALSO F. KW» y «FALSO F» pueden no tener los
+    mismos hilos, y ponerle a un ajuste la composición de otra tela es peor
+    que no ponerle ninguna.
+    """
+    return re.sub(r"[^A-Z0-9]", "", (nombre or "").upper())
+
+
+def _composiciones(consumo) -> dict[str, list[dict]]:
+    """De qué hilos está hecha cada tela, sacado del consumo de hilo.
+
+    El rendimiento reparte el kilo entre los hilos (0,4786 → 47,9 %). Las ocho
+    telas que traen el porcentaje escrito en el nombre del hilo lo usan tal
+    cual. Si una tela está cargada dos veces en la planilla (suman 200 %), se
+    muestra igual: es lo que dice la planilla, y la carga ya lo avisó.
+    """
+    salida: dict[str, list[dict]] = {}
+    for c in consumo or []:
+        if c.get("rendimiento") is not None:
+            pct = float(c["rendimiento"]) * 100
+        elif c.get("porcentaje") is not None:
+            pct = float(c["porcentaje"])
+        else:
+            pct = None
+        salida.setdefault(_clave_tela(c.get("tela")), []).append(
+            {"hilo": c.get("hilo"), "codigo": c.get("codigo_hilo"), "pct": pct})
+    for lista in salida.values():
+        lista.sort(key=lambda h: -(h["pct"] or 0))
+    salida.pop("", None)
+    return salida
 
 
 # Columnas de la tabla de ajustes que a veces están vacías enteras. Cada una
