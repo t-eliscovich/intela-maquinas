@@ -1636,6 +1636,62 @@ def _dias_de_mantenimiento(id_maquina, historial):
 # --------------------------------------------------------------------------
 # Ajustes: cómo se pone la máquina para tejer cada tela
 # --------------------------------------------------------------------------
+@app.route("/ajustes/composicion", methods=["POST"])
+@requiere_login
+def composicion_guardar():
+    """Editar o cargar la composición de UNA tela desde la pantalla.
+
+    Se reemplazan todos sus hilos de una vez: es un cuadro chico y así no hay
+    filas viejas que queden colgadas. El porcentaje se escribe como se lee
+    (47,9) y se guarda como rendimiento (0,479), igual que la hoja.
+    """
+    original = (request.form.get("tela_original") or "").strip() or None
+    tela = (request.form.get("tela") or "").strip()
+    volver = url_for("ajustes_view", ver="composicion",
+                     tela=request.form.get("buscada") or None)
+    try:
+        if not tela:
+            raise ValueError("Falta el nombre de la tela.")
+        # Que el nombre no choque con OTRA tela: guardar acá borraría la otra
+        # o las juntaría sin que nadie se dé cuenta.
+        if _clave_tela(tela) != _clave_tela(original):
+            if any(_clave_tela(c.get("tela")) == _clave_tela(tela)
+                   for c in store.consumo_hilo()):
+                raise ValueError(f"Ya hay una tela «{tela}». Editá ésa.")
+
+        hilos, vistos = [], set()
+        hilos_escritos = request.form.getlist("hilo")
+        codigos = request.form.getlist("codigo")
+        pcts = request.form.getlist("pct")
+        for i, hilo in enumerate(hilos_escritos):
+            hilo = (hilo or "").strip()
+            codigo = (codigos[i] if i < len(codigos) else "").strip() or None
+            pct_txt = (pcts[i] if i < len(pcts) else "").strip().replace("%", "")
+            if not hilo:
+                if codigo or pct_txt:
+                    raise ValueError("Hay un porcentaje sin hilo: falta escribir cuál hilo.")
+                continue
+            if hilo.upper() in vistos:
+                raise ValueError(f"El hilo «{hilo}» está dos veces.")
+            vistos.add(hilo.upper())
+            pct = None
+            if pct_txt:
+                pct = excel.a_decimal_es(pct_txt)
+                if pct is None or not math.isfinite(pct) or pct <= 0 or pct > 100:
+                    raise ValueError(f"{hilo}: el porcentaje va entre 0 y 100. Por ejemplo 47,9.")
+            hilos.append({"hilo": hilo, "codigo_hilo": codigo,
+                          "rendimiento": round(pct / 100, 4) if pct else None})
+
+        if not hilos and not original:
+            raise ValueError("Falta poner al menos un hilo.")
+        store.guardar_composicion(original, tela, hilos)
+        flash(f"Composición de {tela} guardada." if hilos
+              else f"Composición de {original} borrada.", "ok")
+    except Exception as exc:  # noqa: BLE001
+        flash(str(exc), "error")
+    return redirect(volver)
+
+
 @app.route("/ajustes", methods=["GET", "POST"])
 @requiere_login
 def ajustes_view():

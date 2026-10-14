@@ -1228,6 +1228,43 @@ r = c.post("/ajustes", data={"maquina": "1", "tela": "PIQUE",
                              "gramaje_crudo": "un poco"})
 check("un gramaje que no es numero no entra", not _ajuste)
 
+# --- 8e-ter. editar y cargar la composicion de una tela -------------------
+print("Composicion de tela a mano:")
+_comp = []
+store.guardar_composicion = lambda o, t, h: _comp.append((o, t, h)) or len(h)
+store.consumo_hilo = lambda: [
+    {"tela": "ALEMANIA", "hilo": "100F36", "codigo_hilo": None, "rendimiento": 0.8, "porcentaje": None},
+    {"tela": "ALEMANIA", "hilo": "SPANDEX", "codigo_hilo": None, "rendimiento": 0.2, "porcentaje": None},
+    {"tela": "KIANA", "hilo": "75F36", "codigo_hilo": None, "rendimiento": 1, "porcentaje": None}]
+html = c.get("/ajustes?ver=composicion").get_data(as_text=True)
+check("cada tela tiene su boton de editar", html.count("✎ Editar") >= 2)
+check("hay boton para una tela nueva", "+ Nueva tela" in html)
+c.post("/ajustes/composicion", data={
+    "tela_original": "ALEMANIA", "tela": "ALEMANIA",
+    "pct": ["79,5", "20,5", ""], "hilo": ["100F36", "SPANDEX", ""], "codigo": ["", "", ""]})
+check("editar guarda los hilos con el porcentaje como rendimiento",
+      _comp and _comp[-1][0] == "ALEMANIA"
+      and [h["rendimiento"] for h in _comp[-1][2]] == [0.795, 0.205])
+_comp.clear()
+c.post("/ajustes/composicion", data={"tela_original": "", "tela": "kiana",
+                                     "pct": ["100"], "hilo": ["75F36"], "codigo": [""]})
+check("una tela nueva que ya existe no entra", not _comp)
+c.post("/ajustes/composicion", data={"tela_original": "", "tela": "PIQUE",
+                                     "pct": ["150"], "hilo": ["20/1"], "codigo": [""]})
+check("un porcentaje de mas de 100 no entra", not _comp)
+c.post("/ajustes/composicion", data={"tela_original": "", "tela": "PIQUE",
+                                     "pct": ["50", "50"], "hilo": ["20/1", "20/1"],
+                                     "codigo": ["", ""]})
+check("el mismo hilo dos veces no entra", not _comp)
+c.post("/ajustes/composicion", data={"tela_original": "", "tela": "PIQUE",
+                                     "pct": ["100"], "hilo": ["20/1 KW"], "codigo": [""]})
+check("una tela nueva entra", _comp and _comp[-1][0] is None and _comp[-1][1] == "PIQUE")
+_comp.clear()
+c.post("/ajustes/composicion", data={"tela_original": "KIANA", "tela": "KIANA",
+                                     "pct": [""], "hilo": [""], "codigo": [""]})
+check("vaciar todos los hilos borra la tela", _comp and _comp[-1][2] == [])
+store.consumo_hilo = lambda: []
+
 # --- 8e-bis. borrar un ajuste con la X ------------------------------------
 # La planilla ya se cargo y no se vuelve a cargar, asi que borrar es borrar.
 print("Borrar un ajuste:")

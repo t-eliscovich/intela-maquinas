@@ -1284,6 +1284,42 @@ def consumo_hilo() -> list[dict]:
             ORDER BY tela, rendimiento DESC NULLS LAST""")
 
 
+def guardar_composicion(tela_original: str | None, tela: str,
+                        hilos: list[dict]) -> int:
+    """Reemplaza los hilos de UNA tela, en una transacción.
+
+    `tela_original` es como se llamaba (None si es nueva). Se borran todas las
+    filas de esa tela —comparando sin mayúsculas, espacios ni puntuación, igual
+    que la pantalla las agrupa— y se escriben las nuevas. Con `hilos` vacío la
+    tela queda borrada.
+
+    `hilos` = [{hilo, codigo_hilo, rendimiento}, ...]. Devuelve cuántos quedaron.
+    """
+    clave = "[^A-Z0-9]"
+    with _conn() as con, con.cursor() as cur:
+        try:
+            # Sólo la tela que se estaba editando. Que el nombre nuevo no choque
+            # con otra tela lo controla la pantalla antes de llegar acá.
+            for nombre in (tela_original,):
+                if nombre:
+                    cur.execute(
+                        """DELETE FROM mantenimiento.consumo_hilo
+                            WHERE regexp_replace(upper(tela), %s, '', 'g')
+                                = regexp_replace(upper(%s), %s, '', 'g')""",
+                        (clave, nombre, clave))
+            cur.executemany(
+                """INSERT INTO mantenimiento.consumo_hilo
+                       (tela, hilo, codigo_hilo, rendimiento, porcentaje)
+                   VALUES (%s, %s, %s, %s, NULL)""",
+                [(tela, h["hilo"], h.get("codigo_hilo"), h.get("rendimiento"))
+                 for h in hilos])
+            con.commit()
+        except Exception:
+            con.rollback()
+            raise
+    return len(hilos)
+
+
 def gramajes(id_maquina: int | None = None) -> list[dict]:
     if id_maquina is None:
         return _todos(

@@ -13,6 +13,45 @@
   {%- endfor -%}
 {%- endmacro %}
 
+{# Editar o cargar una tela: un renglón por hilo, con dos renglones vacíos de
+   más. «+ Otro hilo» agrega otro si hacen falta. Dejar todos los hilos vacíos
+   borra la tela. #}
+{% macro form_composicion(nombre, hilos, buscada, n='nueva') -%}
+  <form method="POST" action="{{ url_for('composicion_guardar') }}">
+    <input type="hidden" name="tela_original" value="{{ nombre or '' }}">
+    <input type="hidden" name="buscada" value="{{ buscada or '' }}">
+    <label class="campo">Tela</label>
+    <input name="tela" value="{{ nombre or '' }}" required placeholder="ALEMANIA"
+           style="width:100%;margin-bottom:6px">
+    <div class="comp-filas" id="comp-filas-{{ n }}">
+      <div class="comp-fila comp-titulos"><span>%</span><span>Hilo</span><span>Código</span></div>
+      {% for h in hilos %}
+        <div class="comp-fila">
+          <input name="pct" inputmode="decimal" aria-label="Porcentaje"
+                 value="{{ h.pct | num(2) if h.pct is not none else '' }}">
+          <input name="hilo" aria-label="Hilo" value="{{ h.hilo or '' }}">
+          <input name="codigo" aria-label="Código"
+                 value="{{ h.codigo if h.codigo and h.codigo != h.hilo else '' }}">
+        </div>
+      {% endfor %}
+      {% for _ in range(2 if hilos else 3) %}
+        <div class="comp-fila">
+          <input name="pct" inputmode="decimal" aria-label="Porcentaje" placeholder="47,9">
+          <input name="hilo" aria-label="Hilo" placeholder="75F36">
+          <input name="codigo" aria-label="Código">
+        </div>
+      {% endfor %}
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px">
+      <button class="btn chico" type="submit">Guardar</button>
+      <button type="button" class="btn chico suave" onclick="otroHilo('{{ n }}')">+ Otro hilo</button>
+      <button type="button" class="btn chico suave" onclick="abrirComp('{{ n }}', true)">Cancelar</button>
+    </div>
+    {% if nombre %}<p class="ayuda" style="margin:6px 0 0">Borrando todos los hilos
+      se borra la tela.</p>{% endif %}
+  </form>
+{%- endmacro %}
+
 {% block contenido %}
 
 <h1>Ajustes de tela
@@ -46,7 +85,14 @@
       {% if tela %}
         <a class="btn chico suave" href="{{ url_for('ajustes_view', ver='composicion') }}">Ver todas</a>
       {% endif %}
+      <button type="button" class="btn chico" onclick="abrirComp('nueva')">+ Nueva tela</button>
     </form>
+  </div>
+
+  {# El cuadro para cargar una tela nueva: mismo formulario que el de editar. #}
+  <div class="tarjeta-composicion comp-editar" id="comp-editar-nueva" hidden
+       style="margin:0 0 12px">
+    {{ form_composicion(none, [], tela) }}
   </div>
 
   {% if not total_telas %}
@@ -61,13 +107,18 @@
   <div class="tarjetas-composicion">
     {% for g in grupos %}
       <div class="tarjeta-composicion">
-        <div class="nombre">
+       <div id="comp-ver-{{ loop.index }}">
+        <div class="nombre" style="display:flex;gap:6px;align-items:flex-start">
+         <div style="flex:1;min-width:0">
           <a href="{{ url_for('ajustes_view', tela=g.tela) }}"
              title="Ver los ajustes de esta tela">{{ g.tela }}</a>
           {% if g.suma is not none and (g.suma < 98 or g.suma > 102) %}
             <span class="aviso-suma" title="Los hilos de esta tela no suman 100 %">
               suma {{ g.suma | num(0) }} %</span>
           {% endif %}
+         </div>
+         <button type="button" class="lapiz-comp" title="Editar {{ g.tela }}"
+                 onclick="abrirComp({{ loop.index }})">✎ Editar</button>
         </div>
         <table>
           {% for h in g.hilos %}
@@ -79,12 +130,41 @@
             </tr>
           {% endfor %}
         </table>
+       </div>
+       <div class="comp-editar" id="comp-editar-{{ loop.index }}" hidden>
+         {{ form_composicion(g.tela, g.hilos, tela, loop.index) }}
+       </div>
       </div>
     {% endfor %}
   </div>
+  <style>
+    .lapiz-comp{border:1px solid #d8dee7;background:#fff;color:var(--acento);
+      font-size:12px;font-weight:700;padding:3px 7px;border-radius:6px;cursor:pointer;
+      white-space:nowrap}
+    .lapiz-comp:hover{color:#fff;background:var(--acento)}
+    .comp-fila{display:grid;grid-template-columns:62px 1fr 1fr;gap:4px;margin-bottom:4px}
+    .comp-fila input{height:28px;font-size:13px;padding:0 6px;min-width:0;width:100%}
+    .comp-titulos span{font-size:11px;color:var(--gris);font-weight:700;text-transform:uppercase}
+  </style>
+  <script>
+  function abrirComp(n, cerrar) {
+    var ver = document.getElementById("comp-ver-" + n);
+    if (ver) { ver.hidden = !cerrar; }
+    var ed = document.getElementById("comp-editar-" + n);
+    ed.hidden = !!cerrar;
+    if (!cerrar) { ed.querySelector("input[name=tela]").focus(); }
+  }
+  function otroHilo(n) {
+    var filas = document.getElementById("comp-filas-" + n);
+    var ultima = filas.lastElementChild.cloneNode(true);
+    ultima.querySelectorAll("input").forEach(function (i) { i.value = ""; });
+    filas.appendChild(ultima);
+    ultima.querySelector("input[name=hilo]").focus();
+  }
+  </script>
   <p class="nota">El porcentaje es cuánto de cada kilo de tela es de ese hilo. Si
     una tela no suma 100 %, casi siempre está anotada dos veces en la hoja con
-    los hilos escritos distinto: se corrige en el Excel y se vuelve a subir.</p>
+    los hilos escritos distinto: se corrige con ✎ Editar.</p>
   {% endif %}
 </div>
 {% else %}
