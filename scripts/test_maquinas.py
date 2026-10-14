@@ -1204,6 +1204,19 @@ check("la tela y los ajustes quedan como se escribieron",
 check("el gramaje con coma se entiende", _ajuste.get("gramaje_crudo") == 180.5)
 check("lo que se dejo vacio queda vacio, no en blanco",
       _ajuste.get("poleas") is None)
+# Cuatro poleas en casilleros separados: se guardan juntas, salteando las vacías.
+_ajuste.clear()
+c.post("/ajustes", data={"maquina": "1", "tela": "ALEMANIA", "polea_1": "polea 25",
+                         "polea_2": "", "polea_3": "B-11", "polea_4": "pro 36"})
+check("las cuatro poleas entran juntas",
+      _ajuste.get("poleas") == "polea 25 · B-11 · pro 36")
+_ajuste.clear()
+c.post("/ajustes", data={"maquina": "1", "tela": "ALEMANIA", "polea_1": "",
+                         "polea_2": "", "polea_3": "", "polea_4": ""})
+check("cuatro poleas vacias quedan vacias", _ajuste.get("poleas") is None)
+check("la pantalla tiene los cuatro casilleros",
+      all(f'name="polea_{n}"' in c.get("/ajustes").get_data(as_text=True)
+          for n in range(1, 5)))
 _ajuste.clear()
 r = c.post("/ajustes", data={"maquina": "1", "tela": ""})
 check("sin tela no guarda y lo dice",

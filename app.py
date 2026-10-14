@@ -1850,6 +1850,11 @@ def _guardar_ajuste_nuevo(maquinas):
 
         datos = {c: (request.form.get(c) or "").strip() or None
                  for c in CAMPOS_AJUSTE_A_MANO}
+        # Las poleas vienen en cuatro casilleros. Se guardan juntas, como las
+        # trae la planilla, en el orden en que se escribieron.
+        poleas = [(request.form.get(f"polea_{n}") or "").strip() for n in range(1, 5)]
+        if any(f"polea_{n}" in request.form for n in range(1, 5)):
+            datos["poleas"] = " · ".join(p for p in poleas if p) or None
         datos["id_maquina"] = id_maquina
         datos["maquina_nombre"] = next(
             (m["nombre"] for m in maquinas if m["id"] == id_maquina), None)

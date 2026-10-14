@@ -142,10 +142,15 @@
           <label class="campo" for="cilindro-nuevo">Cilindro</label>
           <input name="cilindro" id="cilindro-nuevo" placeholder="pro 24">
         </div>
+        {# Cuatro poleas, en casilleros separados: hay máquinas que usan tres y
+           otras cuatro. Las vacías no se guardan. #}
+        {% for n in range(1, 5) %}
         <div>
-          <label class="campo" for="poleas-nuevo">Poleas</label>
-          <input name="poleas" id="poleas-nuevo" placeholder="dibujo 30 · pro 26">
+          <label class="campo" for="polea-{{ n }}">Polea {{ n }}</label>
+          <input name="polea_{{ n }}" id="polea-{{ n }}"
+                 placeholder="{{ 'polea 25' if n == 1 else '' }}">
         </div>
+        {% endfor %}
         <div>
           <label class="campo" for="agujas-nuevo">Ajuste de agujas</label>
           <input name="ajuste_agujas" id="agujas-nuevo" placeholder="lycra pro 6,5">
