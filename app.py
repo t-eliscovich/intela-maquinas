@@ -2214,6 +2214,7 @@ CUADROS_REPUESTOS = [
          {"campo": "id_maquina", "titulo": "Máquina", "tipo": "maquina"},
          {"campo": "rodamiento", "titulo": "Rodamiento", "tipo": "texto"},
          {"campo": "codigo", "titulo": "Código", "tipo": "texto"},
+         {"campo": "nota", "titulo": "Comentarios", "tipo": "texto"},
      ]},
     {"clave": "stock", "titulo": "Cuántas bandas hay en bodega",
      "bajada": "De cada medida, contadas",

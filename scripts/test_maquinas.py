@@ -1703,7 +1703,7 @@ FILAS_CUADRO = {
                     "trabajo": "432", "retenido": "0", "anulacion": "0",
                     "nota": None}],
     "rodamientos": [{"id": 1, "id_maquina": 10, "rodamiento": "6205 2RS",
-                     "codigo": "SKF 6205"}],
+                     "codigo": "SKF 6205", "nota": "lado motor"}],
 }
 store.filas_de = lambda cuadro: list(FILAS_CUADRO[cuadro])
 # La 11 está anotada en la planilla pero sin números: pasa de verdad, y sumar
@@ -1829,8 +1829,11 @@ check("agregar un rodamiento es un INSERT sin pisar el de otra fila",
       and "ON CONFLICT" not in corridas[-1][0])
 cuerpo = c.get("/repuestos?ver=rodamientos").get_data(as_text=True)
 check("la pestaña de rodamientos tiene sus tres columnas",
-      all(x in cuerpo for x in ("Máquina", "Rodamiento", "Código"))
+      all(x in cuerpo for x in ("Máquina", "Rodamiento", "Código", "Comentarios"))
       and 'form="nueva-rodamientos"' in cuerpo)
+cuerpo = c.get("/repuestos?ver=rodamientos&cuadro=rodamientos&editar=1").get_data(as_text=True)
+check("el rodamiento se edita con el lapicito, comentario incluido",
+      'form="editar-rodamientos"' in cuerpo and 'value="lado motor"' in cuerpo)
 # Las bandas son tres cuadros en UNA pantalla.
 cuerpo = c.get("/repuestos?ver=bandas").get_data(as_text=True)
 check("las tres tablas de bandas van juntas",

@@ -473,6 +473,8 @@ ESQUEMA = """
                 codigo      text,
                 creado_en   timestamptz NOT NULL DEFAULT now()
             );
+            ALTER TABLE mantenimiento.rodamiento
+                ADD COLUMN IF NOT EXISTS nota text;
 
             -- Cuánto hilo lleva cada tela. Una fila por (tela, hilo).
             CREATE TABLE IF NOT EXISTS mantenimiento.consumo_hilo (
@@ -1445,7 +1447,7 @@ CUADROS: dict[str, dict] = {
               "campos": tuple(c for c in CAMPOS_BANDA if c != "clase"),
               "fijos": {"clase": "motor"}, "orden": "maquinas, diametro"},
     "rodamientos": {"tabla": "mantenimiento.rodamiento", "clave": "id",
-                    "campos": ("id_maquina", "rodamiento", "codigo"), "fijos": {},
+                    "campos": ("id_maquina", "rodamiento", "codigo", "nota"), "fijos": {},
                     "orden": "id_maquina, rodamiento, id"},
     "stock": {"tabla": "mantenimiento.banda_stock", "clave": "medida",
               "campos": ("medida", "cantidad"), "fijos": {}, "orden": "medida"},
