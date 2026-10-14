@@ -13,6 +13,7 @@ tela cruda con la máquina que lo tejió.
 """
 from __future__ import annotations
 
+import io
 import logging
 import math
 import os
@@ -25,7 +26,7 @@ from decimal import Decimal
 from functools import wraps
 
 from flask import (Flask, Response, flash, g, redirect, render_template,
-                   request, session, url_for)
+                   request, send_file, session, url_for)
 
 import jinja2
 
@@ -1578,6 +1579,76 @@ def maquina_detalle(numero):
         topes={t["id"]: todos_los_topes.get((id_maquina, t["id"])) for t in tipos},
         abrir=request.args.get("abrir"),
     )
+
+
+@app.route("/descargas/limpiezas.xlsx")
+@requiere_login
+def limpiezas_excel():
+    """Un Excel con todas las limpiezas: cuántas por año y máquina, y la lista
+    entera abajo en otra hoja. Simple, para mirar o mandar."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    try:
+        maquinas, _, _ = asinfo.maquinas()
+    except Exception:  # noqa: BLE001
+        maquinas = []
+    numero_de = {m["id"]: m.get("numero") for m in maquinas}
+
+    hechas = [h for h in store.historial(None, limite=100000)
+              if "limpieza" in (h.get("tipo_nombre") or "").lower()]
+    for h in hechas:
+        h["numero"] = numero_de.get(h["id_maquina"]) or asinfo._numero(h.get("maquina_nombre") or "")
+
+    # Todas las máquinas, aunque no tengan ninguna limpieza: una fila en cero
+    # también dice algo.
+    numeros = {m.get("numero") for m in maquinas if m.get("numero")} | \
+              {h["numero"] for h in hechas if h["numero"]}
+    anios = sorted({h["fecha"].year for h in hechas})
+    cuenta = {}
+    for h in hechas:
+        clave = (h["numero"], h["fecha"].year)
+        cuenta[clave] = cuenta.get(clave, 0) + 1
+
+    wb = Workbook()
+    negrita = Font(bold=True)
+    fondo = PatternFill("solid", fgColor="DDE4EE")
+
+    ws = wb.active
+    ws.title = "Por año"
+    ws.append(["Máquina", *anios, "Total"])
+    for n in sorted(numeros):
+        fila = [cuenta.get((n, a), 0) for a in anios]
+        ws.append([f"MQ {n}", *fila, sum(fila)])
+    totales = [sum(cuenta.get((n, a), 0) for n in numeros) for a in anios]
+    ws.append(["Total", *totales, sum(totales)])
+    for celda in ws[1]:
+        celda.font, celda.fill = negrita, fondo
+    for celda in ws[ws.max_row]:
+        celda.font = negrita
+    ws.column_dimensions["A"].width = 11
+    ws.freeze_panes = "B2"
+
+    ws2 = wb.create_sheet("Todas")
+    ws2.append(["Máquina", "Fecha", "Quién", "Repuestos", "Nota"])
+    for h in sorted(hechas, key=lambda h: (h["numero"] or 0, h["fecha"])):
+        ws2.append([f"MQ {h['numero']}" if h["numero"] else h.get("maquina_nombre"),
+                    h["fecha"], h.get("hecho_por"), h.get("repuestos"), h.get("nota")])
+        ws2.cell(ws2.max_row, 2).number_format = "DD/MM/YYYY"
+    for celda in ws2[1]:
+        celda.font, celda.fill = negrita, fondo
+    for col, ancho in zip("ABCDE", (11, 12, 18, 30, 40)):
+        ws2.column_dimensions[col].width = ancho
+    ws2.freeze_panes = "A2"
+    for fila in ws2.iter_rows(min_row=2):
+        fila[1].alignment = Alignment(horizontal="left")
+
+    salida = io.BytesIO()
+    wb.save(salida)
+    salida.seek(0)
+    return send_file(salida, as_attachment=True,
+                     download_name=f"limpiezas-por-maquina-{date.today().isoformat()}.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @app.route("/maquina")

@@ -1294,6 +1294,33 @@ check("la ficha muestra las bandas", "Bandas:" in html and "1040 M8 /50" in html
 store.ficha = _ficha_antes2
 store.bandas = _bandas_antes
 
+# --- 8e-quinquies. el Excel de limpiezas por año -------------------------
+print("Excel de limpiezas:")
+import openpyxl as _ox
+_hist_antes = store.historial
+store.historial = lambda id_maquina=None, limite=200: [
+    {"id_maquina": 10, "maquina_nombre": "TEJEDURIA-MQ 001", "tipo_nombre": "Limpieza",
+     "fecha": date(2024, 3, 1), "hecho_por": "Juan", "repuestos": None, "nota": None},
+    {"id_maquina": 10, "maquina_nombre": "TEJEDURIA-MQ 001", "tipo_nombre": "Limpieza",
+     "fecha": date(2025, 5, 1), "hecho_por": "Juan", "repuestos": None, "nota": None},
+    {"id_maquina": 10, "maquina_nombre": "TEJEDURIA-MQ 001", "tipo_nombre": "Limpieza",
+     "fecha": date(2025, 9, 1), "hecho_por": "Juan", "repuestos": "banda", "nota": None},
+    {"id_maquina": 11, "maquina_nombre": "TEJEDURIA-MQ 002", "tipo_nombre": "Cambio de agujas",
+     "fecha": date(2025, 9, 1), "hecho_por": "Juan", "repuestos": None, "nota": None}]
+r = c.get("/descargas/limpiezas.xlsx")
+check("el Excel de limpiezas se baja", r.status_code == 200
+      and "attachment" in r.headers.get("Content-Disposition", ""))
+_wb = _ox.load_workbook(io.BytesIO(r.data))
+_filas = list(_wb["Por año"].iter_rows(values_only=True))
+check("cuenta las limpiezas por año y maquina",
+      _filas[0] == ("Máquina", 2024, 2025, "Total")
+      and ("MQ 1", 1, 2, 3) in _filas)
+check("el cambio de agujas no cuenta como limpieza",
+      ("MQ 2", 0, 0, 0) in _filas and len(list(_wb["Todas"].iter_rows())) == 4)
+store.historial = _hist_antes
+check("la lista de maquinas tiene el link al Excel",
+      "/descargas/limpiezas.xlsx" in c.get("/maquinas").get_data(as_text=True))
+
 # --- 8e-bis. borrar un ajuste con la X ------------------------------------
 # La planilla ya se cargo y no se vuelve a cargar, asi que borrar es borrar.
 print("Borrar un ajuste:")

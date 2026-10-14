@@ -12,7 +12,8 @@
   <div class="titulo"><h2>{{ filas | length }} máquinas</h2>
     <p>{% if faltan %}A <b>{{ faltan }}</b> les falta algo ·
        <a href="{{ url_for('falta') }}">ver todo lo que falta</a>
-       {% else %}Están todas completas{% endif %}</p></div>
+       {% else %}Están todas completas{% endif %}
+       · <a href="{{ url_for('limpiezas_excel') }}">Bajar las limpiezas por año (Excel)</a></p></div>
   {% if not filas %}
     <div class="vacio"><h3>No hay máquinas para mostrar</h3></div>
   {% else %}
