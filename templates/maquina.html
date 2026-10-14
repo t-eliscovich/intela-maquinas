@@ -61,7 +61,53 @@
     <div class="cifra" style="padding:5px 12px">
       <b style="font-size:17px">{{ ultimo.fecha | fecha_es if ultimo else '—' }}</b>
       <small>Último mantenimiento</small></div>
+    {# El tope de cada tipo, al lado de los kilos: así se ve de un vistazo
+       cuánto le falta. Se corrige acá con el lapicito, sin abrir la ficha. #}
+    {% for t in tipos %}
+    <div class="cifra" style="padding:5px 12px">
+      <div id="tope-ver-{{ t.id }}">
+        <b style="font-size:17px">
+          {% if topes[t.id] %}{{ topes[t.id] | num(0) }}
+          {% else %}<span class="tenue">sin tope</span>{% endif %}
+          <button type="button" class="lapiz-tope"
+                  title="Cambiar el tope de {{ t.nombre | lower }}"
+                  onclick="editarTope({{ t.id }})">✎</button>
+        </b>
+        <small>Tope de {{ t.nombre | lower }} (kg)</small>
+      </div>
+      <form method="POST" class="tope-editar" id="tope-editar-{{ t.id }}" hidden>
+        <input type="hidden" name="que" value="tope">
+        <div class="tope-fila">
+          <input name="tope_{{ t.id }}" inputmode="numeric" placeholder="sin tope"
+                 aria-label="{{ t.nombre }}, cada cuántos kg"
+                 value="{{ topes[t.id] | num(0) if topes[t.id] else '' }}">
+          <button class="btn chico" type="submit">Guardar</button>
+          <button type="button" class="cancelar-tope" title="Cancelar"
+                  onclick="editarTope({{ t.id }}, true)">✕</button>
+        </div>
+        <small>Tope de {{ t.nombre | lower }}: cada … kg</small>
+      </form>
+    </div>
+    {% endfor %}
   </div>
+  <style>
+    .lapiz-tope{border:1px solid #d8dee7;background:#fff;color:var(--acento);
+       font-size:14px;line-height:1;padding:3px 6px;border-radius:6px;
+       cursor:pointer;vertical-align:middle;margin-left:4px}
+    .lapiz-tope:hover{color:#fff;background:var(--acento)}
+    .tope-fila{display:flex;gap:6px;align-items:center}
+    .tope-fila input{height:30px;font-size:15px;padding:0 7px;width:110px;min-width:0}
+    .cancelar-tope{border:0;background:none;cursor:pointer;font-size:15px;
+       color:var(--tenue,#888);padding:2px 6px}
+  </style>
+  <script>
+  function editarTope(id, cerrar) {
+    document.getElementById("tope-ver-" + id).hidden = !cerrar;
+    var f = document.getElementById("tope-editar-" + id);
+    f.hidden = !!cerrar;
+    if (!cerrar) { var c = f.elements["tope_" + id]; c.focus(); c.select(); }
+  }
+  </script>
 
   <div class="nota" style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
     <a href="{{ url_for('maquinas_lista') }}">← Todas las máquinas</a>
@@ -72,7 +118,7 @@
   {# Editar va acá, pegado a la ficha, y plegado: antes estaba al final de la
      pantalla y había que pasar por todo para corregir una galga. #}
   <details id="editar">
-    <summary>Editar la ficha y los kilos</summary>
+    <summary>Editar la ficha</summary>
     <div class="relleno" style="padding:10px 14px">
       <form method="POST" class="formulario" style="max-width:none">
         <div><label class="campo" for="marca">Marca</label>
@@ -94,14 +140,8 @@
         <div><label class="campo" for="tipo_agujas">Tipo de agujas</label>
           <input name="tipo_agujas" id="tipo_agujas" value="{{ ficha.tipo_agujas or '' }}"></div>
 
-        {# El tope de kilos es de ESTA máquina: la más cargada teje veinte veces
-           más que la más chica, así que un número único no sirve. #}
-        {% for t in tipos %}
-        <div><label class="campo" for="tope_{{ t.id }}">{{ t.nombre }}, cada … kg</label>
-          <input name="tope_{{ t.id }}" id="tope_{{ t.id }}" inputmode="numeric"
-                 placeholder="sin tope"
-                 value="{{ topes[t.id] | num(0) if topes[t.id] else '' }}"></div>
-        {% endfor %}
+        {# Los topes de kilos ya no van acá: se editan arriba, en el resumen,
+           con el lapicito. #}
 
         <div class="ancho" style="display:flex;gap:12px;align-items:flex-end">
           <div style="flex:1;min-width:0">

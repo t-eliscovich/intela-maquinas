@@ -1457,6 +1457,22 @@ def maquina_detalle(numero):
         return redirect(url_for("maquina_detalle", numero=numero,
                                 abrir="deberia") + "#deberia")
 
+    if request.method == "POST" and request.form.get("que") == "tope":
+        # El tope se edita con el lapicito del resumen de arriba, de a un tipo
+        # por vez. Este POST trae SÓLO ese tope: no toca la ficha (vendría toda
+        # vacía y se borraría) ni los topes de los otros tipos.
+        try:
+            for tipo in tipos:
+                campo = f"tope_{tipo['id']}"
+                if campo in request.form:
+                    store.guardar_tope(id_maquina, tipo["id"],
+                                       _kilos_escritos(request.form.get(campo),
+                                                       tipo["nombre"]))
+            flash("Tope guardado.", "ok")
+        except Exception as exc:  # noqa: BLE001
+            flash(str(exc), "error")
+        return redirect(url_for("maquina_detalle", numero=numero))
+
     if request.method == "POST":
         try:
             datos = {c: (request.form.get(c) or "").strip() or None
@@ -1473,8 +1489,14 @@ def maquina_detalle(numero):
             # marcha, un número mal escrito en el tercer tope dejaba la ficha y
             # los dos primeros ya guardados, y la pantalla decía sólo «error»:
             # el mecánico se iba creyendo que no se había guardado nada.
+            #
+            # Sólo los topes que vienen en el formulario: el de la ficha ya no
+            # los trae (se editan arriba, en el resumen), y un campo que no
+            # vino no es un «sin tope» — leerlo así borraba el tope.
             nuevos_topes = []
             for tipo in tipos:
+                if f"tope_{tipo['id']}" not in request.form:
+                    continue
                 kg = _kilos_escritos(request.form.get(f"tope_{tipo['id']}"),
                                      tipo["nombre"])
                 nuevos_topes.append((tipo["id"], kg))

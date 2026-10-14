@@ -1892,6 +1892,25 @@ c.post("/maquina/1", data={"marca": "Mayer", "tope_1": "20.000", "tope_2": "8.00
        follow_redirects=True)
 check("y los dos buenos entran juntos",
       puestos.get((10, 1)) == 20000 and puestos.get((10, 2)) == 8000)
+
+# El tope se edita con el lapicito del resumen de arriba: ese POST trae un solo
+# tope y NO puede tocar la ficha ni el tope del otro tipo.
+fichas_guardadas = []
+_ficha_antes = store.guardar_ficha
+store.guardar_ficha = lambda i, d: fichas_guardadas.append(d)
+puestos.clear()
+c.post("/maquina/1", data={"que": "tope", "tope_1": "15.000"}, follow_redirects=True)
+check("el lapicito guarda solo ese tope",
+      puestos == {(10, 1): 15000} and not fichas_guardadas)
+puestos.clear()
+c.post("/maquina/1", data={"que": "tope", "tope_2": "nan"}, follow_redirects=True)
+check("el lapicito tampoco acepta nan", not puestos)
+# Y la ficha de abajo ya no trae los topes: guardarla no los borra.
+puestos.clear()
+c.post("/maquina/1", data={"marca": "Mayer"}, follow_redirects=True)
+check("guardar la ficha sin topes no borra los topes",
+      not puestos and fichas_guardadas)
+store.guardar_ficha = _ficha_antes
 store.tipos = _tipos_antes
 
 # La pantalla de Tipos escribe en la misma columna y no controlaba nada.
