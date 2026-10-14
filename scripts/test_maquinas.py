@@ -155,6 +155,25 @@ check("cada tipo queda igual adentro de la fila",
 check("los dias no prenden nada", por_maquina[12]["principal"]["dias"] == 30
       and por_maquina[12]["estado"] == "ok")
 
+# A los cuántos kilos se hizo la última: lo tejido desde la anterior menos lo
+# tejido desde la última. Va en la misma consulta a Asinfo, con el tipo en
+# negativo como llave.
+_acum_antes = asinfo.acumulados
+store.anteriores_por_maquina_y_tipo = lambda: {(10, 1): hoy - timedelta(days=90)}
+asinfo.acumulados = lambda pares: (
+    {(m, t): ((KG[m] + 19000.0) if t < 0 else KG[m], 0) for m, t, d in pares},
+    datetime.utcnow(), True)
+filas, _, _, _ = A.armar_semaforo()
+por_maquina = {f["maquina"]["id"]: f for f in filas}
+check("dice a los cuantos kilos se hizo la ultima",
+      por_maquina[10]["principal"]["hecho_a_kg"] == 19000.0)
+check("sin una anterior no inventa el numero",
+      por_maquina[11]["principal"]["hecho_a_kg"] is None)
+check("los kilos de ahora no cambian por eso",
+      por_maquina[10]["principal"]["kg"] == 80000.0)
+asinfo.acumulados = _acum_antes
+store.anteriores_por_maquina_y_tipo = lambda: {}
+
 # Sin tope no se inventa un estado: se dice que falta el número, y la fila no
 # se pinta de ningún color.
 TIPOS[0]["cada_kg"] = None

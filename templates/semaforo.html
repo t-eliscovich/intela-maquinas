@@ -133,6 +133,10 @@
         <td class="tenue oculta-chico">
           {% if p and p.desde %}{{ p.desde | fecha_es }}
             <span style="font-size:11px">· hace {{ p.dias }} días</span>
+            {# A los cuántos kilos se hizo: lo que tejió desde la anterior. #}
+            {% if p.hecho_a_kg is not none %}
+              <span style="font-size:11px">· a los {{ p.hecho_a_kg | num(0) }} kg</span>
+            {% endif %}
           {% else %}—{% endif %}
         </td>
         {% if sin_tope %}

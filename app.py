@@ -304,6 +304,14 @@ def armar_semaforo():
     ultimos = store.ultimos_por_maquina_y_tipo()
     topes = store.topes_por_maquina()
 
+    # El service anterior al último: con él se sabe a los cuántos kilos se
+    # hizo el último. Si la base no contesta esto, el semáforo sale igual sin
+    # ese dato: no es lo que prende el color.
+    try:
+        anteriores = store.anteriores_por_maquina_y_tipo()
+    except Exception:  # noqa: BLE001
+        anteriores = {}
+
     hoy = date.today()
     pares = []
     for maquina in maquinas:
@@ -311,6 +319,11 @@ def armar_semaforo():
             ultimo = ultimos.get((maquina["id"], tipo["id"]))
             if ultimo:
                 pares.append((maquina["id"], tipo["id"], ultimo["fecha"].isoformat()))
+                anterior = anteriores.get((maquina["id"], tipo["id"]))
+                # En la MISMA consulta, con el tipo en negativo como llave:
+                # una sola ida a Asinfo, no dos.
+                if anterior:
+                    pares.append((maquina["id"], -tipo["id"], str(anterior)[:10]))
 
     acum, leido_en, fresco = asinfo.acumulados(pares)
 
@@ -351,8 +364,16 @@ def armar_semaforo():
             else:
                 estado = "ok"
 
+            # A los cuántos kilos se hizo: lo tejido desde el anterior menos lo
+            # tejido desde el último. Sin anterior (el primero, el arranque) no
+            # hay número que dar.
+            hecho_a = None
+            if (maquina["id"], -tipo["id"]) in acum:
+                hecho_a = round(float(acum[(maquina["id"], -tipo["id"])][0]) - float(kg), 2)
+
             info = {
                 "tipo": tipo, "desde": desde, "hecho_por": ultimo["hecho_por"],
+                "hecho_a_kg": hecho_a,
                 "kg": kg, "rollos": rollos, "dias": (hoy - desde).days,
                 "tope": tope, "tope_propio": propio,
                 "falta": (tope - float(kg)) if tope else None,

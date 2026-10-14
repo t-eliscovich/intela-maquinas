@@ -766,6 +766,26 @@ def ultimos_por_maquina_y_tipo() -> dict[tuple[int, int], dict]:
     return {(f["id_maquina"], f["tipo_id"]): f for f in filas}
 
 
+def anteriores_por_maquina_y_tipo() -> dict:
+    """La fecha del service ANTERIOR al último, por (máquina, tipo).
+
+    Con eso se sabe a los cuántos kilos se hizo el último: lo que tejió entre
+    el anterior y el último. Es otro DÍA, no otro registro: dos filas del mismo
+    día son la misma parada.
+    """
+    filas = _todos(
+        """
+        SELECT s.id_maquina, s.tipo_id, MAX(s.fecha) AS fecha
+          FROM mantenimiento.service s
+         WHERE s.fecha < (SELECT MAX(u.fecha) FROM mantenimiento.service u
+                           WHERE u.id_maquina = s.id_maquina
+                             AND u.tipo_id = s.tipo_id)
+         GROUP BY s.id_maquina, s.tipo_id
+        """
+    )
+    return {(f["id_maquina"], f["tipo_id"]): f["fecha"] for f in filas}
+
+
 # El sello con el que entró la carga vieja, que sólo guardaba la ÚLTIMA fecha
 # de cada tipo (66 filas de las 1.366 que tiene la planilla). Cuando entra el
 # historial completo hay que sacarlas: son las mismas fechas, y dejarlas
