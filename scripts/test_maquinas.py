@@ -2036,6 +2036,27 @@ tipos_creados.clear()
 c.post("/tipos", data={"nombre": "Limpieza", "cada_kg": "20.000"}, follow_redirects=True)
 check("y un numero de verdad si", bool(tipos_creados) and tipos_creados[0][1] == 20000)
 
+# Tipos: editar con el lapicito y borrar con la X. Uno con mantenimientos no
+# se borra (se perdería su historial): se desactiva.
+store.usos_por_tipo = lambda: {1: {"id": 1, "mantenimientos": 12, "topes": 29},
+                               2: {"id": 2, "mantenimientos": 0, "topes": 0}}
+_tipos_antes2 = store.tipos
+store.tipos = lambda incluir_inactivos=False: [
+    {"id": 1, "nombre": "Limpieza", "cada_kg": None, "activo": True},
+    {"id": 2, "nombre": "Cambio de bandas", "cada_kg": None, "activo": True}]
+html = c.get("/tipos").get_data(as_text=True)
+check("cada tipo tiene su lapicito", html.count("✎ Editar") == 2)
+check("el que tiene mantenimientos no tiene X",
+      "/tipos/1/borrar" not in html and "/tipos/2/borrar" in html)
+html = c.get("/tipos?editar=2").get_data(as_text=True)
+check("el lapicito abre el nombre para editar", 'value="Cambio de bandas"' in html
+      and "Cancelar" in html)
+_borrados_tipo = []
+store.borrar_tipo = lambda i: _borrados_tipo.append(i) or "Cambio de bandas"
+c.post("/tipos/2/borrar", follow_redirects=True)
+check("la X borra ese tipo", _borrados_tipo == [2])
+store.tipos = _tipos_antes2
+
 # --- 15. un solo numero de maquina -----------------------------------------
 # Se tomaba el ULTIMO numero escrito: «12,5» cargaba el mantenimiento en la
 # MQ 5 y «MQ 12 galga 28» en la 28, sin que nada lo dijera. El mantenimiento

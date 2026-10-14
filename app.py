@@ -838,7 +838,24 @@ def tipos_view():
         except Exception as exc:  # noqa: BLE001
             flash(str(exc), "error")
 
-    return render_template("tipos.html", tipos=store.tipos(incluir_inactivos=True))
+    try:
+        usos = store.usos_por_tipo()
+    except Exception:  # noqa: BLE001
+        usos = {}
+    return render_template("tipos.html", tipos=store.tipos(incluir_inactivos=True),
+                           usos=usos,
+                           editando=request.args.get("editar", type=int))
+
+
+@app.route("/tipos/<int:tipo_id>/borrar", methods=["POST"])
+@requiere_login
+def tipo_borrar(tipo_id):
+    try:
+        nombre = store.borrar_tipo(tipo_id)
+        flash(f"«{nombre}» borrado." if nombre else "Ese tipo ya no estaba.", "ok")
+    except Exception as exc:  # noqa: BLE001
+        flash(str(exc), "error")
+    return redirect(url_for("tipos_view"))
 
 
 @app.route("/arranque", methods=["GET", "POST"])

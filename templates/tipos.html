@@ -24,22 +24,57 @@
 <div class="bloque">
   <div class="titulo"><h2>Los que hay</h2>
     <p>Los kilos de cada máquina se ponen en su ficha, en
-       <a href="{{ url_for('maquinas_lista') }}">Máquinas</a>.</p></div>
+       <a href="{{ url_for('maquinas_lista') }}">Máquinas</a>. Un tipo con
+       mantenimientos anotados no se borra: se desmarca «Se usa».</p></div>
   <table>
-    <thead><tr><th>Nombre</th><th>Se usa</th><th></th></tr></thead>
+    <thead><tr><th>Nombre</th><th>Se usa</th>
+      <th class="der oculta-chico">Mantenimientos</th><th></th></tr></thead>
     <tbody>
     {% for t in tipos %}
-      <tr>
+      {% set u = usos.get(t.id, {}) %}
+      {% if editando == t.id %}
+      {# Editar el nombre y si se usa. El kg que ya estaba viaja escondido para
+         que guardar el nombre no lo borre. #}
+      <tr class="editando">
         <form method="POST" id="f{{ t.id }}"></form>
-        <td><input form="f{{ t.id }}" name="nombre" value="{{ t.nombre }}">
+        <td><input form="f{{ t.id }}" name="nombre" value="{{ t.nombre }}" required autofocus>
             <input form="f{{ t.id }}" type="hidden" name="tipo_id" value="{{ t.id }}">
             <input form="f{{ t.id }}" type="hidden" name="cada_kg"
                    value="{{ t.cada_kg | int if t.cada_kg else '' }}"></td>
         <td style="width:70px"><input form="f{{ t.id }}" type="checkbox" name="activo"
+                   aria-label="Se usa"
                    {{ 'checked' if t.activo }} style="width:auto;height:auto"></td>
-        <td class="der" style="width:110px">
-            <button form="f{{ t.id }}" class="btn suave chico">Guardar</button></td>
+        <td class="oculta-chico"></td>
+        <td class="der"><div class="acciones">
+            <button form="f{{ t.id }}" class="btn chico">Guardar</button>
+            <a class="btn suave chico" href="{{ url_for('tipos_view') }}">Cancelar</a>
+        </div></td>
       </tr>
+      {% else %}
+      <tr>
+        <td><b style="font-weight:600">{{ t.nombre }}</b></td>
+        <td>{% if t.activo %}Sí{% else %}<span class="tenue">No</span>{% endif %}</td>
+        <td class="der tenue oculta-chico">{{ u.mantenimientos | default(0) | num(0) }}</td>
+        <td class="der"><div class="acciones">
+          <a class="lapiz" href="{{ url_for('tipos_view', editar=t.id) }}"
+             title="Cambiar el nombre o si se usa">✎ Editar</a>
+          {# Con mantenimientos no se borra: se perdería su historial. Para eso
+             está desmarcar «Se usa». #}
+          {% if not u.mantenimientos %}
+          <form method="POST" action="{{ url_for('tipo_borrar', tipo_id=t.id) }}"
+                style="display:inline" data-que="{{ t.nombre }}"
+                data-topes="{{ u.topes | default(0) }}"
+                onsubmit="return confirm('¿Borrar «' + this.dataset.que + '»?' + (this.dataset.topes > 0 ? ' Se borran también sus ' + this.dataset.topes + ' topes de kilos.' : ''))">
+            <button class="borrar-fila" type="submit" title="Borrar este tipo"
+                    aria-label="Borrar {{ t.nombre }}">×</button>
+          </form>
+          {% else %}
+          <span class="tenue" style="font-size:11px"
+                title="Tiene mantenimientos anotados: se desactiva con «Se usa»">no se borra</span>
+          {% endif %}
+        </div></td>
+      </tr>
+      {% endif %}
     {% endfor %}
     </tbody>
   </table>

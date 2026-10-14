@@ -544,6 +544,49 @@ def editar_tipo(tipo_id, nombre, cada_kg, cada_rollos, cada_dias, activo) -> Non
     )
 
 
+def usos_por_tipo() -> dict[int, dict]:
+    """Cuántos mantenimientos y cuántos topes tiene cada tipo: es lo que dice
+    si se puede borrar o sólo desactivar."""
+    filas = _todos(
+        """SELECT t.id,
+                  (SELECT count(*) FROM mantenimiento.service s
+                    WHERE s.tipo_id = t.id) AS mantenimientos,
+                  (SELECT count(*) FROM mantenimiento.plan_maquina p
+                    WHERE p.tipo_id = t.id) AS topes
+             FROM mantenimiento.tipo_service t""")
+    return {f["id"]: f for f in filas}
+
+
+def borrar_tipo(tipo_id: int) -> str | None:
+    """Borra un tipo que no tiene ningún mantenimiento anotado.
+
+    Con mantenimientos NO se borra: se llevaría su historial, y una máquina que
+    venía contando kilos volvería a «sin arrancar». Para dejar de usarlo está
+    el «Se usa». Los topes de kilos por máquina de ese tipo sí se borran con
+    él: sin el tipo no son de nada. Devuelve el nombre del borrado, o None si
+    ya no estaba.
+    """
+    with _conn() as con, con.cursor() as cur:
+        try:
+            cur.execute("SELECT count(*) FROM mantenimiento.service WHERE tipo_id = %s",
+                        (tipo_id,))
+            n = cur.fetchone()[0]
+            if n:
+                raise ValueError(
+                    f"Tiene {n} mantenimientos anotados y no se puede borrar: se "
+                    "perdería su historial. Desmarcá «Se usa» para que no aparezca más.")
+            cur.execute("DELETE FROM mantenimiento.plan_maquina WHERE tipo_id = %s",
+                        (tipo_id,))
+            cur.execute("DELETE FROM mantenimiento.tipo_service WHERE id = %s RETURNING nombre",
+                        (tipo_id,))
+            fila = cur.fetchone()
+            con.commit()
+        except Exception:
+            con.rollback()
+            raise
+    return fila[0] if fila else None
+
+
 # --- Services hechos -------------------------------------------------------
 def registrar_service(id_maquina, maquina_nombre, tipo_id, fecha, hecho_por, nota,
                       repuestos=None, horas=None) -> int | None:
