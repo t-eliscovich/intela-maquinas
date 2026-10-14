@@ -1702,6 +1702,8 @@ FILAS_CUADRO = {
                     "alimentadores": "alimentadores 108", "tela": "JERSEY",
                     "trabajo": "432", "retenido": "0", "anulacion": "0",
                     "nota": None}],
+    "rodamientos": [{"id": 1, "id_maquina": 10, "rodamiento": "6205 2RS",
+                     "codigo": "SKF 6205"}],
 }
 store.filas_de = lambda cuadro: list(FILAS_CUADRO[cuadro])
 # La 11 está anotada en la planilla pero sin números: pasa de verdad, y sumar
@@ -1811,12 +1813,24 @@ check("siempre hay una fila en blanco para agregar", 'form="nueva-levas"' in cue
 # Tres pestañas y no seis: de las seis hojas de la planilla, dos hablan de lo
 # mismo (la aguja por máquina y la misma aguja por modelo, que es como se pide)
 # y tres son bandas.
-check("las pestañas son tres", len(A.PESTANAS_REPUESTOS) == 3)
+check("las pestañas son cuatro, con rodamientos",
+      len(A.PESTANAS_REPUESTOS) == 4
+      and A.PESTANAS_REPUESTOS[-1]["titulo"] == "Rodamientos")
 check("y llevan a las tres",
       all(f"ver={p['clave']}" in cuerpo for p in A.PESTANAS_REPUESTOS))
 check("cada cuadro vive en una pestaña",
       sorted(cu["clave"] for cu in A.CUADROS_REPUESTOS)
       == sorted(c2 for p in A.PESTANAS_REPUESTOS for c2 in p["cuadros"]))
+# Rodamientos: tres columnas, y una máquina puede llevar varios.
+store.guardar_repuesto("rodamientos", None, {"id_maquina": 10, "rodamiento": "6205 2RS",
+                                             "codigo": "SKF 6205"})
+check("agregar un rodamiento es un INSERT sin pisar el de otra fila",
+      corridas[-1][0].startswith("INSERT INTO mantenimiento.rodamiento")
+      and "ON CONFLICT" not in corridas[-1][0])
+cuerpo = c.get("/repuestos?ver=rodamientos").get_data(as_text=True)
+check("la pestaña de rodamientos tiene sus tres columnas",
+      all(x in cuerpo for x in ("Máquina", "Rodamiento", "Código"))
+      and 'form="nueva-rodamientos"' in cuerpo)
 # Las bandas son tres cuadros en UNA pantalla.
 cuerpo = c.get("/repuestos?ver=bandas").get_data(as_text=True)
 check("las tres tablas de bandas van juntas",

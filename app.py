@@ -2191,6 +2191,13 @@ CUADROS_REPUESTOS = [
          {"campo": "pedir", "titulo": "Pedir", "tipo": "entero"},
          {"campo": "metros", "titulo": "Metros", "tipo": "decimal", "decimales": 1},
      ]},
+    {"clave": "rodamientos", "titulo": "Rodamientos",
+     "bajada": "Qué rodamiento lleva cada máquina y con qué código se pide",
+     "columnas": [
+         {"campo": "id_maquina", "titulo": "Máquina", "tipo": "maquina"},
+         {"campo": "rodamiento", "titulo": "Rodamiento", "tipo": "texto"},
+         {"campo": "codigo", "titulo": "Código", "tipo": "texto"},
+     ]},
     {"clave": "stock", "titulo": "Cuántas bandas hay en bodega",
      "bajada": "De cada medida, contadas",
      "columnas": [
@@ -2239,6 +2246,7 @@ PESTANAS_REPUESTOS = [
     {"clave": "levas", "titulo": "Levas", "cuadros": ["levas", "levas_tela"]},
     {"clave": "bandas", "titulo": "Bandas",
      "cuadros": ["pedido", "bandas", "motor", "stock"]},
+    {"clave": "rodamientos", "titulo": "Rodamientos", "cuadros": ["rodamientos"]},
 ]
 
 
@@ -2295,7 +2303,7 @@ def repuestos():
     for clave_cuadro in pestana["cuadros"]:
         cuadro = next(c for c in CUADROS_REPUESTOS if c["clave"] == clave_cuadro)
         filas = store.filas_de(clave_cuadro)
-        if clave_cuadro == "agujas":
+        if clave_cuadro in ("agujas", "rodamientos"):
             # Por número de máquina, no por el id de Asinfo: la MQ 30 tiene el
             # id 804 y quedaba en el medio de las de cincuenta y pico.
             filas.sort(key=lambda f: (por_id.get(f["id_maquina"], {}).get("numero") is None,

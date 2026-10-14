@@ -464,6 +464,16 @@ ESQUEMA = """
             ALTER TABLE mantenimiento.eficiencia
                 ADD COLUMN IF NOT EXISTS galga integer;
 
+            -- Qué rodamientos lleva cada máquina. Una máquina lleva varios,
+            -- así que la fila se reconoce por su id y no por la máquina.
+            CREATE TABLE IF NOT EXISTS mantenimiento.rodamiento (
+                id          serial PRIMARY KEY,
+                id_maquina  integer,
+                rodamiento  text,
+                codigo      text,
+                creado_en   timestamptz NOT NULL DEFAULT now()
+            );
+
             -- Cuánto hilo lleva cada tela. Una fila por (tela, hilo).
             CREATE TABLE IF NOT EXISTS mantenimiento.consumo_hilo (
                 id           serial PRIMARY KEY,
@@ -1391,6 +1401,9 @@ CUADROS: dict[str, dict] = {
     "motor": {"tabla": "mantenimiento.banda", "clave": "id",
               "campos": tuple(c for c in CAMPOS_BANDA if c != "clase"),
               "fijos": {"clase": "motor"}, "orden": "maquinas, diametro"},
+    "rodamientos": {"tabla": "mantenimiento.rodamiento", "clave": "id",
+                    "campos": ("id_maquina", "rodamiento", "codigo"), "fijos": {},
+                    "orden": "id_maquina, rodamiento, id"},
     "stock": {"tabla": "mantenimiento.banda_stock", "clave": "medida",
               "campos": ("medida", "cantidad"), "fijos": {}, "orden": "medida"},
     "pedido": {"tabla": "mantenimiento.banda_pedido", "clave": "medida",
