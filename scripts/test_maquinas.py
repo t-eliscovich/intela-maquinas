@@ -1265,6 +1265,35 @@ c.post("/ajustes/composicion", data={"tela_original": "KIANA", "tela": "KIANA",
 check("vaciar todos los hilos borra la tela", _comp and _comp[-1][2] == [])
 store.consumo_hilo = lambda: []
 
+# --- 8e-quater. las bandas en la ficha ------------------------------------
+print("Bandas en la ficha:")
+_bandas_hoja = {
+    "memminger": [{"clase": "memminger", "maquinas": "MAYER JERSEY", "diametro": 30,
+                   "media": "6.6", "tres_cuartos": "8.2", "lycra": None},
+                  {"clase": "memminger", "maquinas": "JIUNN LOG DOBLE FONTURA", "diametro": 34,
+                   "media": "7.6", "tres_cuartos": "8.8", "lycra": "10.8"}],
+    "motor": [{"clase": "motor", "maquinas": "MAYER", "diametro": 30,
+               "banda": "1040 M8 /50", "cobrador": "14/5/1015LI"},
+              {"clase": "motor", "maquinas": "JUNNLOG", "diametro": 34,
+               "banda": "A-72", "cobrador": None}]}
+_bandas_antes = store.bandas
+store.bandas = lambda clase="memminger": _bandas_hoja[clase]
+check("una Mayer de 30 trae su banda memminger y la de motor",
+      [b["clase"] for b in A._bandas_de({"marca": "MAYER", "diametro": 30})]
+      == ["memminger", "motor"])
+check("JIUNN LONG, JIUNN LOG y JUNNLOG son la misma marca",
+      len(A._bandas_de({"marca": "JUNN LONG", "diametro": 34})) == 2)
+check("otro diametro no trae bandas",
+      A._bandas_de({"marca": "MAYER", "diametro": 32}) == [])
+check("sin marca no adivina", A._bandas_de({"diametro": 30}) == [])
+_ficha_antes2 = store.ficha
+store.ficha = lambda i: {"marca": "MAYER", "diametro": 30}
+html = c.get("/maquina/1").get_data(as_text=True)
+check("la ficha muestra las bandas", "Bandas:" in html and "1040 M8 /50" in html
+      and "½ 6.6" in html)
+store.ficha = _ficha_antes2
+store.bandas = _bandas_antes
+
 # --- 8e-bis. borrar un ajuste con la X ------------------------------------
 # La planilla ya se cargo y no se vuelve a cargar, asi que borrar es borrar.
 print("Borrar un ajuste:")

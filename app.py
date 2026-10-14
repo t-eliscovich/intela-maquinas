@@ -1555,6 +1555,7 @@ def maquina_detalle(numero):
         anual=anual,
         ajustes=store.ajustes(id_maquina=id_maquina, limite=30),
         aguja=store.agujas().get(id_maquina),
+        bandas=_bandas_de(store.ficha(id_maquina)),
         eficiencia=store.eficiencias().get(id_maquina),
         tipos=tipos,
         topes={t["id"]: todos_los_topes.get((id_maquina, t["id"])) for t in tipos},
@@ -1576,6 +1577,47 @@ def ir_a_maquina():
         flash(str(exc), "error")
         return redirect(url_for("maquinas_lista"))
     return redirect(_url_maquina(id_maquina))
+
+
+def _familia(marca) -> str | None:
+    """La marca escrita de una sola forma, para cruzar la ficha con la hoja
+    BANDAS. Ahí la misma marca está escrita de cuatro maneras: «JIUNN LONG»,
+    «JIUNN LOG», «JUNNLOG», «JUNN LONG»."""
+    t = re.sub(r"[^A-Z]", "", (marca or "").upper())
+    if not t:
+        return None
+    if t.startswith("MAYER"):
+        return "MAYER"
+    if t.startswith("PILOT"):
+        return "PILOTELLI"
+    if "UNNL" in t or t.startswith("JIUN") or t.startswith("JUNN"):
+        return "JIUNN LONG"
+    return t
+
+
+def _bandas_de(ficha) -> list[dict]:
+    """Qué bandas lleva la máquina, según la hoja BANDAS.
+
+    La hoja no dice máquina por máquina: dice «MAYER JERSEY de 30"». Se cruza
+    por marca y diámetro, y si hay más de una fila que encaja (Mayer jersey y
+    Mayer doble fontura de 30") se muestran todas con su nombre: elegir una
+    por adivinanza sería poner una banda equivocada en la ficha.
+    """
+    familia = _familia((ficha or {}).get("marca"))
+    diametro = (ficha or {}).get("diametro")
+    if not familia or not diametro:
+        return []
+    salida = []
+    for clase in ("memminger", "motor"):
+        try:
+            filas = store.bandas(clase)
+        except Exception:  # noqa: BLE001
+            filas = []
+        for b in filas:
+            if (_familia(b.get("maquinas")) == familia and b.get("diametro") is not None
+                    and abs(float(b["diametro"]) - float(diametro)) < 0.5):
+                salida.append(b)
+    return salida
 
 
 def _dias_de_mantenimiento(id_maquina, historial):

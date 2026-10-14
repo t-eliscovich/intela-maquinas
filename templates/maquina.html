@@ -46,6 +46,20 @@
           <div class="codigo">platina {{ parte.strip() }}</div>
         {% endfor %}
       {% endif %}
+      {# Las bandas salen de la hoja BANDAS, que va por marca y diámetro, no
+         por máquina. Si encajan dos filas se muestran las dos con su nombre. #}
+      {% if bandas %}
+        <p><span>Bandas:</span></p>
+        {% for b in bandas %}
+          <div class="codigo" title="{{ b.maquinas }} {{ b.diametro | num(0) }}&quot;">
+            {% if b.clase == 'motor' %}motor {{ b.banda }}{% if b.cobrador %} · cobrador {{ b.cobrador }}{% endif %}
+            {% else %}{{ [('½ ' ~ b.media) if b.media,
+                          ('¾ ' ~ b.tres_cuartos) if b.tres_cuartos,
+                          ('lycra ' ~ b.lycra) if b.lycra] | select | join(' · ') or 'sin medida' }}{% endif %}
+            {% if bandas | length > 1 %}<span class="tenue" style="font-size:11px">· {{ b.maquinas | lower }}</span>{% endif %}
+          </div>
+        {% endfor %}
+      {% endif %}
       <p><span>N° de serie:</span> {{ ficha.serie or '—' }}</p>
       <p><span>Año:</span> {{ ficha.anio or '—' }}</p>
     </div>
